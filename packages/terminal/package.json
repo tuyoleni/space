@@ -1,0 +1,12 @@
+{
+  "name": "@space/terminal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PTY host and terminal protocol (spec section 15).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/terminal\""
+  }
+}

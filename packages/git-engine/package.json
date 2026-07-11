@@ -1,0 +1,12 @@
+{
+  "name": "@space/git-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Git commands, structured output parsers, per-repository operation queue, fixtures (spec section 11-12).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/git-engine\""
+  }
+}

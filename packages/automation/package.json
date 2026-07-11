@@ -1,0 +1,12 @@
+{
+  "name": "@space/automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automation triggers, conditions, and actions (spec section 18).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/automation\""
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@space/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure models and policies shared across packages, no I/O.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/domain\""
+  }
+}

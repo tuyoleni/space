@@ -1,0 +1,12 @@
+{
+  "name": "@space/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IPC schemas and shared domain types (spec section 22).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/contracts\""
+  }
+}

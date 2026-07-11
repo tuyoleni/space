@@ -1,0 +1,24 @@
+{
+  "name": "space",
+  "private": true,
+  "description": "Space: a cross-platform Electron desktop app for workspace, Git, GitHub, terminal, and project management.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run start --workspace=apps/desktop",
+    "start": "npm run start --workspace=apps/desktop",
+    "package": "npm run package --workspace=apps/desktop",
+    "make": "npm run make --workspace=apps/desktop",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^2.1.9"
+  }
+}

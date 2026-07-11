@@ -1,0 +1,12 @@
+{
+  "name": "@space/activity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Activity event model and aggregation (spec section 17).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/activity\""
+  }
+}

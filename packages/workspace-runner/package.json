@@ -1,0 +1,12 @@
+{
+  "name": "@space/workspace-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace Process Runner: environment construction and process execution (spec section 21).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/workspace-runner\""
+  }
+}

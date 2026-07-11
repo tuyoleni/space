@@ -1,0 +1,12 @@
+{
+  "name": "@space/security",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Permission policy, secret redaction, and IPC sender validation (spec section 24-25).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet for @space/security\""
+  }
+}
