@@ -9,7 +9,21 @@ export type StorageMethod =
   | 'workspace.activate'
   | 'project.list'
   | 'project.inspectFolder'
-  | 'project.add';
+  | 'project.add'
+  // M4
+  | 'project.detect'
+  | 'project.detectPackageManager'
+  | 'project.trustDecision'
+  | 'project.get'
+  | 'terminal.recordSession'
+  | 'terminal.recordOutput'
+  | 'terminal.markExited'
+  | 'terminal.list'
+  | 'devProcess.recordStart'
+  | 'devProcess.setDetectedUrl'
+  | 'devProcess.markStopped'
+  | 'devProcess.list'
+  | 'operation.recordCompleted';
 
 export interface StorageRequest {
   readonly id: string;

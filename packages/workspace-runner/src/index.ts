@@ -12,3 +12,4 @@
 export * from './types';
 export * from './redaction';
 export * from './runner';
+export * from './detached';
