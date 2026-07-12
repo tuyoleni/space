@@ -12,3 +12,5 @@ export * from './executor';
 export * from './node-gh-executor';
 export * from './json';
 export * from './auth';
+export * from './setup-git';
+export * from './repository';

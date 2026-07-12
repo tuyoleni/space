@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DestructiveGitActionNotConfirmedError } from '@space/domain';
 import type { GitExecutor } from './clone';
 import type { GitIdentity } from './identity';
-import { describePush, fetchRemote, pullRemote, pushToRemote } from './remote';
+import { addRemote, describePush, fetchRemote, getRemoteUrl, pullRemote, pushToRemote } from './remote';
 
 const identity: GitIdentity = { name: 'A', email: 'a@example.com', signingPolicy: 'none', signingKeyId: null };
 
@@ -22,6 +22,29 @@ describe('fetchRemote / pullRemote', () => {
   it('throws on failure', async () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: 'fatal: could not read from remote' }));
     await expect(fetchRemote('/repo', 'origin', executor)).rejects.toThrow(/could not read from remote/);
+  });
+});
+
+describe('addRemote / getRemoteUrl', () => {
+  it('adds a remote by name and URL', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+    await addRemote('/repo', 'origin', 'https://github.com/acme/widgets.git', executor);
+    expect(executor).toHaveBeenCalledWith(['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: '/repo' });
+  });
+
+  it('throws when the remote name already exists', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 3, stdout: '', stderr: "error: remote origin already exists." }));
+    await expect(addRemote('/repo', 'origin', 'https://github.com/acme/widgets.git', executor)).rejects.toThrow(/already exists/);
+  });
+
+  it('returns the URL for an existing remote', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: 'https://github.com/acme/widgets.git\n', stderr: '' }));
+    await expect(getRemoteUrl('/repo', 'origin', executor)).resolves.toBe('https://github.com/acme/widgets.git');
+  });
+
+  it('returns null when the remote does not exist', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 2, stdout: '', stderr: 'error: No such remote' }));
+    await expect(getRemoteUrl('/repo', 'origin', executor)).resolves.toBeNull();
   });
 });
 

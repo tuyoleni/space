@@ -7,7 +7,7 @@
  * from @space/domain's `assertDestructiveGitActionConfirmed`).
  */
 import { assertDestructiveGitActionConfirmed } from '@space/domain';
-import { fetchArgs, pullArgs, pushArgs, type PullMode } from './commands';
+import { fetchArgs, pullArgs, pushArgs, remoteAddArgs, remoteGetUrlArgs, type PullMode } from './commands';
 import type { GitIdentity } from './identity';
 import type { GitExecutor } from './clone';
 
@@ -26,6 +26,17 @@ async function run(executor: GitExecutor, args: string[], cwd: string): Promise<
 
 export async function fetchRemote(cwd: string, remoteName: string, executor: GitExecutor): Promise<RemoteCommandOutcome> {
   return run(executor, fetchArgs(remoteName), cwd);
+}
+
+/** Adds a remote (spec 14.5 GH-003's "connect" resolution) — never overwrites an existing remote of the same name; `git remote add` itself already fails loudly if one exists. */
+export async function addRemote(cwd: string, remoteName: string, url: string, executor: GitExecutor): Promise<RemoteCommandOutcome> {
+  return run(executor, remoteAddArgs(remoteName, url), cwd);
+}
+
+/** Returns the current URL for `remoteName`, or `null` if it does not exist — used to detect a name collision before `addRemote`. */
+export async function getRemoteUrl(cwd: string, remoteName: string, executor: GitExecutor): Promise<string | null> {
+  const result = await executor(remoteGetUrlArgs(remoteName), { cwd });
+  return result.exitCode === 0 ? result.stdout.trim() : null;
 }
 
 export async function pullRemote(

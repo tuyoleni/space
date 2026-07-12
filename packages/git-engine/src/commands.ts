@@ -216,6 +216,20 @@ export function pushArgs(options: PushArgsOptions): string[] {
   return ['push', ...(options.setUpstream ? ['--set-upstream'] : []), ...forceFlag, '--', remoteName, options.branch];
 }
 
+/**
+ * `git remote add <name> <url>` (spec 14.5 GH-003's "connect" resolution
+ * for an already-existing GitHub repository — Space adds the remote
+ * itself instead of calling `gh repo create`, since that command's own
+ * `--source`/`--remote` handling only applies to a *new* repository).
+ */
+export function remoteAddArgs(remoteName: string, url: string): string[] {
+  return ['remote', 'add', remoteName, url];
+}
+
+export function remoteGetUrlArgs(remoteName: string): string[] {
+  return ['remote', 'get-url', remoteName];
+}
+
 // ---------------------------------------------------------------------------
 // GIT-008: conflicts / continue / abort
 // ---------------------------------------------------------------------------
