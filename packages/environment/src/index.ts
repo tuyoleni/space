@@ -25,3 +25,4 @@ export * from './orchestrator';
 export * from './bootstrap-state';
 export * from './project-detection';
 export * from './package-manager';
+export * from './project-templates';
