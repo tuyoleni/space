@@ -2,11 +2,14 @@
  * History parser (spec section 11.3.3): consumes `git log` output produced
  * with explicit record (\x1e) and field (\x1f) separators that cannot
  * collide with normal text. Pure function over a string - covered by
- * fixtures including Unicode, merge commits, tags, and detached HEAD.
+ * fixtures including Unicode, newlines, unusual author names, merge
+ * commits, tags, and detached HEAD (see parser.test.ts); shallow clones,
+ * replace refs, and large histories are covered against a real git
+ * executable in tests/integration.
  *
  * Expected git invocation (constructed as executable + argument array):
  *   git log --all --topo-order --date-order --parents --decorate=full
- *     --format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%D%x1f%s
+ *     --format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%D%x1f%s%x1f%b
  */
 import type { CommitNode, RepositoryRef } from './types';
 
@@ -14,7 +17,7 @@ const RECORD_SEPARATOR = '\x1e';
 const FIELD_SEPARATOR = '\x1f';
 
 export const HISTORY_LOG_FORMAT =
-  '%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%D%x1f%s';
+  '%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%D%x1f%s%x1f%b';
 
 export function historyLogArgs(extra: readonly string[] = []): string[] {
   return [
@@ -66,11 +69,15 @@ export function parseHistoryOutput(output: string): CommitNode[] {
       continue;
     }
     const fields = trimmed.split(FIELD_SEPARATOR);
-    if (fields.length < 8) {
+    if (fields.length < 9) {
       continue;
     }
-    const [sha, parentsRaw, authorName, authorEmail, authoredAt, committedAt, decorated, ...subjectParts] =
-      fields as [string, string, string, string, string, string, string, ...string[]];
+    const [sha, parentsRaw, authorName, authorEmail, authoredAt, committedAt, decorated, subject, ...bodyParts] =
+      fields as [string, string, string, string, string, string, string, string, ...string[]];
+    // %b (body) cannot itself contain \x1e/\x1f in ordinary commit
+    // messages, but a plain rejoin keeps this lossless defensively, same
+    // as the subject field used to be handled before it became fixed-width.
+    const body = bodyParts.join(FIELD_SEPARATOR).replace(/^\n/, '').replace(/\n+$/, '');
     commits.push({
       sha: sha.trim(),
       parents: parentsRaw.trim().length === 0 ? [] : parentsRaw.trim().split(/\s+/),
@@ -79,9 +86,8 @@ export function parseHistoryOutput(output: string): CommitNode[] {
       authoredAt: Number(authoredAt) * 1000,
       committedAt: Number(committedAt) * 1000,
       refs: parseRefs(decorated),
-      // Subject may itself contain the join of remaining parts; separators
-      // cannot appear in %s so a plain rejoin is lossless.
-      subject: subjectParts.join(FIELD_SEPARATOR).replace(/\n+$/, ''),
+      subject: subject.replace(/\n+$/, ''),
+      ...(body.length > 0 ? { body } : {}),
     });
   }
   return commits;
