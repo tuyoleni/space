@@ -14,3 +14,5 @@ export * from './json';
 export * from './auth';
 export * from './setup-git';
 export * from './repository';
+export * from './pull-requests';
+export * from './checks';
