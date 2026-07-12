@@ -18,3 +18,4 @@ export * from './pull-requests';
 export * from './checks';
 export * from './workflow-metadata';
 export * from './actions';
+export * from './issues';
