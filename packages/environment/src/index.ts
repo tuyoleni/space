@@ -23,3 +23,5 @@ export * from './windows-plan';
 export * from './verify';
 export * from './orchestrator';
 export * from './bootstrap-state';
+export * from './project-detection';
+export * from './package-manager';

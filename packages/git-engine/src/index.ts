@@ -12,3 +12,5 @@
 export * from './history/types';
 export * from './history/parser';
 export * from './history/lanes';
+export * from './clone';
+export * from './node-git-executor';

@@ -6,6 +6,8 @@
  * Electron/Node imports — everything here must be unit-testable in
  * isolation with plain fixtures.
  *
- * Populated during M2 (secure application foundation).
+ * Populated during M2 (secure application foundation); project trust
+ * policy (spec 10.3, ADR-006) added in M4.
  */
 export * from './environment';
+export * from './trust';

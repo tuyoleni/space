@@ -13,6 +13,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { CommandExecutionResult, CommandOnPathResolver, CommandRunner, FileSystemPort, OsInfoPort, ScanDependencies, SupportedPlatform } from './types';
+import type { ProjectDetectionFsPort } from './project-detection';
 
 function toSupportedPlatform(platform: NodeJS.Platform): SupportedPlatform {
   if (platform === 'darwin' || platform === 'win32') {
@@ -131,6 +132,24 @@ export const nodeFileSystemPort: FileSystemPort = {
         }
       }
       return false;
+    }
+  },
+  readTextFile: async (targetPath) => {
+    try {
+      return await fs.readFile(targetPath, 'utf-8');
+    } catch {
+      return null;
+    }
+  },
+};
+
+/** Read-only Node adapter for PRJ-002 project detection — never writes, never opens env files. */
+export const nodeProjectDetectionFs: ProjectDetectionFsPort = {
+  listDirectory: async (targetPath) => {
+    try {
+      return await fs.readdir(targetPath);
+    } catch {
+      return [];
     }
   },
   readTextFile: async (targetPath) => {
