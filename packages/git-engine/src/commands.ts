@@ -35,8 +35,15 @@ export function statusArgs(): string[] {
 
 /** Field separator used inside one for-each-ref record; refs cannot contain it. */
 export const REF_FIELD_SEPARATOR = '\x1f';
-/** Record separator between for-each-ref entries; refs cannot contain a NUL byte. */
-export const REF_RECORD_SEPARATOR = '\x00';
+/**
+ * Record separator between for-each-ref entries. Unlike `status`/`diff`,
+ * `for-each-ref` has no `-z`/NUL-terminated output mode, so the separator
+ * has to be a literal character embedded in the `--format` argument itself
+ * — and a process argument can never contain an actual NUL byte (the OS
+ * rejects it), so this must be a different control character than status/
+ * diff's NUL, not \x00.
+ */
+export const REF_RECORD_SEPARATOR = '\x1e';
 
 const REF_FORMAT_FIELDS = [
   '%(refname)',
