@@ -24,11 +24,20 @@ export interface GitCommandResult {
  * 25.3.2). `input`, when supplied, is written to the child's stdin and the
  * stream closed — the mechanism commit messages, generated patches, and
  * PR bodies use to reach git without ever becoming a shell-escaped string
- * (spec 11.7, 21.3).
+ * (spec 11.7, 21.3). `env` (added in M6) is merged over the inherited
+ * environment — the seam GH-002's credential-helper verification and
+ * GH-008's tag push use to make `GH_CONFIG_DIR`/`GH_TOKEN` visible to the
+ * `gh`-installed git credential helper, which git spawns as its own
+ * child process and therefore only sees what git's own environment has.
  */
 export type GitExecutor = (
   args: readonly string[],
-  options?: { readonly cwd?: string; readonly timeoutMs?: number; readonly input?: string },
+  options?: {
+    readonly cwd?: string;
+    readonly timeoutMs?: number;
+    readonly input?: string;
+    readonly env?: Readonly<Record<string, string>>;
+  },
 ) => Promise<GitCommandResult>;
 
 export interface CloneRepositoryInput {

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@space/domain": "^0.1.0",
-    "@space/git-engine": "^0.1.0"
+    "@space/git-engine": "^0.1.0",
+    "@space/security": "^0.1.0"
   }
 }

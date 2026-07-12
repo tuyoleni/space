@@ -25,7 +25,13 @@ export type StorageMethod =
   | 'devProcess.list'
   | 'operation.recordCompleted'
   | 'activity.listRange'
-  | 'system.reconcileOrphans';
+  | 'system.reconcileOrphans'
+  // M6: GitHub credential bookkeeping (spec 23.2.5/23.2.6) — reference-only, never the secret value.
+  | 'githubSecretRef.upsert'
+  | 'githubSecretRef.delete'
+  | 'githubConnection.upsert'
+  | 'githubConnection.get'
+  | 'githubConnection.list';
 
 export interface StorageRequest {
   readonly id: string;

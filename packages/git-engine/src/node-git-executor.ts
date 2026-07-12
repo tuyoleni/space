@@ -14,6 +14,7 @@ export function createNodeGitExecutor(gitExecutablePath = 'git'): GitExecutor {
         cwd: options?.cwd,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: options?.env ? { ...process.env, ...options.env } : process.env,
       });
       let stdout = '';
       let stderr = '';

@@ -43,6 +43,8 @@ import {
   type OperationRow,
   type ProjectRow,
   type ReceiptContext,
+  type SecretRefRow,
+  type ServiceConnectionRow,
   type Storage,
   type TerminalSessionRow,
   type WorkspaceRow,
@@ -310,6 +312,39 @@ const operationRecordCompletedSchema = z.object({
   subjectRef: z.string().min(1).nullable().optional(),
 });
 
+// ---------------------------------------------------------------------------
+// M6: GitHub credential bookkeeping (spec 23.2.5/23.2.6). Reference-only —
+// the secret value itself never appears in any of these payloads; it lives
+// only in the OS credential store behind @space/security's
+// CredentialStorePort, resolved by github-handlers.ts, not this worker.
+// ---------------------------------------------------------------------------
+
+const githubSecretRefUpsertSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  provider: z.string().min(1),
+  serviceName: z.string().min(1),
+  accountKey: z.string().min(1),
+  createdAt: z.string().min(1),
+});
+
+const githubSecretRefDeleteSchema = z.object({ id: z.string().min(1) });
+
+const githubConnectionUpsertSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  adapterId: z.string().min(1),
+  host: z.string().min(1),
+  accountLabel: z.string().min(1).nullable(),
+  profileLabel: z.string().min(1).nullable(),
+  secretRefId: z.string().min(1).nullable(),
+  state: z.enum(['connected', 'disconnected', 'error']),
+  lastVerifiedAt: z.string().min(1).nullable(),
+});
+
+const githubConnectionGetSchema = z.object({ workspaceId: z.string().min(1), adapterId: z.string().min(1), host: z.string().min(1) });
+const githubConnectionListSchema = z.object({ workspaceId: z.string().min(1) });
+
 export async function handleStorageRequest(storage: Storage, request: StorageRequest): Promise<unknown> {
   const method = request.method as StorageMethod;
   switch (method) {
@@ -545,6 +580,34 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
       const terminalSessions = storage.terminalSessions.reconcileOrphanedSessions(now);
       const devProcesses = storage.devProcesses.reconcileOrphanedProcesses(now);
       return { terminalSessions, devProcesses };
+    }
+
+    case 'githubSecretRef.upsert': {
+      const input = githubSecretRefUpsertSchema.parse(request.payload);
+      const row: SecretRefRow = storage.secretRefs.create(input);
+      return row;
+    }
+
+    case 'githubSecretRef.delete': {
+      const input = githubSecretRefDeleteSchema.parse(request.payload);
+      storage.secretRefs.delete(input.id);
+      return undefined;
+    }
+
+    case 'githubConnection.upsert': {
+      const input = githubConnectionUpsertSchema.parse(request.payload);
+      const row: ServiceConnectionRow = storage.serviceConnections.upsert(input);
+      return row;
+    }
+
+    case 'githubConnection.get': {
+      const input = githubConnectionGetSchema.parse(request.payload);
+      return storage.serviceConnections.findByWorkspaceAdapterHost(input.workspaceId, input.adapterId, input.host);
+    }
+
+    case 'githubConnection.list': {
+      const input = githubConnectionListSchema.parse(request.payload);
+      return storage.serviceConnections.listByWorkspace(input.workspaceId);
     }
 
     default: {
