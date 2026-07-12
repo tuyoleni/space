@@ -154,8 +154,13 @@ export class HistoryStore {
     this.commits.push(...newCommits);
     this.rows.push(...this.laneLayout.layout(newCommits));
     if (newCommits.length < this.pageSize) {
-      this.fullyIndexed = true;
+      // Persist before flipping the flag: callers may treat `isFullyIndexed`
+      // becoming true as a signal that the disk cache is now safe to rely
+      // on (e.g. this store's own tests), so the write must be durable
+      // first — otherwise there's a window where the flag is true but the
+      // cache file doesn't exist yet.
       await this.persistToCache();
+      this.fullyIndexed = true;
     }
   }
 
