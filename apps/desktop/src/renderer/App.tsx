@@ -8,6 +8,8 @@ import type {
   TrustDecision,
   WorkspaceSummary,
 } from '@space/contracts';
+import { ActivityGrid } from './ActivityGrid';
+import { GitPanel } from './GitPanel';
 import { TerminalPanel } from './TerminalPanel';
 
 /**
@@ -27,6 +29,7 @@ export function App() {
   const [detections, setDetections] = useState<Record<string, ProjectDetectionReport>>({});
   const [devServers, setDevServers] = useState<Record<string, DevProcessInfo[]>>({});
   const [openTerminal, setOpenTerminal] = useState<Record<string, TerminalSessionInfo>>({});
+  const [openGitPanel, setOpenGitPanel] = useState<Record<string, boolean>>({});
 
   const [createName, setCreateName] = useState('');
   const [createTemplateId, setCreateTemplateId] = useState('');
@@ -219,6 +222,10 @@ export function App() {
     });
   }
 
+  function handleToggleGitPanel(project: Project): void {
+    setOpenGitPanel((prev) => ({ ...prev, [project.id]: !prev[project.id] }));
+  }
+
   function handleCloseTerminal(project: Project): void {
     const session = openTerminal[project.id];
     if (!session) {
@@ -382,6 +389,11 @@ export function App() {
                             Open terminal
                           </button>
                         )}
+                        {project.repositoryRoot && (
+                          <button type="button" disabled={busy} onClick={() => handleToggleGitPanel(project)}>
+                            {openGitPanel[project.id] ? 'Hide Git' : 'Git'}
+                          </button>
+                        )}
                       </div>
                       {detection && (
                         <ul style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
@@ -397,6 +409,7 @@ export function App() {
                           <TerminalPanel session={session} />
                         </div>
                       )}
+                      {openGitPanel[project.id] && project.repositoryRoot && <GitPanel project={project} />}
                     </li>
                   );
                 })}
@@ -405,6 +418,8 @@ export function App() {
           </>
         )}
       </section>
+
+      {activeWorkspace && <ActivityGrid workspaceId={activeWorkspace.id} />}
 
       {error && <p role="alert">{error}</p>}
     </main>
