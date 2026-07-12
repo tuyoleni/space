@@ -7,6 +7,10 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet for @space/terminal\""
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@space/workspace-runner": "^0.1.0",
+    "node-pty": "^1.1.0"
   }
 }

@@ -7,4 +7,8 @@
  *
  * Populated during M4 (Phase 3: project and terminal foundation).
  */
-export {};
+export * from './session';
+export * from './protocol';
+export * from './backpressure';
+export * from './pty-host';
+export * from './node-pty-spawner';
