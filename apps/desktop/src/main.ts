@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { runP0ASpike } from './spikes/p0a-runner';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -99,6 +100,10 @@ function applyStrictContentSecurityPolicy(): void {
 }
 
 app.on('ready', () => {
+  if (process.env.SPACE_RUN_P0A_SPIKE === '1') {
+    void runP0ASpike();
+    return;
+  }
   applyStrictContentSecurityPolicy();
   createWindow();
 });

@@ -11,6 +11,7 @@
     "start": "npm run start --workspace=apps/desktop",
     "package": "npm run package --workspace=apps/desktop",
     "make": "npm run make --workspace=apps/desktop",
+    "spike:p0a": "npm run spike:p0a --workspace=apps/desktop",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",

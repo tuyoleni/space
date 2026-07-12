@@ -11,7 +11,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "spike:p0a": "cross-env SPACE_RUN_P0A_SPIKE=1 electron-forge start"
   },
   "keywords": [],
   "author": "tuyoleni",
@@ -24,12 +25,14 @@
     "@electron-forge/plugin-fuses": "^7.11.2",
     "@electron-forge/plugin-vite": "^7.11.2",
     "@electron/fuses": "^1.8.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "cross-env": "^10.1.0",
     "electron": "43.1.0",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -37,7 +40,9 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "electron-squirrel-startup": "^1.0.1",
+    "node-pty": "^1.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   }
