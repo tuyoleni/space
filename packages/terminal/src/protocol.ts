@@ -12,6 +12,15 @@ export interface TerminalCreateRequest {
   readonly projectId: string | null;
   /** Overrides the platform default shell (TERM-001) when set. */
   readonly shell?: string;
+  /**
+   * Arguments for `shell` (defaults to none — an interactive login shell).
+   * The one non-terminal use of this host so far is GH-001's `gh auth
+   * login`, run in a real PTY by setting `shell: 'gh'` with these args
+   * (spec 14.3) — reusing this host rather than a second PTY
+   * implementation. Never renderer-supplied: only a privileged
+   * main-process handler builds this array.
+   */
+  readonly args?: readonly string[];
   readonly cwd: string;
   /** Final environment, already built by the Workspace Process Runner (TERM-003) — never raw process.env. */
   readonly env: Readonly<Record<string, string>>;

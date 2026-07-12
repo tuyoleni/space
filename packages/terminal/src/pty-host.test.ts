@@ -96,6 +96,11 @@ describe('PtyHost', () => {
     expect(spawner).toHaveBeenCalledWith('/bin/bash', [], expect.anything());
   });
 
+  it('passes explicit args through to the spawner (reused for GH-001\'s gh auth login, not just interactive shells)', () => {
+    host.create(baseRequest({ shell: 'gh', args: ['auth', 'login', '--hostname', 'github.com'] }), 'darwin');
+    expect(spawner).toHaveBeenCalledWith('gh', ['auth', 'login', '--hostname', 'github.com'], expect.anything());
+  });
+
   it('flushes coalesced output as a single event per flush interval', async () => {
     const session = host.create(baseRequest());
     lastPty.emitData('hello ');

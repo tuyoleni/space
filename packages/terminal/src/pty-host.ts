@@ -91,7 +91,7 @@ export class PtyHost {
 
   create(request: TerminalCreateRequest, platform: NodeJS.Platform = process.platform): TerminalSessionInfo {
     const shell = request.shell ?? defaultShellForPlatform(platform, request.env['SHELL']);
-    const pty = this.options.spawner(shell, [], {
+    const pty = this.options.spawner(shell, request.args ?? [], {
       cwd: request.cwd,
       env: request.env,
       cols: request.cols,
