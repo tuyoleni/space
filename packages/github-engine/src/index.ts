@@ -16,3 +16,5 @@ export * from './setup-git';
 export * from './repository';
 export * from './pull-requests';
 export * from './checks';
+export * from './workflow-metadata';
+export * from './actions';
