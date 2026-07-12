@@ -8,4 +8,4 @@
  *
  * Populated during M2 (secure application foundation).
  */
-export {};
+export * from './environment';

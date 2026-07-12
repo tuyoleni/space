@@ -7,7 +7,8 @@
  * through. Renderer code may request approved operations; it must never
  * submit arbitrary shell text.
  *
- * Populated during M2 (secure application foundation) and exercised by the
- * P0-C technical spike (M1).
+ * Core seeded by the P0-C spike; expanded in M2.
  */
-export {};
+export * from './types';
+export * from './redaction';
+export * from './runner';
