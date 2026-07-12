@@ -7,4 +7,6 @@
  *
  * Populated during M5 (Phase 4: complete local Git).
  */
-export {};
+export * from './types';
+export * from './aggregate';
+export * from './from-operation';
