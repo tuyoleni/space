@@ -74,17 +74,18 @@ describe('migrations (spec section 23.3)', () => {
     const db = createStorage(dbPath);
     const migrations: readonly Migration[] = [
       { version: 1, name: 'init', sql: '' }, // already applied, filtered out
-      { version: 2, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
-      { version: 3, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
+      { version: 2, name: 'bootstrap', sql: '' }, // already applied, filtered out
+      { version: 3, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
+      { version: 4, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
     ];
 
-    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 3.*rolled back/);
+    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 4.*rolled back/);
 
-    // version 2 committed (its own transaction succeeded before version 3 failed)
+    // version 3 committed (its own transaction succeeded before version 4 failed)
     const applied = db.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{
       version: number;
     }>;
-    expect(applied.map((r) => r.version)).toEqual([1, 2]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3]);
     expect(
       db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ok_table'").get(),
     ).toBeTruthy();

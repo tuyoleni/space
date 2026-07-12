@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import type Database from 'better-sqlite3';
 import { MIGRATION_0001_INIT } from './schema/0001_init';
+import { MIGRATION_0002_BOOTSTRAP } from './schema/0002_bootstrap';
 
 export interface Migration {
   readonly version: number;
@@ -18,6 +19,7 @@ export interface Migration {
 
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'init', sql: MIGRATION_0001_INIT },
+  { version: 2, name: 'bootstrap', sql: MIGRATION_0002_BOOTSTRAP },
 ];
 
 function ensureMigrationsTable(db: Database.Database): void {

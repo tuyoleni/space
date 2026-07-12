@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { openDatabase } from './database';
+import { BootstrapRepository } from './repositories/bootstrap-repository';
 import { OperationRepository } from './repositories/operation-repository';
 import { ProjectRepository } from './repositories/project-repository';
 import { WorkspaceRepository } from './repositories/workspace-repository';
@@ -9,6 +10,7 @@ export interface Storage {
   readonly workspaces: WorkspaceRepository;
   readonly projects: ProjectRepository;
   readonly operations: OperationRepository;
+  readonly bootstrap: BootstrapRepository;
   close(): void;
 }
 
@@ -24,6 +26,7 @@ export function createStorage(dbPath: string): Storage {
     workspaces: new WorkspaceRepository(db),
     projects: new ProjectRepository(db),
     operations: new OperationRepository(db),
+    bootstrap: new BootstrapRepository(db),
     close: () => db.close(),
   };
 }

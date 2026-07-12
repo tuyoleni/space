@@ -13,4 +13,5 @@ export * from './migrations';
 export * from './repositories/workspace-repository';
 export * from './repositories/project-repository';
 export * from './repositories/operation-repository';
+export * from './repositories/bootstrap-repository';
 export * from './receipts';
