@@ -19,10 +19,16 @@ export interface GitCommandResult {
   readonly stderr: string;
 }
 
-/** Runs `git <args>`. Must never be invoked with `shell: true` (spec 25.3.2). */
+/**
+ * Runs `git <args>`. Must never be invoked with `shell: true` (spec
+ * 25.3.2). `input`, when supplied, is written to the child's stdin and the
+ * stream closed — the mechanism commit messages, generated patches, and
+ * PR bodies use to reach git without ever becoming a shell-escaped string
+ * (spec 11.7, 21.3).
+ */
 export type GitExecutor = (
   args: readonly string[],
-  options?: { readonly cwd?: string; readonly timeoutMs?: number },
+  options?: { readonly cwd?: string; readonly timeoutMs?: number; readonly input?: string },
 ) => Promise<GitCommandResult>;
 
 export interface CloneRepositoryInput {

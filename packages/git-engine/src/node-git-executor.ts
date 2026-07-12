@@ -13,13 +13,18 @@ export function createNodeGitExecutor(gitExecutablePath = 'git'): GitExecutor {
       const child = spawn(gitExecutablePath, [...args], {
         cwd: options?.cwd,
         shell: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
       let stdout = '';
       let stderr = '';
       const timeout = options?.timeoutMs
         ? setTimeout(() => child.kill('SIGTERM'), options.timeoutMs)
         : undefined;
+
+      if (options?.input !== undefined) {
+        child.stdin?.write(options.input);
+      }
+      child.stdin?.end();
 
       child.stdout?.on('data', (chunk: Buffer) => {
         stdout += chunk.toString('utf-8');
