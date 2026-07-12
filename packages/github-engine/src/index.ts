@@ -5,7 +5,10 @@
  * GitHub CLI is the primary GitHub integration in V1 — this package must
  * not depend on a hypothetical GitHub CLI workspace feature.
  *
- * Populated during M6 (Phase 5: GitHub workflow), with credential strategy
- * decided by ADR-002 after the P0-B spike (M1).
+ * Built in M6 (Phase 5: GitHub workflow), with the section 5.6 credential
+ * fallback design implemented per ADR-002.
  */
-export {};
+export * from './executor';
+export * from './node-gh-executor';
+export * from './json';
+export * from './auth';
