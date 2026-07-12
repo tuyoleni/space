@@ -7,6 +7,9 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet for @space/environment\""
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@space/workspace-runner": "^0.1.0"
   }
 }
