@@ -1,0 +1,112 @@
+import { describe, expect, it, vi } from 'vitest';
+import { RepositoryOperationQueue } from './queue';
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('RepositoryOperationQueue.enqueueMutating', () => {
+  it('serialises mutating operations for the same repository in order', async () => {
+    const queue = new RepositoryOperationQueue();
+    const order: number[] = [];
+    const first = deferred<void>();
+
+    const p1 = queue.enqueueMutating('repo-a', async () => {
+      await first.promise;
+      order.push(1);
+    });
+    const p2 = queue.enqueueMutating('repo-a', async () => {
+      order.push(2);
+    });
+
+    // p2's operation must not have started yet — it is queued behind p1.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual([]);
+
+    first.resolve();
+    await Promise.all([p1, p2]);
+    expect(order).toEqual([1, 2]);
+  });
+
+  it('runs operations for different repositories independently (per-repository lock, not one global lock)', async () => {
+    const queue = new RepositoryOperationQueue();
+    const order: string[] = [];
+    const blockA = deferred<void>();
+
+    const pA = queue.enqueueMutating('repo-a', async () => {
+      await blockA.promise;
+      order.push('a');
+    });
+    const pB = queue.enqueueMutating('repo-b', async () => {
+      order.push('b');
+    });
+
+    await pB;
+    expect(order).toEqual(['b']);
+    blockA.resolve();
+    await pA;
+    expect(order).toEqual(['b', 'a']);
+  });
+
+  it('continues the queue for a repository after a prior operation fails, and rejects with the real error', async () => {
+    const queue = new RepositoryOperationQueue();
+    const failing = queue.enqueueMutating('repo-a', async () => {
+      throw new Error('boom');
+    });
+    await expect(failing).rejects.toThrow('boom');
+
+    const next = await queue.enqueueMutating('repo-a', async () => 'ok');
+    expect(next).toBe('ok');
+  });
+});
+
+describe('RepositoryOperationQueue.coalesceStatusRefresh', () => {
+  it('shares one in-flight status refresh across concurrent callers for the same repository', async () => {
+    const queue = new RepositoryOperationQueue();
+    const operation = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return 'status';
+    });
+
+    const [a, b, c] = await Promise.all([
+      queue.coalesceStatusRefresh('repo-a', operation),
+      queue.coalesceStatusRefresh('repo-a', operation),
+      queue.coalesceStatusRefresh('repo-a', operation),
+    ]);
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect([a, b, c]).toEqual(['status', 'status', 'status']);
+  });
+
+  it('runs a fresh refresh once the previous one has completed', async () => {
+    const queue = new RepositoryOperationQueue();
+    const operation = vi.fn(async () => 'status');
+
+    await queue.coalesceStatusRefresh('repo-a', operation);
+    await queue.coalesceStatusRefresh('repo-a', operation);
+
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces independently per repository', async () => {
+    const queue = new RepositoryOperationQueue();
+    const opA = vi.fn(async () => 'a');
+    const opB = vi.fn(async () => 'b');
+
+    await Promise.all([
+      queue.coalesceStatusRefresh('repo-a', opA),
+      queue.coalesceStatusRefresh('repo-a', opA),
+      queue.coalesceStatusRefresh('repo-b', opB),
+    ]);
+
+    expect(opA).toHaveBeenCalledTimes(1);
+    expect(opB).toHaveBeenCalledTimes(1);
+  });
+});
