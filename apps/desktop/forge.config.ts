@@ -104,6 +104,14 @@ const config: ForgeConfig = {
           config: 'vite.main.config.ts',
           target: 'main',
         },
+        {
+          // Storage worker (ADR-003, spec sections 20.2.4, 23.1): the only
+          // process that opens SQLite. Runs as a real utility process, not
+          // bundled into main/preload.
+          entry: 'src/main/storage-worker.ts',
+          config: 'vite.main.config.ts',
+          target: 'main',
+        },
       ],
       renderer: [
         {

@@ -8,5 +8,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet for @space/contracts\""
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
   }
 }

@@ -7,18 +7,24 @@
     "packages/*"
   ],
   "scripts": {
+    "predev": "npm run rebuild:electron --silent",
     "dev": "npm run start --workspace=apps/desktop",
+    "prestart": "npm run rebuild:electron --silent",
     "start": "npm run start --workspace=apps/desktop",
     "package": "npm run package --workspace=apps/desktop",
     "make": "npm run make --workspace=apps/desktop",
     "spike:p0a": "npm run spike:p0a --workspace=apps/desktop",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "pretest": "npm run rebuild:node --silent",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "rebuild:node": "npm rebuild better-sqlite3",
+    "rebuild:electron": "electron-rebuild -v 43.1.0 -m . -f -w better-sqlite3"
   },
   "license": "UNLICENSED",
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "typescript": "^5.4.5",
     "vitest": "^2.1.9"
   }

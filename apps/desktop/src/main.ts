@@ -1,7 +1,10 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import type { TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
+import { registerIpcHandlers } from './main/ipc';
+import { StorageClient } from './main/storage-client';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -9,6 +12,26 @@ if (started) {
 }
 
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['https:', 'http:', 'mailto:']);
+
+// Single trusted application window (spec sections 20.3, 22.1, 25.3.1).
+// webContentsId is filled in once the window exists; every IPC handler
+// checks against this before doing anything else.
+const trustedSender: { webContentsId: number; allowedOriginPrefixes: readonly string[] } = {
+  webContentsId: -1,
+  allowedOriginPrefixes:
+    typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === 'string' ? [MAIN_WINDOW_VITE_DEV_SERVER_URL] : ['file://'],
+};
+
+let storageClient: StorageClient | null = null;
+let handlersRegistered = false;
+
+function startStorageWorker(): StorageClient {
+  const dbPath = path.join(app.getPath('userData'), 'space.sqlite');
+  const workerPath = path.join(__dirname, 'storage-worker.js');
+  const client = new StorageClient(workerPath, dbPath);
+  client.start();
+  return client;
+}
 
 /**
  * Every production window must use these defaults (spec section 20.3).
@@ -28,6 +51,8 @@ const createWindow = () => {
       allowRunningInsecureContent: false,
     },
   });
+
+  trustedSender.webContentsId = mainWindow.webContents.id;
 
   // Deny all permission requests by default; specific approved flows will
   // request narrowly-scoped permissions explicitly as features land.
@@ -79,21 +104,48 @@ async function openExternalIfSafe(url: string): Promise<void> {
   }
 }
 
-function applyStrictContentSecurityPolicy(): void {
+/**
+ * The packaged app always gets the fully strict policy (spec section 20.3).
+ * The Vite dev server needs a relaxation of `script-src`/`connect-src` for
+ * its inline react-refresh preamble and HMR websocket — without it, React
+ * throws "@vitejs/plugin-react can't detect preamble" on every dev launch.
+ * That relaxation never ships: MAIN_WINDOW_VITE_DEV_SERVER_URL is only
+ * defined by the dev server, never in a packaged build.
+ */
+function contentSecurityPolicy(): string {
+  const devServerUrl =
+    typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === 'string' ? MAIN_WINDOW_VITE_DEV_SERVER_URL : null;
+  if (!devServerUrl) {
+    return (
+      "default-src 'self'; " +
+      "script-src 'self'; " +
+      "style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; " +
+      "connect-src 'self'; " +
+      "object-src 'none'; " +
+      "base-uri 'none'; " +
+      "frame-src 'none';"
+    );
+  }
+  const wsUrl = devServerUrl.replace(/^http/, 'ws');
+  return (
+    `default-src 'self' ${devServerUrl}; ` +
+    `script-src 'self' 'unsafe-inline' ${devServerUrl}; ` +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; " +
+    `connect-src 'self' ${devServerUrl} ${wsUrl}; ` +
+    "object-src 'none'; " +
+    "base-uri 'none'; " +
+    "frame-src 'none';"
+  );
+}
+
+function applyContentSecurityPolicy(): void {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-            "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data:; " +
-            "connect-src 'self'; " +
-            "object-src 'none'; " +
-            "base-uri 'none'; " +
-            "frame-src 'none';",
-        ],
+        'Content-Security-Policy': [contentSecurityPolicy()],
       },
     });
   });
@@ -104,8 +156,21 @@ app.on('ready', () => {
     void runP0ASpike();
     return;
   }
-  applyStrictContentSecurityPolicy();
+  applyContentSecurityPolicy();
+
+  const client = startStorageWorker();
+  storageClient = client;
+  if (!handlersRegistered) {
+    registerIpcHandlers(trustedSender as TrustedSender, client);
+    handlersRegistered = true;
+  }
+
   createWindow();
+});
+
+app.on('before-quit', () => {
+  storageClient?.stop();
+  storageClient = null;
 });
 
 app.on('window-all-closed', () => {
