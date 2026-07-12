@@ -109,4 +109,30 @@ export class ProjectRepository {
     }
     return created;
   }
+
+  /** PRJ-003/ADR-006: the only place `trust_state` is ever written after creation. */
+  updateTrustState(id: string, trustState: ProjectTrustState, updatedAt: string): ProjectRow {
+    this.db.prepare('UPDATE projects SET trust_state = ?, updated_at = ? WHERE id = ?').run(
+      trustState,
+      updatedAt,
+      id,
+    );
+    const updated = this.findById(id);
+    if (!updated) {
+      throw new Error(`Project ${id} vanished while updating trust state`);
+    }
+    return updated;
+  }
+
+  /** PRJ-002: re-detection refreshes the flattened `detected_type_json` snapshot on the row. */
+  updateDetectedTypes(id: string, detectedTypes: readonly string[], updatedAt: string): ProjectRow {
+    this.db
+      .prepare('UPDATE projects SET detected_type_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(detectedTypes), updatedAt, id);
+    const updated = this.findById(id);
+    if (!updated) {
+      throw new Error(`Project ${id} vanished while updating detected types`);
+    }
+    return updated;
+  }
 }

@@ -1,8 +1,10 @@
 import type Database from 'better-sqlite3';
 import { openDatabase } from './database';
 import { BootstrapRepository } from './repositories/bootstrap-repository';
+import { DevProcessRepository } from './repositories/dev-process-repository';
 import { OperationRepository } from './repositories/operation-repository';
 import { ProjectRepository } from './repositories/project-repository';
+import { TerminalSessionRepository } from './repositories/terminal-session-repository';
 import { WorkspaceRepository } from './repositories/workspace-repository';
 
 export interface Storage {
@@ -11,6 +13,8 @@ export interface Storage {
   readonly projects: ProjectRepository;
   readonly operations: OperationRepository;
   readonly bootstrap: BootstrapRepository;
+  readonly terminalSessions: TerminalSessionRepository;
+  readonly devProcesses: DevProcessRepository;
   close(): void;
 }
 
@@ -27,6 +31,8 @@ export function createStorage(dbPath: string): Storage {
     projects: new ProjectRepository(db),
     operations: new OperationRepository(db),
     bootstrap: new BootstrapRepository(db),
+    terminalSessions: new TerminalSessionRepository(db),
+    devProcesses: new DevProcessRepository(db),
     close: () => db.close(),
   };
 }

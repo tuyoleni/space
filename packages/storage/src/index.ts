@@ -14,4 +14,6 @@ export * from './repositories/workspace-repository';
 export * from './repositories/project-repository';
 export * from './repositories/operation-repository';
 export * from './repositories/bootstrap-repository';
+export * from './repositories/terminal-session-repository';
+export * from './repositories/dev-process-repository';
 export * from './receipts';
