@@ -71,7 +71,14 @@ function toTemplateSummary(template: (typeof BUILT_IN_PROJECT_TEMPLATES)[number]
   };
 }
 
-async function recordOperation(
+/**
+ * Records a completed operation's receipt (spec section 33) — exported so
+ * git-handlers.ts (M5) reuses the exact same call shape rather than a
+ * parallel copy, since both live outside the storage worker and both need
+ * the receipt/activity hook `operation.recordCompleted` triggers in
+ * storage-handlers.ts.
+ */
+export async function recordOperation(
   storage: StorageCaller,
   input: {
     readonly workspaceId: string;
@@ -82,6 +89,8 @@ async function recordOperation(
     readonly state: 'succeeded' | 'failed';
     readonly exitCode: number | null;
     readonly partialState?: unknown;
+    /** e.g. a commit SHA or branch name (spec 17.3's "links to the relevant commit"). */
+    readonly subjectRef?: string | null;
   },
 ): Promise<void> {
   await storage.call('operation.recordCompleted', {
@@ -95,6 +104,7 @@ async function recordOperation(
     state: input.state,
     exitCode: input.exitCode,
     partialState: input.partialState,
+    subjectRef: input.subjectRef ?? null,
   });
 }
 

@@ -24,6 +24,7 @@ export type StorageMethod =
   | 'devProcess.markStopped'
   | 'devProcess.list'
   | 'operation.recordCompleted'
+  | 'activity.listRange'
   | 'system.reconcileOrphans';
 
 export interface StorageRequest {

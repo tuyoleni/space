@@ -10,6 +10,7 @@
     "test": "vitest run src"
   },
   "dependencies": {
+    "@space/activity": "^0.1.0",
     "better-sqlite3": "^12.11.1"
   },
   "devDependencies": {

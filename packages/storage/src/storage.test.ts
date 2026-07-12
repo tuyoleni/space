@@ -76,17 +76,18 @@ describe('migrations (spec section 23.3)', () => {
       { version: 1, name: 'init', sql: '' }, // already applied, filtered out
       { version: 2, name: 'bootstrap', sql: '' }, // already applied, filtered out
       { version: 3, name: 'terminal_and_dev_process', sql: '' }, // already applied, filtered out
-      { version: 4, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
-      { version: 5, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
+      { version: 4, name: 'activity', sql: '' }, // already applied, filtered out
+      { version: 5, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
+      { version: 6, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
     ];
 
-    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 5.*rolled back/);
+    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 6.*rolled back/);
 
-    // version 4 committed (its own transaction succeeded before version 5 failed)
+    // version 5 committed (its own transaction succeeded before version 6 failed)
     const applied = db.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{
       version: number;
     }>;
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
     expect(
       db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ok_table'").get(),
     ).toBeTruthy();
@@ -392,5 +393,72 @@ describe('withReceipt (spec section 33: every mutating command has a receipt)', 
     expect(operations).toHaveLength(1);
     expect(operations[0]?.state).toBe('failed');
     expect(operations[0]?.partialState).toEqual({ error: 'disk full' });
+  });
+});
+
+describe('ActivityRepository (spec 23.2.9, section 17)', () => {
+  it('records an activity event and reads it back with metadata round-tripped', () => {
+    makeWorkspace(storage, 'ws-a');
+    const recorded = storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-07-12T10:00:00.000Z',
+      subjectRef: 'abc123',
+      summary: 'Commit "fix bug"',
+      weight: 3,
+      metadata: { sha: 'abc123' },
+    });
+    expect(recorded.id).toBeTruthy();
+    expect(recorded.metadata).toEqual({ sha: 'abc123' });
+
+    const found = storage.activity.listByWorkspaceInRange('ws-a', {
+      fromInclusive: '2026-07-01T00:00:00.000Z',
+      toInclusive: '2026-07-31T23:59:59.999Z',
+    });
+    expect(found).toHaveLength(1);
+    expect(found[0]?.eventType).toBe('commit');
+  });
+
+  it('scopes listByWorkspaceInRange by both workspace and the requested date range', () => {
+    makeWorkspace(storage, 'ws-a');
+    makeWorkspace(storage, 'ws-b');
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-07-05T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'in range, ws-a',
+      weight: 1,
+      metadata: null,
+    });
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-08-05T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'out of range',
+      weight: 1,
+      metadata: null,
+    });
+    storage.activity.record({
+      workspaceId: 'ws-b',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-07-05T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'other workspace',
+      weight: 1,
+      metadata: null,
+    });
+
+    const found = storage.activity.listByWorkspaceInRange('ws-a', {
+      fromInclusive: '2026-07-01T00:00:00.000Z',
+      toInclusive: '2026-07-31T23:59:59.999Z',
+    });
+    expect(found).toHaveLength(1);
+    expect(found[0]?.summary).toBe('in range, ws-a');
   });
 });

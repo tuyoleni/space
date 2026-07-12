@@ -33,18 +33,54 @@ import {
   type Workspace,
   type WorkspaceSummary,
 } from '@space/contracts';
+import { activityEventFromOperation } from '@space/activity';
 import { applyTrustDecision } from '@space/domain';
 import { detectPackageManager, detectProject, detectedTypesFromReport, nodeProjectDetectionFs } from '@space/environment';
 import {
   withReceipt,
   type DevProcessRow,
   type OperationRisk,
+  type OperationRow,
   type ProjectRow,
+  type ReceiptContext,
   type Storage,
   type TerminalSessionRow,
   type WorkspaceRow,
 } from '@space/storage';
 import type { StorageMethod, StorageRequest } from './storage-protocol';
+
+/**
+ * The single hook point that turns a completed Operation receipt into an
+ * activity event (spec 17.1 ACT-001), so every call site that already
+ * writes a receipt gets activity recording "for free" — see
+ * `@space/activity`'s `activityEventFromOperation` for the type mapping.
+ * A no-op for operation types with no activity mapping.
+ */
+function recordActivityForOperation(storage: Storage, operation: OperationRow, subjectRef: string | null = null): void {
+  const event = activityEventFromOperation({
+    type: operation.type,
+    workspaceId: operation.workspaceId,
+    projectId: operation.projectId,
+    humanSummary: operation.humanSummary,
+    endedAt: operation.endedAt,
+    state: operation.state,
+    subjectRef,
+  });
+  if (event) {
+    storage.activity.record(event);
+  }
+}
+
+async function withReceiptAndActivity<T>(
+  storage: Storage,
+  context: ReceiptContext,
+  action: () => Promise<T> | T,
+  subjectRef: string | null = null,
+): Promise<{ result: T; operation: OperationRow }> {
+  const receipted = await withReceipt(storage.operations, context, action);
+  recordActivityForOperation(storage, receipted.operation, subjectRef);
+  return receipted;
+}
 
 function toWorkspaceSummary(row: WorkspaceRow): WorkspaceSummary {
   return { id: row.id, name: row.name, iconToken: row.iconToken, active: row.active };
@@ -151,8 +187,8 @@ async function addProject(
   const now = new Date().toISOString();
   const detectedTypes = await detectProjectTypes(canonicalPath);
 
-  const { result } = await withReceipt(
-    storage.operations,
+  const { result } = await withReceiptAndActivity(
+    storage,
     {
       workspaceId: input.workspaceId,
       projectId: null,
@@ -253,6 +289,12 @@ const devProcessMarkStoppedSchema = z.object({
 
 const devProcessListSchema = z.object({ projectId: z.string().min(1) });
 
+const activityListRangeSchema = z.object({
+  workspaceId: z.string().min(1),
+  fromInclusive: z.string().min(1),
+  toInclusive: z.string().min(1),
+});
+
 const operationRecordCompletedSchema = z.object({
   workspaceId: z.string().min(1).nullable(),
   projectId: z.string().min(1).nullable(),
@@ -264,6 +306,8 @@ const operationRecordCompletedSchema = z.object({
   state: z.enum(['succeeded', 'failed', 'cancelled', 'partially_succeeded']),
   exitCode: z.number().int().nullable(),
   partialState: z.unknown().optional(),
+  /** e.g. a commit SHA or branch name — spec 17.3's "links to the relevant commit". */
+  subjectRef: z.string().min(1).nullable().optional(),
 });
 
 export async function handleStorageRequest(storage: Storage, request: StorageRequest): Promise<unknown> {
@@ -275,7 +319,7 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'workspace.create': {
       const input = createWorkspaceInputSchema.parse(request.payload);
       const now = new Date().toISOString();
-      const { result } = await withReceipt(
+      const { result, operation } = await withReceipt(
         storage.operations,
         {
           workspaceId: null,
@@ -294,14 +338,29 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
             updatedAt: now,
           }),
       );
+      // The one exception to recordActivityForOperation's generic hook: the
+      // receipt is necessarily recorded with workspaceId: null (the
+      // workspace doesn't exist until the action inside it completes), so
+      // there is no operation.workspaceId to derive an event from — the
+      // newly created workspace's own id has to be supplied explicitly.
+      storage.activity.record({
+        workspaceId: result.id,
+        projectId: null,
+        eventType: 'workspace-created',
+        occurredAt: operation.endedAt ?? now,
+        subjectRef: null,
+        summary: operation.humanSummary,
+        weight: 1,
+        metadata: null,
+      });
       return toWorkspace(result);
     }
 
     case 'workspace.activate': {
       const input = workspaceActivateInputSchema.parse(request.payload);
       const now = new Date().toISOString();
-      await withReceipt(
-        storage.operations,
+      await withReceiptAndActivity(
+        storage,
         {
           workspaceId: input.workspaceId,
           projectId: null,
@@ -360,6 +419,20 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
       if (!info) {
         throw new Error(`Terminal session ${row.id} was recorded without a pid`);
       }
+      // No Operation receipt exists for a terminal session (it's a stream,
+      // not a single request/response, spec 22.1) — record the "Terminal
+      // session" activity category (spec 17.1) directly from this real,
+      // observed session start instead.
+      storage.activity.record({
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        eventType: 'terminal-session',
+        occurredAt: input.startedAt,
+        subjectRef: input.id,
+        summary: `Open terminal session in "${input.cwd}"`,
+        weight: 0.5,
+        metadata: null,
+      });
       return info;
     }
 
@@ -386,8 +459,8 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'devProcess.recordStart': {
       const input = devProcessRecordStartSchema.parse(request.payload);
       const project = requireProject(storage, input.projectId);
-      const { result } = await withReceipt(
-        storage.operations,
+      const { result } = await withReceiptAndActivity(
+        storage,
         {
           workspaceId: input.workspaceId,
           projectId: input.projectId,
@@ -418,8 +491,8 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'devProcess.markStopped': {
       const input = devProcessMarkStoppedSchema.parse(request.payload);
       const existing = storage.devProcesses.findById(input.id);
-      const { result } = await withReceipt(
-        storage.operations,
+      const { result } = await withReceiptAndActivity(
+        storage,
         {
           workspaceId: existing?.workspaceId ?? null,
           projectId: existing?.projectId ?? null,
@@ -449,13 +522,22 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
         humanSummary: input.humanSummary,
         startedAt: input.startedAt,
       });
-      storage.operations.complete(id, {
+      const completed = storage.operations.complete(id, {
         state: input.state,
         endedAt: input.endedAt,
         exitCode: input.exitCode,
         partialState: input.partialState,
       });
+      recordActivityForOperation(storage, completed, input.subjectRef ?? null);
       return undefined;
+    }
+
+    case 'activity.listRange': {
+      const input = activityListRangeSchema.parse(request.payload);
+      return storage.activity.listByWorkspaceInRange(input.workspaceId, {
+        fromInclusive: input.fromInclusive,
+        toInclusive: input.toInclusive,
+      });
     }
 
     case 'system.reconcileOrphans': {
