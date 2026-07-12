@@ -4,7 +4,9 @@ import started from 'electron-squirrel-startup';
 import type { TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { registerIpcHandlers } from './main/ipc';
+import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
+import { TerminalClient } from './main/terminal-client';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -23,12 +25,21 @@ const trustedSender: { webContentsId: number; allowedOriginPrefixes: readonly st
 };
 
 let storageClient: StorageClient | null = null;
+let terminalClient: TerminalClient | null = null;
+let projectHandlers: ProjectHandlers | null = null;
 let handlersRegistered = false;
 
 function startStorageWorker(): StorageClient {
   const dbPath = path.join(app.getPath('userData'), 'space.sqlite');
   const workerPath = path.join(__dirname, 'storage-worker.js');
   const client = new StorageClient(workerPath, dbPath);
+  client.start();
+  return client;
+}
+
+function startTerminalWorker(): TerminalClient {
+  const workerPath = path.join(__dirname, 'terminal-worker.js');
+  const client = new TerminalClient(workerPath);
   client.start();
   return client;
 }
@@ -158,10 +169,19 @@ app.on('ready', () => {
   }
   applyContentSecurityPolicy();
 
-  const client = startStorageWorker();
-  storageClient = client;
+  const storage = startStorageWorker();
+  const terminal = startTerminalWorker();
+  storageClient = storage;
+  terminalClient = terminal;
+  projectHandlers = createProjectHandlers(storage);
+
+  // TERM-004/PRJ-006: live PTY/dev processes from a previous run cannot be
+  // assumed recoverable — represent them honestly as history before the
+  // renderer ever asks.
+  void storage.call('system.reconcileOrphans', undefined);
+
   if (!handlersRegistered) {
-    registerIpcHandlers(trustedSender as TrustedSender, client);
+    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers);
     handlersRegistered = true;
   }
 
@@ -169,7 +189,11 @@ app.on('ready', () => {
 });
 
 app.on('before-quit', () => {
+  projectHandlers?.stopAllDevServers();
+  terminalClient?.stop();
   storageClient?.stop();
+  projectHandlers = null;
+  terminalClient = null;
   storageClient = null;
 });
 

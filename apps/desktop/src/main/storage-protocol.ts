@@ -23,7 +23,8 @@ export type StorageMethod =
   | 'devProcess.setDetectedUrl'
   | 'devProcess.markStopped'
   | 'devProcess.list'
-  | 'operation.recordCompleted';
+  | 'operation.recordCompleted'
+  | 'system.reconcileOrphans';
 
 export interface StorageRequest {
   readonly id: string;

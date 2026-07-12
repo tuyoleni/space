@@ -35,10 +35,10 @@ import {
 } from '@space/contracts';
 import { applyTrustDecision } from '@space/domain';
 import { detectPackageManager, detectProject, detectedTypesFromReport, nodeProjectDetectionFs } from '@space/environment';
-import type { OperationRisk } from '@space/storage';
 import {
   withReceipt,
   type DevProcessRow,
+  type OperationRisk,
   type ProjectRow,
   type Storage,
   type TerminalSessionRow,
@@ -456,6 +456,13 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
         partialState: input.partialState,
       });
       return undefined;
+    }
+
+    case 'system.reconcileOrphans': {
+      const now = new Date().toISOString();
+      const terminalSessions = storage.terminalSessions.reconcileOrphanedSessions(now);
+      const devProcesses = storage.devProcesses.reconcileOrphanedProcesses(now);
+      return { terminalSessions, devProcesses };
     }
 
     default: {

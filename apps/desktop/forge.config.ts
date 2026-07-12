@@ -112,6 +112,14 @@ const config: ForgeConfig = {
           config: 'vite.main.config.ts',
           target: 'main',
         },
+        {
+          // Terminal/PTY worker (spec sections 15, 20.2.4): the only
+          // process that owns a real PTY. Runs as a real utility process,
+          // separate from storage per section 20.2.4's logical-service list.
+          entry: 'src/main/terminal-worker.ts',
+          config: 'vite.main.config.ts',
+          target: 'main',
+        },
       ],
       renderer: [
         {

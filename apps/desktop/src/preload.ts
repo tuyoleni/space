@@ -4,10 +4,15 @@
 /**
  * Exposes exactly the SpaceAPI surface (spec section 22.2) via
  * contextBridge — no `ipcRenderer`, no broad file or shell primitives, and
- * no method that resembles `runCommand(command: string)`.
+ * no method that resembles `runCommand(command: string)`. `terminal.
+ * subscribe` is the one exception to "every call is invoke/response": it
+ * listens on the push-only `terminal:event` channel and filters by
+ * sessionId, matching spec 22.2's operation.subscribe(id, listener):
+ * Unsubscribe shape — the renderer still never receives `ipcRenderer`
+ * itself, only this narrow, pre-filtered callback registration.
  */
-import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type SpaceAPI } from '@space/contracts';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { IPC_CHANNELS, type SpaceAPI, type TerminalEvent } from '@space/contracts';
 
 const spaceAPI: SpaceAPI = {
   workspace: {
@@ -20,6 +25,36 @@ const spaceAPI: SpaceAPI = {
     inspectFolder: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInspectFolder, input),
     pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickFolder),
     add: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectAdd, input),
+
+    detect: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetect, input),
+    detectPackageManager: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetectPackageManager, input),
+    trustDecision: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectTrustDecision, input),
+    listTemplates: () => ipcRenderer.invoke(IPC_CHANNELS.projectListTemplates),
+    createFromTemplate: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectCreateFromTemplate, input),
+    clone: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectClone, input),
+    installDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInstallDependencies, input),
+    pickParentDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickParentDirectory),
+  },
+  terminal: {
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalCreate, input),
+    write: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalWrite, input),
+    resize: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalResize, input),
+    dispose: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalDispose, input),
+    list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.terminalList, workspaceId),
+    subscribe: (sessionId, listener) => {
+      const handler = (_event: IpcRendererEvent, payload: TerminalEvent) => {
+        if (payload.sessionId === sessionId) {
+          listener(payload);
+        }
+      };
+      ipcRenderer.on(IPC_CHANNELS.terminalEvent, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalEvent, handler);
+    },
+  },
+  devServer: {
+    start: (input) => ipcRenderer.invoke(IPC_CHANNELS.devServerStart, input),
+    stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.devServerStop, input),
+    list: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.devServerList, projectId),
   },
 };
 
