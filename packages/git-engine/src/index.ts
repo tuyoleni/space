@@ -7,6 +7,8 @@
  * The system `git` executable is the single source of truth; no libgit2 or
  * second repository engine is introduced.
  *
- * Populated during M2 (status/init groundwork) and completed in M5.
+ * History parser and lane layout seeded by the P0-D spike; completed in M5.
  */
-export {};
+export * from './history/types';
+export * from './history/parser';
+export * from './history/lanes';
