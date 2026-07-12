@@ -19,3 +19,5 @@ export * from './checks';
 export * from './workflow-metadata';
 export * from './actions';
 export * from './issues';
+export * from './releases';
+export * from './connectivity';
