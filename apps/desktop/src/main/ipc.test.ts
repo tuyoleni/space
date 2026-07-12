@@ -10,6 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
+import type { GitHandlers } from './git-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
@@ -65,8 +66,25 @@ function setup() {
     stopDevServer: vi.fn(),
     listDevServers: vi.fn(),
   } as unknown as ProjectHandlers;
-  registerIpcHandlers(trusted, storage, terminal, projectHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, projectHandlers };
+  const gitHandlers = {
+    status: vi.fn(),
+    stage: vi.fn(),
+    unstage: vi.fn(),
+    commit: vi.fn(),
+    listBranches: vi.fn(),
+    createBranch: vi.fn(),
+    switchBranch: vi.fn(),
+    deleteBranch: vi.fn(),
+    loadHistory: vi.fn(),
+    fetch: vi.fn(),
+    pull: vi.fn(),
+    push: vi.fn(),
+    conflictState: vi.fn(),
+    continueConflict: vi.fn(),
+    abortConflict: vi.fn(),
+  } as unknown as GitHandlers;
+  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers);
+  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers };
 }
 
 function handlerFor(channel: string): Handler {
@@ -186,6 +204,74 @@ describe('registerIpcHandlers', () => {
       (projectHandlers.listDevServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
       await handlerFor(IPC_CHANNELS.devServerList)(validEvent, 'p-1');
       expect(projectHandlers.listDevServers).toHaveBeenCalledWith('p-1');
+    });
+  });
+
+  describe('git:* routed to gitHandlers, through zod validation', () => {
+    it.each([
+      [IPC_CHANNELS.gitStatus, 'status', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitStage, 'stage', { projectId: 'p-1', paths: ['a.txt'] }, { projectId: 'p-1', paths: ['a.txt'] }],
+      [IPC_CHANNELS.gitUnstage, 'unstage', { projectId: 'p-1', paths: ['a.txt'] }, { projectId: 'p-1', paths: ['a.txt'] }],
+      [IPC_CHANNELS.gitCommit, 'commit', { projectId: 'p-1', message: 'fix' }, { projectId: 'p-1', message: 'fix' }],
+      [IPC_CHANNELS.gitBranchList, 'listBranches', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [
+        IPC_CHANNELS.gitBranchCreate,
+        'createBranch',
+        { projectId: 'p-1', name: 'feature' },
+        { projectId: 'p-1', name: 'feature' },
+      ],
+      [
+        IPC_CHANNELS.gitBranchSwitch,
+        'switchBranch',
+        { projectId: 'p-1', name: 'main' },
+        { projectId: 'p-1', name: 'main' },
+      ],
+      [
+        IPC_CHANNELS.gitBranchDelete,
+        'deleteBranch',
+        { projectId: 'p-1', name: 'feature', force: true, confirmed: true },
+        { projectId: 'p-1', name: 'feature', force: true, confirmed: true },
+      ],
+      [
+        IPC_CHANNELS.gitHistoryLoad,
+        'loadHistory',
+        { projectId: 'p-1', offset: 0, count: 50 },
+        { projectId: 'p-1', offset: 0, count: 50 },
+      ],
+      [IPC_CHANNELS.gitFetch, 'fetch', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitPull, 'pull', { projectId: 'p-1', mode: 'merge' }, { projectId: 'p-1', mode: 'merge' }],
+      [
+        IPC_CHANNELS.gitPush,
+        'push',
+        { projectId: 'p-1', branch: 'main' },
+        { projectId: 'p-1', branch: 'main' },
+      ],
+      [IPC_CHANNELS.gitConflictState, 'conflictState', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitConflictContinue, 'continueConflict', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitConflictAbort, 'abortConflict', { projectId: 'p-1' }, { projectId: 'p-1' }],
+    ] as const)('routes %s to gitHandlers.%s with the parsed input', async (channel, method, input, expected) => {
+      const { gitHandlers } = setup();
+      (gitHandlers[method] as ReturnType<typeof vi.fn>).mockResolvedValue('ok');
+      const result = await handlerFor(channel)(validEvent, input);
+      expect(gitHandlers[method]).toHaveBeenCalledWith(expected);
+      expect(result).toBe('ok');
+    });
+
+    it('rejects a git:commit input that fails zod validation before reaching gitHandlers', async () => {
+      const { gitHandlers } = setup();
+      await expect(handlerFor(IPC_CHANNELS.gitCommit)(validEvent, { projectId: 'p-1', message: '' })).rejects.toThrow();
+      expect(gitHandlers.commit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('activity:listRange', () => {
+    it('routes to storage.call with the parsed input', async () => {
+      const { storageCall } = setup();
+      storageCall.mockResolvedValue([]);
+      const input = { workspaceId: 'ws-1', fromInclusive: '2026-01-01', toInclusive: '2026-01-31' };
+      const result = await handlerFor(IPC_CHANNELS.activityListRange)(validEvent, input);
+      expect(storageCall).toHaveBeenCalledWith('activity.listRange', input);
+      expect(result).toEqual([]);
     });
   });
 

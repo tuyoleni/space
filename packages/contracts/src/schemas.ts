@@ -118,3 +118,80 @@ export const startDevServerInputSchema = z.object({
 export const stopDevServerInputSchema = z.object({
   devProcessId: z.string().min(1),
 });
+
+// ---------------------------------------------------------------------------
+// M5: Git (GIT-001..009, spec sections 11-12)
+// ---------------------------------------------------------------------------
+
+export const gitProjectInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export const gitStageInputSchema = z.object({
+  projectId: z.string().min(1),
+  paths: z.array(z.string().min(1)).min(1),
+});
+
+export const gitCommitInputSchema = z.object({
+  projectId: z.string().min(1),
+  message: z.string().trim().min(1).max(10_000),
+});
+
+export const gitCreateBranchInputSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().trim().min(1).max(250),
+  fromCommit: z.string().min(1).optional(),
+});
+
+export const gitSwitchBranchInputSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().trim().min(1).max(250),
+});
+
+export const gitDeleteBranchInputSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().trim().min(1).max(250),
+  force: z.boolean(),
+  confirmed: z.boolean(),
+});
+
+export const gitHistoryLoadInputSchema = z.object({
+  projectId: z.string().min(1),
+  offset: z.number().int().min(0),
+  count: z.number().int().min(1).max(5000),
+});
+
+export const gitFetchInputSchema = z.object({
+  projectId: z.string().min(1),
+  remoteName: z.string().trim().min(1).max(250).optional(),
+});
+
+const gitPullModeSchema = z.enum(['merge', 'rebase']);
+
+export const gitPullInputSchema = z.object({
+  projectId: z.string().min(1),
+  mode: gitPullModeSchema,
+  remoteName: z.string().trim().min(1).max(250).optional(),
+  branch: z.string().trim().min(1).max(250).optional(),
+});
+
+const gitForceModeSchema = z.enum(['none', 'with-lease', 'raw']);
+
+export const gitPushInputSchema = z.object({
+  projectId: z.string().min(1),
+  branch: z.string().trim().min(1).max(250),
+  remoteName: z.string().trim().min(1).max(250).optional(),
+  setUpstream: z.boolean().optional(),
+  force: gitForceModeSchema.optional(),
+  confirmed: z.boolean().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// M5: activity (spec section 17)
+// ---------------------------------------------------------------------------
+
+export const activityListRangeInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  fromInclusive: z.string().min(1),
+  toInclusive: z.string().min(1),
+});

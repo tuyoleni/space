@@ -25,6 +25,7 @@ export * from './refs/parser';
 export * from './diff/types';
 export * from './diff/parser';
 export * from './repository-state';
+export * from './node-git-dir-fs';
 export * from './repository';
 export * from './init';
 export * from './identity';

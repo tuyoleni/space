@@ -56,6 +56,26 @@ const spaceAPI: SpaceAPI = {
     stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.devServerStop, input),
     list: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.devServerList, projectId),
   },
+  git: {
+    status: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStatus, input),
+    stage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStage, input),
+    unstage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitUnstage, input),
+    commit: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitCommit, input),
+    listBranches: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchList, input),
+    createBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchCreate, input),
+    switchBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchSwitch, input),
+    deleteBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchDelete, input),
+    loadHistory: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitHistoryLoad, input),
+    fetch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitFetch, input),
+    pull: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitPull, input),
+    push: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitPush, input),
+    conflictState: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictState, input),
+    continueConflict: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictContinue, input),
+    abortConflict: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictAbort, input),
+  },
+  activity: {
+    listRange: (input) => ipcRenderer.invoke(IPC_CHANNELS.activityListRange, input),
+  },
 };
 
 contextBridge.exposeInMainWorld('space', spaceAPI);

@@ -34,6 +34,26 @@ export const IPC_CHANNELS = {
   devServerStart: 'project:devServer:start',
   devServerStop: 'project:devServer:stop',
   devServerList: 'project:devServer:list',
+
+  // M5: Git (GIT-001..009)
+  gitStatus: 'git:status',
+  gitStage: 'git:stage',
+  gitUnstage: 'git:unstage',
+  gitCommit: 'git:commit',
+  gitBranchList: 'git:branch:list',
+  gitBranchCreate: 'git:branch:create',
+  gitBranchSwitch: 'git:branch:switch',
+  gitBranchDelete: 'git:branch:delete',
+  gitHistoryLoad: 'git:history:load',
+  gitFetch: 'git:fetch',
+  gitPull: 'git:pull',
+  gitPush: 'git:push',
+  gitConflictState: 'git:conflict:state',
+  gitConflictContinue: 'git:conflict:continue',
+  gitConflictAbort: 'git:conflict:abort',
+
+  // M5: activity (spec section 17)
+  activityListRange: 'activity:listRange',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

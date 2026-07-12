@@ -267,3 +267,264 @@ export interface StartDevServerInput {
 export interface StopDevServerInput {
   readonly devProcessId: string;
 }
+
+// ---------------------------------------------------------------------------
+// M5: Git status, staging, commit, branches, history, remote, conflicts
+// (GIT-001..009, spec sections 11-12). Shapes mirror @space/git-engine's
+// status/refs/history/repository-state types field-for-field, but are
+// declared independently rather than imported — @space/contracts stays
+// free of any package that touches node:child_process (git-engine's
+// node-git-executor.ts) so it never pulls main-process-only code into the
+// renderer bundle, matching this file's existing convention of not
+// depending on @space/storage's row types either.
+// ---------------------------------------------------------------------------
+
+export type GitFileStatusCode = '.' | 'M' | 'A' | 'D' | 'R' | 'C' | 'U' | 'T';
+
+export interface GitSubmoduleState {
+  readonly isSubmodule: boolean;
+  readonly commitChanged: boolean;
+  readonly hasModifiedContent: boolean;
+  readonly hasUntrackedContent: boolean;
+}
+
+export interface GitOrdinaryStatusEntry {
+  readonly kind: 'ordinary';
+  readonly path: string;
+  readonly indexStatus: GitFileStatusCode;
+  readonly worktreeStatus: GitFileStatusCode;
+  readonly submodule: GitSubmoduleState;
+}
+
+export interface GitRenamedStatusEntry {
+  readonly kind: 'renamed-or-copied';
+  readonly path: string;
+  readonly originalPath: string;
+  readonly indexStatus: GitFileStatusCode;
+  readonly worktreeStatus: GitFileStatusCode;
+  readonly similarityScore: number;
+  readonly submodule: GitSubmoduleState;
+}
+
+export interface GitUnmergedStatusEntry {
+  readonly kind: 'unmerged';
+  readonly path: string;
+  readonly conflictCode: string;
+  readonly submodule: GitSubmoduleState;
+}
+
+export interface GitUntrackedStatusEntry {
+  readonly kind: 'untracked';
+  readonly path: string;
+}
+
+export interface GitIgnoredStatusEntry {
+  readonly kind: 'ignored';
+  readonly path: string;
+}
+
+export type GitStatusEntry =
+  | GitOrdinaryStatusEntry
+  | GitRenamedStatusEntry
+  | GitUnmergedStatusEntry
+  | GitUntrackedStatusEntry
+  | GitIgnoredStatusEntry;
+
+export interface GitBranchInfo {
+  /** null only for a brand-new repository with no commits yet. */
+  readonly headCommit: string | null;
+  readonly isInitial: boolean;
+  /** null when HEAD is detached. */
+  readonly branchName: string | null;
+  readonly detached: boolean;
+  readonly upstream: string | null;
+  readonly ahead: number | null;
+  readonly behind: number | null;
+}
+
+export type GitOperationStateKind = 'none' | 'merge' | 'rebase' | 'am' | 'cherry-pick' | 'revert' | 'bisect';
+
+export interface GitOperationState {
+  readonly kind: GitOperationStateKind;
+  readonly interactive?: boolean;
+  readonly sequencer?: boolean;
+}
+
+export interface GitStatusSummary {
+  readonly branch: GitBranchInfo;
+  readonly entries: readonly GitStatusEntry[];
+  readonly operationState: GitOperationState;
+  readonly conflictedFiles: readonly string[];
+}
+
+export interface GitProjectInput {
+  readonly projectId: string;
+}
+
+export interface GitStageInput {
+  readonly projectId: string;
+  readonly paths: readonly string[];
+}
+
+export interface GitCommitInput {
+  readonly projectId: string;
+  readonly message: string;
+}
+
+export interface GitCommitResult {
+  readonly sha: string;
+  readonly hookOutput: string;
+}
+
+export type GitRefKind = 'local-branch' | 'remote-branch' | 'tag';
+
+export interface GitRefEntry {
+  readonly refname: string;
+  readonly kind: GitRefKind;
+  readonly shortName: string;
+  readonly sha: string;
+  readonly peeledSha: string | null;
+  readonly isHead: boolean;
+  readonly upstream: string | null;
+  readonly ahead: number | null;
+  readonly behind: number | null;
+  readonly upstreamGone: boolean;
+  readonly subject: string;
+}
+
+export interface GitCreateBranchInput {
+  readonly projectId: string;
+  readonly name: string;
+  readonly fromCommit?: string | undefined;
+}
+
+export interface GitSwitchBranchInput {
+  readonly projectId: string;
+  readonly name: string;
+}
+
+export interface GitDeleteBranchInput {
+  readonly projectId: string;
+  readonly name: string;
+  readonly force: boolean;
+  readonly confirmed: boolean;
+}
+
+export interface GitHistoryLoadInput {
+  readonly projectId: string;
+  readonly offset: number;
+  readonly count: number;
+}
+
+export interface GitCommitRef {
+  readonly name: string;
+  readonly kind: 'local-branch' | 'remote-branch' | 'tag' | 'HEAD';
+}
+
+export interface GitCommitNode {
+  readonly sha: string;
+  readonly parents: readonly string[];
+  readonly subject: string;
+  readonly body?: string;
+  readonly authorName: string;
+  readonly authorEmail?: string;
+  readonly authoredAt: number;
+  readonly committedAt: number;
+  readonly refs: readonly GitCommitRef[];
+}
+
+export interface GitHistoryPage {
+  readonly commits: readonly GitCommitNode[];
+  readonly totalIndexed: number;
+  readonly fullyIndexed: boolean;
+}
+
+export interface GitFetchInput {
+  readonly projectId: string;
+  readonly remoteName?: string | undefined;
+}
+
+export type GitPullMode = 'merge' | 'rebase';
+
+export interface GitPullInput {
+  readonly projectId: string;
+  readonly mode: GitPullMode;
+  readonly remoteName?: string | undefined;
+  readonly branch?: string | undefined;
+}
+
+export type GitForceMode = 'none' | 'with-lease' | 'raw';
+
+export interface GitPushInput {
+  readonly projectId: string;
+  readonly branch: string;
+  readonly remoteName?: string | undefined;
+  readonly setUpstream?: boolean | undefined;
+  readonly force?: GitForceMode | undefined;
+  readonly confirmed?: boolean | undefined;
+}
+
+export interface GitRemoteResult {
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface GitConflictState {
+  readonly inConflict: boolean;
+  readonly operationState: GitOperationState;
+  readonly conflictedFiles: readonly string[];
+}
+
+export interface GitOperationOutcome {
+  readonly completed: boolean;
+  readonly remaining: GitOperationState;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+// ---------------------------------------------------------------------------
+// M5: activity (spec section 17, ACT-001..004)
+// ---------------------------------------------------------------------------
+
+export type ActivityEventType =
+  | 'workspace-created'
+  | 'workspace-switched'
+  | 'project-added'
+  | 'project-created'
+  | 'project-cloned'
+  | 'project-removed'
+  | 'tool-installed'
+  | 'tool-verified'
+  | 'terminal-session'
+  | 'dev-server-started'
+  | 'dev-server-stopped'
+  | 'git-initialised'
+  | 'commit'
+  | 'branch-created'
+  | 'branch-switched'
+  | 'branch-deleted'
+  | 'fetch'
+  | 'pull'
+  | 'push'
+  | 'pull-request'
+  | 'check-or-workflow'
+  | 'release-or-deployment'
+  | 'automation-execution';
+
+export interface ActivityEvent {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly eventType: ActivityEventType;
+  readonly occurredAt: string;
+  readonly subjectRef: string | null;
+  readonly summary: string;
+  readonly weight: number;
+  readonly metadata: Readonly<Record<string, unknown>> | null;
+}
+
+export interface ActivityListRangeInput {
+  readonly workspaceId: string;
+  readonly fromInclusive: string;
+  readonly toInclusive: string;
+}

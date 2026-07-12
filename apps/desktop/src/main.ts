@@ -3,6 +3,7 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import type { TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
+import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { registerIpcHandlers } from './main/ipc';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
@@ -27,6 +28,7 @@ const trustedSender: { webContentsId: number; allowedOriginPrefixes: readonly st
 let storageClient: StorageClient | null = null;
 let terminalClient: TerminalClient | null = null;
 let projectHandlers: ProjectHandlers | null = null;
+let gitHandlers: GitHandlers | null = null;
 let handlersRegistered = false;
 
 function startStorageWorker(): StorageClient {
@@ -174,6 +176,9 @@ app.on('ready', () => {
   storageClient = storage;
   terminalClient = terminal;
   projectHandlers = createProjectHandlers(storage);
+  gitHandlers = createGitHandlers(storage, {
+    historyCacheDir: path.join(app.getPath('userData'), 'cache', 'git-history'),
+  });
 
   // TERM-004/PRJ-006: live PTY/dev processes from a previous run cannot be
   // assumed recoverable — represent them honestly as history before the
@@ -181,7 +186,7 @@ app.on('ready', () => {
   void storage.call('system.reconcileOrphans', undefined);
 
   if (!handlersRegistered) {
-    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers);
+    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers);
     handlersRegistered = true;
   }
 
@@ -193,6 +198,7 @@ app.on('before-quit', () => {
   terminalClient?.stop();
   storageClient?.stop();
   projectHandlers = null;
+  gitHandlers = null;
   terminalClient = null;
   storageClient = null;
 });

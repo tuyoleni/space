@@ -1,4 +1,6 @@
 import type {
+  ActivityEvent,
+  ActivityListRangeInput,
   AddProjectInput,
   CloneProjectInput,
   CreateProjectFromTemplateInput,
@@ -7,6 +9,23 @@ import type {
   DetectPackageManagerInput,
   DetectProjectInput,
   DevProcessInfo,
+  GitCommitInput,
+  GitCommitResult,
+  GitConflictState,
+  GitCreateBranchInput,
+  GitDeleteBranchInput,
+  GitFetchInput,
+  GitHistoryLoadInput,
+  GitHistoryPage,
+  GitOperationOutcome,
+  GitProjectInput,
+  GitPullInput,
+  GitPushInput,
+  GitRefEntry,
+  GitRemoteResult,
+  GitStageInput,
+  GitStatusSummary,
+  GitSwitchBranchInput,
   InspectFolderInput,
   InstallDependenciesInput,
   InstallDependenciesResult,
@@ -79,5 +98,35 @@ export interface SpaceAPI {
     start(input: StartDevServerInput): Promise<DevProcessInfo>;
     stop(input: StopDevServerInput): Promise<void>;
     list(projectId: string): Promise<DevProcessInfo[]>;
+  };
+  readonly git: {
+    /** GIT-001: the authoritative status read (spec 11.4/11.12) — a watcher hint is never trusted on its own. */
+    status(input: GitProjectInput): Promise<GitStatusSummary>;
+    /** GIT-004 */
+    stage(input: GitStageInput): Promise<void>;
+    unstage(input: GitStageInput): Promise<void>;
+    /** GIT-005: resolves identity, runs the real commit, verifies the resulting SHA. */
+    commit(input: GitCommitInput): Promise<GitCommitResult>;
+    /** GIT-006 */
+    listBranches(input: GitProjectInput): Promise<GitRefEntry[]>;
+    createBranch(input: GitCreateBranchInput): Promise<void>;
+    switchBranch(input: GitSwitchBranchInput): Promise<void>;
+    /** Destructive; `confirmed` is a structural gate (@space/domain), not a UI-only check. */
+    deleteBranch(input: GitDeleteBranchInput): Promise<void>;
+    /** GIT-002/12.5: paginated, cached history via HistoryStore. */
+    loadHistory(input: GitHistoryLoadInput): Promise<GitHistoryPage>;
+    /** GIT-007 */
+    fetch(input: GitFetchInput): Promise<GitRemoteResult>;
+    pull(input: GitPullInput): Promise<GitRemoteResult>;
+    /** Force pushes require `confirmed`; raw --force additionally requires policy allowance server-side. */
+    push(input: GitPushInput): Promise<GitRemoteResult>;
+    /** GIT-008 */
+    conflictState(input: GitProjectInput): Promise<GitConflictState>;
+    continueConflict(input: GitProjectInput): Promise<GitOperationOutcome>;
+    abortConflict(input: GitProjectInput): Promise<GitOperationOutcome>;
+  };
+  readonly activity: {
+    /** ACT-002/003: raw events over a date range; the renderer aggregates into the grid/daily detail. */
+    listRange(input: ActivityListRangeInput): Promise<ActivityEvent[]>;
   };
 }

@@ -10,8 +10,23 @@
  * is a stream, not a single request/response (spec 22.1).
  */
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { IPC_CHANNELS, type TerminalEvent } from '@space/contracts';
+import {
+  activityListRangeInputSchema,
+  gitCommitInputSchema,
+  gitCreateBranchInputSchema,
+  gitDeleteBranchInputSchema,
+  gitFetchInputSchema,
+  gitHistoryLoadInputSchema,
+  gitProjectInputSchema,
+  gitPullInputSchema,
+  gitPushInputSchema,
+  gitStageInputSchema,
+  gitSwitchBranchInputSchema,
+  IPC_CHANNELS,
+  type TerminalEvent,
+} from '@space/contracts';
 import { assertIpcSender, type TrustedSender } from '@space/security';
+import type { GitHandlers } from './git-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
@@ -41,6 +56,7 @@ export function registerIpcHandlers(
   storage: StorageClient,
   terminal: TerminalClient,
   projectHandlers: ProjectHandlers,
+  gitHandlers: GitHandlers,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
@@ -201,5 +217,89 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.devServerList, async (event, projectId) => {
     assertIpcSender(event, trusted);
     return projectHandlers.listDevServers(projectId);
+  });
+
+  // M5: Git (GIT-001..009).
+
+  ipcMain.handle(IPC_CHANNELS.gitStatus, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.status(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitStage, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.stage(gitStageInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitUnstage, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.unstage(gitStageInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitCommit, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.commit(gitCommitInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitBranchList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.listBranches(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitBranchCreate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.createBranch(gitCreateBranchInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitBranchSwitch, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.switchBranch(gitSwitchBranchInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitBranchDelete, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.deleteBranch(gitDeleteBranchInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitHistoryLoad, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.loadHistory(gitHistoryLoadInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitFetch, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.fetch(gitFetchInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitPull, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.pull(gitPullInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitPush, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.push(gitPushInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitConflictState, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.conflictState(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitConflictContinue, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.continueConflict(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitConflictAbort, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.abortConflict(gitProjectInputSchema.parse(input));
+  });
+
+  // M5: activity (spec section 17).
+
+  ipcMain.handle(IPC_CHANNELS.activityListRange, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return storage.call('activity.listRange', activityListRangeInputSchema.parse(input));
   });
 }
