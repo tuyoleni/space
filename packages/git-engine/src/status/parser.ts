@@ -28,7 +28,9 @@ function parseSubmoduleField(field: string): SubmoduleState {
   };
 }
 
-function parseBranchHeaderLine(line: string, branch: Partial<BranchInfo>): void {
+type MutableBranchInfo = { -readonly [K in keyof BranchInfo]: BranchInfo[K] };
+
+function parseBranchHeaderLine(line: string, branch: MutableBranchInfo): void {
   const body = line.slice('# '.length);
   if (body.startsWith('branch.oid ')) {
     const value = body.slice('branch.oid '.length).trim();
@@ -55,7 +57,7 @@ function toStatusCode(char: string): FileStatusCode {
 
 export function parseStatusOutput(output: string): RepositoryStatus {
   const tokens = output.split('\x00').filter((token) => token.length > 0);
-  const branch: Partial<BranchInfo> = {
+  const branch: MutableBranchInfo = {
     headCommit: null,
     isInitial: false,
     branchName: null,
@@ -124,5 +126,5 @@ export function parseStatusOutput(output: string): RepositoryStatus {
     }
   }
 
-  return { branch: branch as BranchInfo, entries };
+  return { branch, entries };
 }

@@ -55,7 +55,7 @@ describe('runCommit', () => {
 
     expect(outcome.sha).toBe('deadbeef');
     expect(outcome.hookOutput).toContain('pre-commit hook: ok');
-    const commitCall = (executor as ReturnType<typeof vi.fn>).mock.calls[0];
+    const commitCall = (executor as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(commitCall[0]).toEqual(
       expect.arrayContaining(['-c', 'user.name=A', '-c', 'user.email=a@example.com', 'commit', '-F', '-']),
     );
@@ -90,7 +90,7 @@ describe('runCommit', () => {
       args.includes('commit') ? { exitCode: 0, stdout: '', stderr: '' } : { exitCode: 0, stdout: 'sha1\n', stderr: '' },
     );
     await runCommit('/repo', { identity, message: 'msg', noVerify: true }, executor);
-    const commitCall = (executor as ReturnType<typeof vi.fn>).mock.calls[0];
+    const commitCall = (executor as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(commitCall[0]).toContain('--no-verify');
   });
 });
