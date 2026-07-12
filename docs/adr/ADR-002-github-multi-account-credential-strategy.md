@@ -1,7 +1,9 @@
 # ADR-002: GitHub multi-account credential strategy
 
 ## Status
-Pending — resolved after the P0-B technical spike (M1)
+Pending — config-level isolation verified (2026-07-12); token-storage
+verification requires the manual two-account protocol in
+`docs/runbooks/p0b-github-multi-account-spike.md` on macOS and Windows.
 
 ## Context
 Spec sections 5.6 and 40.2: `GH_CONFIG_DIR` isolates GitHub CLI configuration files, but
@@ -18,8 +20,20 @@ GitHub accounts on both macOS and Windows.
   SQLite or plain JSON (prohibited per section 39).
 - Redact the token from logs, receipts, and crash reports.
 
+## Findings so far (credential-free portion, macOS, gh 2.95.0)
+- `GH_CONFIG_DIR` isolates gh configuration completely: per-root
+  `config.yml`, no cross-root visibility, and the user's normal
+  `~/.config/gh` is never created or modified.
+- The open risk is exactly as the spec warns: whether `gh auth login`
+  keys OS credential-store entries per config dir or collides across
+  workspaces. This cannot be tested without two real accounts.
+
 ## Decision
-_To be filled in after the P0-B spike completes on both platforms (task M1)._
+_To be filled in after the manual two-account protocol
+(`docs/runbooks/p0b-github-multi-account-spike.md`) completes on macOS
+and Windows. If the credential store collides, implement the section 5.6
+fallback: Space-owned keychain entries per workspace, token reference in
+SQLite only, GH_TOKEN injected at runtime, redacted everywhere._
 
 ## Consequences
 _Pending._
