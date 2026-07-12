@@ -17,4 +17,6 @@ export * from './repositories/bootstrap-repository';
 export * from './repositories/terminal-session-repository';
 export * from './repositories/dev-process-repository';
 export * from './repositories/activity-repository';
+export * from './repositories/secret-ref-repository';
+export * from './repositories/service-connection-repository';
 export * from './receipts';

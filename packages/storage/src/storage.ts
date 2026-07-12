@@ -5,6 +5,8 @@ import { BootstrapRepository } from './repositories/bootstrap-repository';
 import { DevProcessRepository } from './repositories/dev-process-repository';
 import { OperationRepository } from './repositories/operation-repository';
 import { ProjectRepository } from './repositories/project-repository';
+import { SecretRefRepository } from './repositories/secret-ref-repository';
+import { ServiceConnectionRepository } from './repositories/service-connection-repository';
 import { TerminalSessionRepository } from './repositories/terminal-session-repository';
 import { WorkspaceRepository } from './repositories/workspace-repository';
 
@@ -17,6 +19,8 @@ export interface Storage {
   readonly terminalSessions: TerminalSessionRepository;
   readonly devProcesses: DevProcessRepository;
   readonly activity: ActivityRepository;
+  readonly secretRefs: SecretRefRepository;
+  readonly serviceConnections: ServiceConnectionRepository;
   close(): void;
 }
 
@@ -36,6 +40,8 @@ export function createStorage(dbPath: string): Storage {
     terminalSessions: new TerminalSessionRepository(db),
     devProcesses: new DevProcessRepository(db),
     activity: new ActivityRepository(db),
+    secretRefs: new SecretRefRepository(db),
+    serviceConnections: new ServiceConnectionRepository(db),
     close: () => db.close(),
   };
 }

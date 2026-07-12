@@ -12,6 +12,7 @@ import { MIGRATION_0001_INIT } from './schema/0001_init';
 import { MIGRATION_0002_BOOTSTRAP } from './schema/0002_bootstrap';
 import { MIGRATION_0003_TERMINAL_AND_DEV_PROCESS } from './schema/0003_terminal_and_dev_process';
 import { MIGRATION_0004_ACTIVITY } from './schema/0004_activity';
+import { MIGRATION_0005_GITHUB } from './schema/0005_github';
 
 export interface Migration {
   readonly version: number;
@@ -24,6 +25,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 2, name: 'bootstrap', sql: MIGRATION_0002_BOOTSTRAP },
   { version: 3, name: 'terminal_and_dev_process', sql: MIGRATION_0003_TERMINAL_AND_DEV_PROCESS },
   { version: 4, name: 'activity', sql: MIGRATION_0004_ACTIVITY },
+  { version: 5, name: 'github', sql: MIGRATION_0005_GITHUB },
 ];
 
 function ensureMigrationsTable(db: Database.Database): void {
