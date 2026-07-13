@@ -9,6 +9,7 @@ import type {
   WorkspaceSummary,
 } from '@space/contracts';
 import { ActivityGrid } from './ActivityGrid';
+import { AgentPanel } from './AgentPanel';
 import { GitPanel } from './GitPanel';
 import { GithubPanel } from './GithubPanel';
 import { TerminalPanel } from './TerminalPanel';
@@ -31,6 +32,7 @@ export function App() {
   const [devServers, setDevServers] = useState<Record<string, DevProcessInfo[]>>({});
   const [openTerminal, setOpenTerminal] = useState<Record<string, TerminalSessionInfo>>({});
   const [openGitPanel, setOpenGitPanel] = useState<Record<string, boolean>>({});
+  const [openAgentPanel, setOpenAgentPanel] = useState<Record<string, boolean>>({});
 
   const [createName, setCreateName] = useState('');
   const [createTemplateId, setCreateTemplateId] = useState('');
@@ -227,6 +229,10 @@ export function App() {
     setOpenGitPanel((prev) => ({ ...prev, [project.id]: !prev[project.id] }));
   }
 
+  function handleToggleAgentPanel(project: Project): void {
+    setOpenAgentPanel((prev) => ({ ...prev, [project.id]: !prev[project.id] }));
+  }
+
   function handleCloseTerminal(project: Project): void {
     const session = openTerminal[project.id];
     if (!session) {
@@ -395,6 +401,11 @@ export function App() {
                             {openGitPanel[project.id] ? 'Hide Git' : 'Git'}
                           </button>
                         )}
+                        {project.repositoryRoot && activeWorkspace && (
+                          <button type="button" disabled={busy} onClick={() => handleToggleAgentPanel(project)}>
+                            {openAgentPanel[project.id] ? 'Hide Agent' : 'Agent'}
+                          </button>
+                        )}
                       </div>
                       {detection && (
                         <ul style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
@@ -411,6 +422,9 @@ export function App() {
                         </div>
                       )}
                       {openGitPanel[project.id] && project.repositoryRoot && <GitPanel project={project} />}
+                      {openAgentPanel[project.id] && project.repositoryRoot && activeWorkspace && (
+                        <AgentPanel project={project} workspaceId={activeWorkspace.id} />
+                      )}
                     </li>
                   );
                 })}
