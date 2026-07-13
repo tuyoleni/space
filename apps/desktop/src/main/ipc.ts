@@ -430,6 +430,9 @@ export function registerIpcHandlers(
       base: parsed.base,
       head: parsed.head,
       ...(parsed.draft !== undefined ? { draft: parsed.draft } : {}),
+      ...(parsed.reviewers !== undefined ? { reviewers: parsed.reviewers } : {}),
+      ...(parsed.assignees !== undefined ? { assignees: parsed.assignees } : {}),
+      ...(parsed.labels !== undefined ? { labels: parsed.labels } : {}),
     });
   });
 
@@ -451,7 +454,12 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.githubIssueCreate, async (event, input) => {
     assertIpcSender(event, trusted);
     const parsed = githubIssueCreateInputSchema.parse(input);
-    return githubHandlers.issuesCreate(parsed.workspaceId, { title: parsed.title, body: parsed.body });
+    return githubHandlers.issuesCreate(parsed.workspaceId, {
+      title: parsed.title,
+      body: parsed.body,
+      ...(parsed.labels !== undefined ? { labels: parsed.labels } : {}),
+      ...(parsed.assignees !== undefined ? { assignees: parsed.assignees } : {}),
+    });
   });
 
   ipcMain.handle(IPC_CHANNELS.githubChecksLoad, async (event, input) => {

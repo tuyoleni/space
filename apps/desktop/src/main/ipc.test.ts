@@ -386,6 +386,29 @@ describe('registerIpcHandlers', () => {
       expect(githubHandlers.prCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b', base: 'main', head: 'feature' });
     });
 
+    it('githubPrCreate forwards reviewers/assignees/labels when present (spec 14.6)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrCreate)(validEvent, {
+        workspaceId: 'ws-1',
+        title: 't',
+        body: 'b',
+        base: 'main',
+        head: 'feature',
+        reviewers: ['octocat'],
+        assignees: ['octocat'],
+        labels: ['bug'],
+      });
+      expect(githubHandlers.prCreate).toHaveBeenCalledWith('ws-1', {
+        title: 't',
+        body: 'b',
+        base: 'main',
+        head: 'feature',
+        reviewers: ['octocat'],
+        assignees: ['octocat'],
+        labels: ['bug'],
+      });
+    });
+
     it('githubPrMerge rejects an unconfirmed merge before it ever reaches githubHandlers', async () => {
       const { githubHandlers } = setup();
       await expect(
@@ -406,6 +429,12 @@ describe('registerIpcHandlers', () => {
       expect(githubHandlers.issuesList).toHaveBeenCalledWith('ws-1', {});
       await handlerFor(IPC_CHANNELS.githubIssueCreate)(validEvent, { workspaceId: 'ws-1', title: 't', body: 'b' });
       expect(githubHandlers.issuesCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b' });
+    });
+
+    it('githubIssueCreate forwards labels/assignees when present (spec 14.9)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubIssueCreate)(validEvent, { workspaceId: 'ws-1', title: 't', body: 'b', labels: ['bug'], assignees: ['octocat'] });
+      expect(githubHandlers.issuesCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b', labels: ['bug'], assignees: ['octocat'] });
     });
 
     it('githubChecksLoad routes to prChecks with the parsed input', async () => {

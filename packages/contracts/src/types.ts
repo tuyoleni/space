@@ -647,6 +647,9 @@ export interface GithubPullRequestCreateInput {
   readonly base: string;
   readonly head: string;
   readonly draft?: boolean;
+  readonly reviewers?: readonly string[];
+  readonly assignees?: readonly string[];
+  readonly labels?: readonly string[];
 }
 
 export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
@@ -683,6 +686,8 @@ export interface GithubIssueCreateInput {
   readonly workspaceId: string;
   readonly title: string;
   readonly body: string;
+  readonly labels?: readonly string[];
+  readonly assignees?: readonly string[];
 }
 
 export interface GithubCheckRun {

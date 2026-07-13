@@ -250,6 +250,10 @@ export const githubPullRequestCreateInputSchema = z.object({
   base: z.string().min(1),
   head: z.string().min(1),
   draft: z.boolean().optional(),
+  // GH-004 (spec 14.6): "Add reviewers, assignees, labels ... where permissions allow."
+  reviewers: z.array(z.string().min(1)).optional(),
+  assignees: z.array(z.string().min(1)).optional(),
+  labels: z.array(z.string().min(1)).optional(),
 });
 
 export const githubPullRequestMergeInputSchema = z.object({
@@ -270,6 +274,9 @@ export const githubIssueCreateInputSchema = z.object({
   workspaceId: z.string().min(1),
   title: z.string().min(1),
   body: z.string(),
+  // GH-007 (spec 14.9): "Support ... create, edit, assign, label ..."
+  labels: z.array(z.string().min(1)).optional(),
+  assignees: z.array(z.string().min(1)).optional(),
 });
 
 export const githubChecksLoadInputSchema = z.object({
