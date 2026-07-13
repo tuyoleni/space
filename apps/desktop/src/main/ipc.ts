@@ -76,6 +76,7 @@ import {
   githubSetupGitInputSchema,
   projectOpenedInputSchema,
   IPC_CHANNELS,
+  type CreateTerminalInput,
   type TerminalEvent,
 } from '@space/contracts';
 import { createLogger, type Logger } from '@space/logging';
@@ -87,6 +88,7 @@ import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
+import type { TerminalHandlers } from './terminal-handlers';
 
 function windowForEvent(event: IpcMainInvokeEvent): BrowserWindow {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -146,6 +148,7 @@ export function registerIpcHandlers(
   trusted: TrustedSender,
   storage: StorageClient,
   terminal: TerminalClient,
+  terminalHandlers: TerminalHandlers,
   projectHandlers: ProjectHandlers,
   gitHandlers: GitHandlers,
   githubHandlers: GithubHandlers,
@@ -254,15 +257,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.terminalCreate, async (event, input) => {
     assertIpcSender(event, trusted);
-    const session = await terminal.call<{
-      id: string;
-      workspaceId: string;
-      projectId: string | null;
-      shell: string;
-      cwd: string;
-      pid: number;
-      startedAt: string;
-    }>('terminal.create', input);
+    const session = await terminalHandlers.createTerminal(input as CreateTerminalInput);
 
     await storage.call('terminal.recordSession', {
       id: session.id,

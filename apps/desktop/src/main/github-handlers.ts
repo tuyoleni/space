@@ -95,6 +95,7 @@ import type { CredentialStorePort } from '@space/security';
 import { RedactionRegistry } from '@space/workspace-runner';
 import type { GithubAuthReport, Project } from '@space/contracts';
 import type { TerminalWorkerEvent, TerminalWorkerMethod } from '@space/terminal';
+import { buildSpaceEnvironment } from './environment-policy';
 import { recordOperation, type StorageCaller } from './project-handlers';
 
 export interface TerminalCaller {
@@ -260,7 +261,10 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
       shell: 'gh',
       args,
       cwd: input.cwd,
-      env: { GH_CONFIG_DIR: ghConfigDir },
+      // A real base environment (PATH, HOME, ...) is required for `gh` to
+      // resolve at all in the spawned shell — GH_CONFIG_DIR alone isn't a
+      // usable process environment (spec 5.3, 15.3).
+      env: { ...buildSpaceEnvironment(), GH_CONFIG_DIR: ghConfigDir },
       cols: 80,
       rows: 24,
     });

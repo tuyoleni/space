@@ -57,12 +57,18 @@ async function makeWorkspace(name = 'A'): Promise<Workspace> {
   return storageCaller.call<Workspace>('workspace.create', { name });
 }
 
-/** A fake TerminalCaller that immediately "runs" gh auth login and reports success — no real PTY, no real gh auth login (forbidden by this milestone's safety boundary). */
-function fakeTerminal(exitCode: number): TerminalCaller {
+/**
+ * A fake TerminalCaller that immediately "runs" gh auth login and reports
+ * success — no real PTY, no real gh auth login (forbidden by this
+ * milestone's safety boundary). Optionally records every `terminal.create`
+ * payload so callers can assert on the env/cwd startAuthLogin builds.
+ */
+function fakeTerminal(exitCode: number, createCalls?: unknown[]): TerminalCaller {
   let listener: ((event: TerminalWorkerEvent) => void) | null = null;
   return {
-    call: async <T>(method: string, _payload: unknown): Promise<T> => {
+    call: async <T>(method: string, payload: unknown): Promise<T> => {
       if (method === 'terminal.create') {
+        createCalls?.push(payload);
         return { id: 'session-1' } as unknown as T;
       }
       return undefined as unknown as T;
@@ -159,6 +165,35 @@ describe('credential architecture (spec 5.6): token resolution, env injection, r
 });
 
 describe('GH-001: interactive auth login via the reused PTY host', () => {
+  it('starts the login PTY with a real base environment (not just a bare GH_CONFIG_DIR), so gh can actually resolve in the shell', async () => {
+    const workspace = await makeWorkspace();
+    const credentialStore = new InMemoryCredentialStore();
+    const createCalls: unknown[] = [];
+    // Never a real `gh` process — the exit-time `gh auth status` follow-up
+    // this handler fires is irrelevant to what's under test here.
+    const ghExecutor: GhExecutor = async () => ({ exitCode: 0, stdout: 'github.com\n  - Active account: false\n', stderr: '' });
+
+    const handlers = createGithubHandlers(storageCaller, {
+      ghExecutor,
+      credentialStore,
+      terminal: fakeTerminal(0, createCalls),
+      ghConfigDirFor: (id) => path.join(dir, 'gh-config', id),
+    });
+
+    await handlers.startAuthLogin({ workspaceId: workspace.id, cwd: dir });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(createCalls.length).toBe(1);
+    const request = createCalls[0] as { env: Record<string, string> };
+    expect(request.env['GH_CONFIG_DIR']).toBe(path.join(dir, 'gh-config', workspace.id));
+    // Before the fix, env was `{ GH_CONFIG_DIR }` only — no PATH, no HOME —
+    // which is why the spawned shell couldn't resolve `gh` at all and the
+    // PTY exited immediately (pid 0, exit code 1).
+    const pathValue = request.env['PATH'];
+    expect(typeof pathValue).toBe('string');
+    expect((pathValue ?? '').length).toBeGreaterThan(0);
+  });
+
   it('records a succeeded receipt and a connected ServiceConnection row on a successful login', async () => {
     const workspace = await makeWorkspace();
     const credentialStore = new InMemoryCredentialStore();
