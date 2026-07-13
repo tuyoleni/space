@@ -8,6 +8,9 @@
  * second repository engine is introduced.
  *
  * History parser and lane layout seeded by the P0-D spike; completed in M5.
+ * `diff/hunks.ts`'s hunk-level parser and `staging.ts`'s
+ * `applyPatchToWorktree` added in M7 for the intent/agent layer (spec
+ * section 13, 19.1's `file.modify`).
  */
 export * from './history/types';
 export * from './history/parser';
@@ -24,6 +27,7 @@ export * from './refs/types';
 export * from './refs/parser';
 export * from './diff/types';
 export * from './diff/parser';
+export * from './diff/hunks';
 export * from './repository-state';
 export * from './node-git-dir-fs';
 export * from './repository';

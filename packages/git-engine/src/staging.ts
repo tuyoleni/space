@@ -57,6 +57,20 @@ export async function discardPatch(cwd: string, patchText: string, executor: Git
   await run(executor, applyPatchArgs({ reverse: true }), cwd, patchText);
 }
 
+/**
+ * Applies a patch directly to the worktree (neither the index nor
+ * reversed) — the real mechanism behind the `file.modify` agent action
+ * (spec 19.1). An agent's proposed edit is always a real diff run through
+ * this exact `git apply` path, never a raw `fs.writeFile` overwrite, so
+ * every agent-made file change is inspectable through the same diff/patch
+ * machinery as any hand-made edit (spec 25.3.6: "typed plans only"). The
+ * caller must already have passed `assertTrusted` (project-trust gate)
+ * before calling this — this function itself performs no trust check.
+ */
+export async function applyPatchToWorktree(cwd: string, patchText: string, executor: GitExecutor): Promise<void> {
+  await run(executor, applyPatchArgs(), cwd, patchText);
+}
+
 /** Discards all unstaged changes to tracked files at `paths` — destructive; caller must confirm first. */
 export async function discardTrackedFiles(cwd: string, paths: readonly string[], executor: GitExecutor): Promise<void> {
   if (paths.length === 0) {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GitExecutor } from './clone';
 import {
+  applyPatchToWorktree,
   discardPatch,
   discardTrackedFiles,
   discardUntrackedFiles,
@@ -54,6 +55,12 @@ describe('patch-based staging (hunk/line level)', () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
     await discardPatch('/repo', patch, executor);
     expect(executor).toHaveBeenCalledWith(['apply', '--reverse', '-'], { cwd: '/repo', input: patch });
+  });
+
+  it('applies a patch to the worktree (the file.modify agent-action mechanism, spec 19.1)', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+    await applyPatchToWorktree('/repo', patch, executor);
+    expect(executor).toHaveBeenCalledWith(['apply', '-'], { cwd: '/repo', input: patch });
   });
 });
 
