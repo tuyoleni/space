@@ -170,4 +170,26 @@ describe('PtyHost', () => {
     expect(() => host.resize('does-not-exist', 10, 10)).toThrow(/Unknown terminal session/);
     expect(() => host.dispose('does-not-exist')).toThrow(/Unknown terminal session/);
   });
+
+  describe('resource limit: maximum simultaneous PTYs (spec 27.4)', () => {
+    it('rejects a new session once the running-session cap is reached', () => {
+      const capped = new PtyHost({ spawner, emit: (event) => events.push(event), flushIntervalMs: 5, maxSimultaneousPtys: 2 });
+      capped.create(baseRequest({ workspaceId: 'ws-a' }));
+      capped.create(baseRequest({ workspaceId: 'ws-b' }));
+      expect(() => capped.create(baseRequest({ workspaceId: 'ws-c' }))).toThrow(/limit of 2 simultaneous PTY/);
+      expect(capped.runningSessionCount).toBe(2);
+      capped.disposeAll();
+    });
+
+    it('an exited session frees a slot even before it is explicitly disposed', () => {
+      const capped = new PtyHost({ spawner, emit: (event) => events.push(event), flushIntervalMs: 5, maxSimultaneousPtys: 1 });
+      capped.create(baseRequest({ workspaceId: 'ws-a' }));
+      expect(() => capped.create(baseRequest({ workspaceId: 'ws-b' }))).toThrow();
+
+      lastPty.emitExit(0);
+      expect(capped.runningSessionCount).toBe(0);
+      expect(() => capped.create(baseRequest({ workspaceId: 'ws-b' }))).not.toThrow();
+      capped.disposeAll();
+    });
+  });
 });

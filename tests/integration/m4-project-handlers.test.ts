@@ -165,3 +165,40 @@ describe('startDevServer is gated by trust and requires a real dev/start script'
     await expect(handlers.startDevServer({ projectId: project.id })).rejects.toThrow(/No "dev" or "start" script/);
   });
 });
+
+describe('startDevServer fires onDevProcessExited (M8 spec 18.2 "Development process exited" trigger)', () => {
+  it('calls the injected hook with workspace/project scope and the real exit code once the process exits', async () => {
+    const workspace = await makeWorkspace();
+    const projectDir = fs.mkdtempSync(path.join(dir, 'proj-'));
+    fs.writeFileSync(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'x', scripts: { dev: 'node -e "process.exit(0)"' } }),
+    );
+    const project = await storageCaller.call<Project>('project.add', { workspaceId: workspace.id, canonicalPath: projectDir });
+
+    const exitEvents: Array<{
+      workspaceId: string;
+      projectId: string;
+      devProcessId: string;
+      exitCode: number | null;
+      state: 'stopped' | 'crashed';
+    }> = [];
+    let resolveExit: (() => void) | undefined;
+    const exited = new Promise<void>((resolve) => {
+      resolveExit = resolve;
+    });
+
+    const handlers = createProjectHandlers(storageCaller, {
+      onDevProcessExited: (event) => {
+        exitEvents.push(event);
+        resolveExit?.();
+      },
+    });
+    await handlers.trustDecision({ projectId: project.id, decision: 'trust-this-project' });
+    await handlers.startDevServer({ projectId: project.id });
+
+    await exited;
+    expect(exitEvents).toHaveLength(1);
+    expect(exitEvents[0]).toMatchObject({ workspaceId: workspace.id, projectId: project.id, exitCode: 0, state: 'stopped' });
+  }, 15000);
+});

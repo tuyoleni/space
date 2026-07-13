@@ -27,7 +27,16 @@ export type GatedOperationKind =
    * one of them, since none describe "an automated actor editing project
    * files" precisely.
    */
-  | 'agent-file-modify';
+  | 'agent-file-modify'
+  /**
+   * M8: an automation's `runApprovedScript`/`runTests` action (spec 18.3)
+   * running a project script with no human present to react to a trust
+   * prompt — distinct from `lifecycle-script` (which covers a human-
+   * initiated install/dev-server script) because an *unattended* script
+   * execution deserves its own explanation of why an untrusted project
+   * blocks it.
+   */
+  | 'automation-script';
 
 /** The three trust choices spec section 10.3 requires the prompt to offer. */
 export type TrustDecision = 'allow-once' | 'trust-this-project' | 'keep-untrusted';
@@ -57,6 +66,7 @@ const GATED_OPERATION_EXPLANATION: Record<GatedOperationKind, string> = {
   'load-project-content': 'loading project-provided content in a privileged view can run arbitrary script',
   'inject-secrets': 'this project has not been reviewed and should not receive workspace secrets',
   'agent-file-modify': 'an unreviewed project should not have its files modified automatically by an agent',
+  'automation-script': 'an unreviewed project should not have its scripts run automatically, unattended, by an automation',
 };
 
 export function explainGatedOperation(operation: GatedOperationKind): string {

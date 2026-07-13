@@ -34,6 +34,7 @@ const spaceAPI: SpaceAPI = {
     clone: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectClone, input),
     installDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInstallDependencies, input),
     pickParentDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickParentDirectory),
+    opened: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.projectOpened, projectId),
   },
   terminal: {
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalCreate, input),
@@ -125,6 +126,15 @@ const spaceAPI: SpaceAPI = {
     permissionGrant: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionGrant, input),
     permissionRevoke: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionRevoke, input),
     permissionList: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionList, workspaceId),
+  },
+  automation: {
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationCreate, input),
+    list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.automationList, workspaceId),
+    setEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationSetEnabled, input),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.automationDelete, id),
+    listRuns: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationListRuns, input),
+    getAllEnabled: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.automationSettingsGet, workspaceId),
+    setAllEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationSettingsSet, input),
   },
 };
 

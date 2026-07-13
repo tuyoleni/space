@@ -48,6 +48,8 @@ export interface PtyHostOptions {
   readonly recentOutputTailBytes?: number;
   readonly redaction?: RedactionRegistry;
   readonly now?: () => string;
+  /** Hard cap on concurrently *running* sessions (spec 27.4). Defaults to `DEFAULT_MAX_SIMULTANEOUS_PTYS`. Exited-but-not-yet-disposed sessions do not count against it. */
+  readonly maxSimultaneousPtys?: number;
 }
 
 interface HostedSession {
@@ -62,6 +64,22 @@ interface HostedSession {
 const DEFAULT_MAX_BUFFERED_BYTES = 256 * 1024;
 const DEFAULT_FLUSH_INTERVAL_MS = 25;
 const DEFAULT_RECENT_TAIL_BYTES = 4 * 1024;
+/**
+ * Maximum number of PTY sessions this host will keep alive at once (spec
+ * 27.4's resource-limit requirement — an unbounded number of live shells
+ * would let a runaway caller exhaust process/file-descriptor limits).
+ * Kept in lockstep with `@space/domain`'s `RESOURCE_LIMITS.
+ * maxSimultaneousPtys` by convention (this package stays dependency-light
+ * on purpose, same reasoning as `AgentActionRisk`/`OperationRisk`).
+ */
+export const DEFAULT_MAX_SIMULTANEOUS_PTYS = 12;
+
+export class TooManyPtySessionsError extends Error {
+  constructor(public readonly limit: number) {
+    super(`Cannot create a new terminal session: the limit of ${limit} simultaneous PTY sessions has been reached.`);
+    this.name = 'TooManyPtySessionsError';
+  }
+}
 
 export function defaultShellForPlatform(
   platform: NodeJS.Platform,
@@ -80,6 +98,7 @@ export class PtyHost {
   private readonly flushIntervalMs: number;
   private readonly recentOutputTailBytes: number;
   private readonly now: () => string;
+  private readonly maxSimultaneousPtys: number;
 
   constructor(private readonly options: PtyHostOptions) {
     this.redaction = options.redaction ?? new RedactionRegistry();
@@ -87,9 +106,24 @@ export class PtyHost {
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
     this.recentOutputTailBytes = options.recentOutputTailBytes ?? DEFAULT_RECENT_TAIL_BYTES;
     this.now = options.now ?? (() => new Date().toISOString());
+    this.maxSimultaneousPtys = options.maxSimultaneousPtys ?? DEFAULT_MAX_SIMULTANEOUS_PTYS;
+  }
+
+  /** Number of sessions currently in the `running` state — exited-but-undisposed sessions never count against the limit. */
+  get runningSessionCount(): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (session.info.state === 'running') {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   create(request: TerminalCreateRequest, platform: NodeJS.Platform = process.platform): TerminalSessionInfo {
+    if (this.runningSessionCount >= this.maxSimultaneousPtys) {
+      throw new TooManyPtySessionsError(this.maxSimultaneousPtys);
+    }
     const shell = request.shell ?? defaultShellForPlatform(platform, request.env['SHELL']);
     const pty = this.options.spawner(shell, request.args ?? [], {
       cwd: request.cwd,

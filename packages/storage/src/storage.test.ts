@@ -79,17 +79,18 @@ describe('migrations (spec section 23.3)', () => {
       { version: 4, name: 'activity', sql: '' }, // already applied, filtered out
       { version: 5, name: 'github', sql: '' }, // already applied, filtered out
       { version: 6, name: 'agent', sql: '' }, // already applied, filtered out
-      { version: 7, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
-      { version: 8, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
+      { version: 7, name: 'automation', sql: '' }, // already applied, filtered out
+      { version: 8, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
+      { version: 9, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
     ];
 
-    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 8.*rolled back/);
+    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 9.*rolled back/);
 
-    // version 7 committed (its own transaction succeeded before version 8 failed)
+    // version 8 committed (its own transaction succeeded before version 9 failed)
     const applied = db.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{
       version: number;
     }>;
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(
       db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ok_table'").get(),
     ).toBeTruthy();
@@ -462,5 +463,38 @@ describe('ActivityRepository (spec 23.2.9, section 17)', () => {
     });
     expect(found).toHaveLength(1);
     expect(found[0]?.summary).toBe('in range, ws-a');
+  });
+
+  it('pruneOlderThan enforces the activity retention resource limit (spec 27.4)', () => {
+    makeWorkspace(storage, 'ws-a');
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2020-01-01T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'ancient',
+      weight: 1,
+      metadata: null,
+    });
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-07-01T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'recent',
+      weight: 1,
+      metadata: null,
+    });
+
+    const removed = storage.activity.pruneOlderThan('2025-01-01T00:00:00.000Z');
+    expect(removed).toBe(1);
+
+    const remaining = storage.activity.listByWorkspaceInRange('ws-a', {
+      fromInclusive: '2000-01-01T00:00:00.000Z',
+      toInclusive: '2030-01-01T00:00:00.000Z',
+    });
+    expect(remaining.map((e) => e.summary)).toEqual(['recent']);
   });
 });

@@ -4,9 +4,10 @@ import started from 'electron-squirrel-startup';
 import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
+import { createAutomationHandlers, type AutomationHandlers } from './main/automation-handlers';
 import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
-import { registerIpcHandlers } from './main/ipc';
+import { fireAutomationTrigger, registerIpcHandlers } from './main/ipc';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
 import { TerminalClient } from './main/terminal-client';
@@ -55,7 +56,36 @@ let projectHandlers: ProjectHandlers | null = null;
 let gitHandlers: GitHandlers | null = null;
 let githubHandlers: GithubHandlers | null = null;
 let agentHandlers: AgentHandlers | null = null;
+let automationHandlers: AutomationHandlers | null = null;
 let handlersRegistered = false;
+let scheduledAutomationTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * M8: how often the `scheduled` automation trigger (spec 18.2) is checked
+ * while the app is running — there is no OS-level scheduler (spec 18.5),
+ * so this is the only clock driving it. One minute gives the model's
+ * minimum `intervalMinutes` (1, see `@space/automation`'s
+ * `AutomationTriggerSchema`) a real chance to fire close to on time
+ * without polling every workspace's automations excessively.
+ */
+const SCHEDULED_AUTOMATION_TICK_MS = 60_000;
+
+/**
+ * M8: fires the `dev-process-exited` automation trigger (spec 18.2) from
+ * project-handlers.ts's dev-process exit callback. A plain mutable
+ * function reference rather than a constructor dependency, because
+ * `createAutomationHandlers` itself depends on the already-constructed
+ * `projectHandlers` (it calls `projectHandlers.detectPackageManager`) —
+ * this is set once `automationHandlers` exists, a few lines after
+ * `projectHandlers` is created.
+ */
+let fireDevProcessExitedTrigger: ((event: {
+  readonly workspaceId: string;
+  readonly projectId: string;
+  readonly devProcessId: string;
+  readonly exitCode: number | null;
+  readonly state: 'stopped' | 'crashed';
+}) => void) | null = null;
 
 function startStorageWorker(): StorageClient {
   const dbPath = path.join(app.getPath('userData'), 'space.sqlite');
@@ -201,7 +231,9 @@ app.on('ready', () => {
   const terminal = startTerminalWorker();
   storageClient = storage;
   terminalClient = terminal;
-  projectHandlers = createProjectHandlers(storage);
+  projectHandlers = createProjectHandlers(storage, {
+    onDevProcessExited: (event) => fireDevProcessExitedTrigger?.(event),
+  });
   gitHandlers = createGitHandlers(storage, {
     historyCacheDir: path.join(app.getPath('userData'), 'cache', 'git-history'),
   });
@@ -214,6 +246,27 @@ app.on('ready', () => {
   // always-available default (spec 13.3, ADR-008); a remote/local model
   // provider is an architecturally-supported but not-yet-connected seam.
   agentHandlers = createAgentHandlers(storage, { gitHandlers, projectHandlers, githubHandlers });
+  // M8: every action handler dispatches into the same already-existing
+  // gitHandlers/githubHandlers/projectHandlers this app already built for
+  // M4-M6 — no parallel capability implementation (spec 18.3).
+  automationHandlers = createAutomationHandlers(storage, { gitHandlers, githubHandlers, projectHandlers });
+  fireDevProcessExitedTrigger = (event) =>
+    fireAutomationTrigger(automationHandlers as AutomationHandlers, {
+      type: 'dev-process-exited',
+      workspaceId: event.workspaceId,
+      projectId: event.projectId,
+      occurredAt: new Date().toISOString(),
+      context: { devProcessId: event.devProcessId, exitCode: event.exitCode, state: event.state },
+    });
+
+  // M8: the one clock driving the `scheduled` trigger (spec 18.2) — see
+  // `SCHEDULED_AUTOMATION_TICK_MS`'s comment. Failures here must never
+  // crash the app; each tick has its own error boundary.
+  scheduledAutomationTimer = setInterval(() => {
+    automationHandlers?.runDueScheduledAutomations().catch((error) => {
+      console.error('Scheduled automation tick failed', error);
+    });
+  }, SCHEDULED_AUTOMATION_TICK_MS);
 
   // TERM-004/PRJ-006: live PTY/dev processes from a previous run cannot be
   // assumed recoverable — represent them honestly as history before the
@@ -221,7 +274,16 @@ app.on('ready', () => {
   void storage.call('system.reconcileOrphans', undefined);
 
   if (!handlersRegistered) {
-    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers);
+    registerIpcHandlers(
+      trustedSender as TrustedSender,
+      storage,
+      terminal,
+      projectHandlers,
+      gitHandlers,
+      githubHandlers,
+      agentHandlers,
+      automationHandlers,
+    );
     handlersRegistered = true;
   }
 
@@ -229,6 +291,11 @@ app.on('ready', () => {
 });
 
 app.on('before-quit', () => {
+  if (scheduledAutomationTimer) {
+    clearInterval(scheduledAutomationTimer);
+    scheduledAutomationTimer = null;
+  }
+  fireDevProcessExitedTrigger = null;
   projectHandlers?.stopAllDevServers();
   terminalClient?.stop();
   storageClient?.stop();
@@ -236,6 +303,7 @@ app.on('before-quit', () => {
   gitHandlers = null;
   githubHandlers = null;
   agentHandlers = null;
+  automationHandlers = null;
   terminalClient = null;
   storageClient = null;
 });

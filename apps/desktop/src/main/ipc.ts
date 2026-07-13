@@ -18,6 +18,13 @@ import {
   agentPermissionGrantInputSchema,
   agentPermissionRevokeInputSchema,
   agentPlanDispatchInputSchema,
+  automationCreateInputSchema,
+  automationDeleteInputSchema,
+  automationListInputSchema,
+  automationListRunsInputSchema,
+  automationSetEnabledInputSchema,
+  automationSettingsGetInputSchema,
+  automationSettingsSetInputSchema,
   gitCommitInputSchema,
   gitCreateBranchInputSchema,
   gitDeleteBranchInputSchema,
@@ -66,11 +73,13 @@ import {
   githubRepoPlanPublishInputSchema,
   githubRepoPublishInputSchema,
   githubSetupGitInputSchema,
+  projectOpenedInputSchema,
   IPC_CHANNELS,
   type TerminalEvent,
 } from '@space/contracts';
 import { assertIpcSender, type TrustedSender } from '@space/security';
 import type { AgentHandlers } from './agent-handlers';
+import type { AutomationHandlers } from './automation-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
@@ -88,6 +97,25 @@ function windowForEvent(event: IpcMainInvokeEvent): BrowserWindow {
 function sendToTrustedWindow(trusted: TrustedSender, channel: string, payload: unknown): void {
   const window = BrowserWindow.getAllWindows().find((w) => w.webContents.id === trusted.webContentsId);
   window?.webContents.send(channel, payload);
+}
+
+/**
+ * Fires a real automation trigger event (spec 18.2) from an already-
+ * successful mutation — the exact "wire to signals that already exist"
+ * pattern the M8 automation engine is built around, rather than any new
+ * detection machinery. A failure here (a bad automation configuration, a
+ * storage hiccup) must never fail or roll back the mutation that already
+ * succeeded — it is fired-and-forgotten with its own error boundary,
+ * mirroring how `terminal.subscribe`'s storage bookkeeping calls above are
+ * `void`-fired rather than awaited inline. Exported so main.ts can fire the
+ * same trigger from a signal that lives outside this file (M8's
+ * `dev-process-exited`, observed in project-handlers.ts's dev-process exit
+ * callback) without duplicating this error boundary.
+ */
+export function fireAutomationTrigger(automationHandlers: AutomationHandlers, event: Parameters<AutomationHandlers['handleTriggerEvent']>[0]): void {
+  void automationHandlers.handleTriggerEvent(event).catch((error) => {
+    console.error('Automation trigger handling failed', error);
+  });
 }
 
 async function pickDirectory(event: IpcMainInvokeEvent): Promise<string | null> {
@@ -112,6 +140,7 @@ export function registerIpcHandlers(
   gitHandlers: GitHandlers,
   githubHandlers: GithubHandlers,
   agentHandlers: AgentHandlers,
+  automationHandlers: AutomationHandlers,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
@@ -188,6 +217,22 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.projectPickParentDirectory, async (event) => {
     assertIpcSender(event, trusted);
     return pickDirectory(event);
+  });
+
+  /** M8: fires the `project-opened` automation trigger (spec 18.2) — the renderer calls this once when a project's working view is actually opened, not on every list render. */
+  ipcMain.handle(IPC_CHANNELS.projectOpened, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = projectOpenedInputSchema.parse(input);
+    const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
+    if (project) {
+      fireAutomationTrigger(automationHandlers, {
+        type: 'project-opened',
+        workspaceId: project.workspaceId,
+        projectId: parsed.projectId,
+        occurredAt: new Date().toISOString(),
+        context: {},
+      });
+    }
   });
 
   // M4: terminal (TERM-001..006).
@@ -293,7 +338,19 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.gitCommit, async (event, input) => {
     assertIpcSender(event, trusted);
-    return gitHandlers.commit(gitCommitInputSchema.parse(input));
+    const parsed = gitCommitInputSchema.parse(input);
+    const result = await gitHandlers.commit(parsed);
+    const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
+    if (project) {
+      fireAutomationTrigger(automationHandlers, {
+        type: 'commit-created',
+        workspaceId: project.workspaceId,
+        projectId: parsed.projectId,
+        occurredAt: new Date().toISOString(),
+        context: { sha: result.sha },
+      });
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.gitBranchList, async (event, input) => {
@@ -333,7 +390,19 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.gitPush, async (event, input) => {
     assertIpcSender(event, trusted);
-    return gitHandlers.push(gitPushInputSchema.parse(input));
+    const parsed = gitPushInputSchema.parse(input);
+    const result = await gitHandlers.push(parsed);
+    const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
+    if (project) {
+      fireAutomationTrigger(automationHandlers, {
+        type: 'branch-pushed',
+        workspaceId: project.workspaceId,
+        projectId: parsed.projectId,
+        occurredAt: new Date().toISOString(),
+        context: { branch: parsed.branch },
+      });
+    }
+    return result;
   });
 
   ipcMain.handle(IPC_CHANNELS.gitConflictState, async (event, input) => {
@@ -725,5 +794,51 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.agentPermissionList, async (event, workspaceId) => {
     assertIpcSender(event, trusted);
     return agentHandlers.listPermissions(workspaceId as string);
+  });
+
+  // ---------------------------------------------------------------------
+  // M8: automation (spec section 18)
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.automationList, async (event, workspaceId) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationListInputSchema.parse({ workspaceId });
+    return automationHandlers.listAutomations(parsed.workspaceId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationCreate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationCreateInputSchema.parse(input);
+    return automationHandlers.createAutomation(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationSetEnabled, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationSetEnabledInputSchema.parse(input);
+    return automationHandlers.setEnabled(parsed.id, parsed.enabled);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationDelete, async (event, id) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationDeleteInputSchema.parse({ id });
+    return automationHandlers.deleteAutomation(parsed.id);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationListRuns, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationListRunsInputSchema.parse(input);
+    return automationHandlers.listRuns(parsed.automationId, parsed.limit);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationSettingsGet, async (event, workspaceId) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationSettingsGetInputSchema.parse({ workspaceId });
+    return automationHandlers.getAllEnabled(parsed.workspaceId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.automationSettingsSet, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = automationSettingsSetInputSchema.parse(input);
+    return automationHandlers.setAllEnabled(parsed.workspaceId, parsed.enabled);
   });
 }

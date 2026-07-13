@@ -11,6 +11,7 @@ describe('checkTrust', () => {
       'load-project-content',
       'inject-secrets',
       'agent-file-modify',
+      'automation-script',
     ] as const) {
       expect(checkTrust({ trustState: 'trusted', operation })).toEqual({ permitted: true, reason: null });
     }

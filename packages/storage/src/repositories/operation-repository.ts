@@ -1,5 +1,26 @@
 import type Database from 'better-sqlite3';
 
+/**
+ * Bytes of serialised `partialState` retained per operation receipt before
+ * truncation (spec 27.4's resource-limit requirement — an operation that
+ * captures a huge stdout/stderr blob on failure must not grow the
+ * database unbounded). Kept in lockstep with `@space/domain`'s
+ * `RESOURCE_LIMITS.maxRetainedOperationOutputBytes` by convention, not by
+ * importing it (this package stays dependency-light on purpose).
+ */
+export const MAX_RETAINED_OPERATION_OUTPUT_BYTES = 64 * 1024;
+
+function truncatePartialStateJson(json: string): string {
+  if (Buffer.byteLength(json, 'utf-8') <= MAX_RETAINED_OPERATION_OUTPUT_BYTES) {
+    return json;
+  }
+  // A crude but safe truncation: keep the payload wrapped in valid JSON so
+  // every reader can still `JSON.parse` it, with an explicit marker rather
+  // than silently losing the tail without a trace.
+  const truncated = Buffer.from(json, 'utf-8').subarray(0, MAX_RETAINED_OPERATION_OUTPUT_BYTES).toString('utf-8');
+  return JSON.stringify({ truncated: true, maxBytes: MAX_RETAINED_OPERATION_OUTPUT_BYTES, preview: truncated });
+}
+
 export type OperationRisk = 'observe' | 'local-reversible' | 'remote' | 'destructive';
 
 export type OperationState =
@@ -119,17 +140,13 @@ export class OperationRepository {
   }
 
   complete(id: string, completion: OperationCompletion): OperationRow {
+    const partialStateJson =
+      completion.partialState !== undefined ? truncatePartialStateJson(JSON.stringify(completion.partialState)) : null;
     this.db
       .prepare(
         `UPDATE operations SET state = ?, ended_at = ?, exit_code = ?, partial_state_json = ? WHERE id = ?`,
       )
-      .run(
-        completion.state,
-        completion.endedAt,
-        completion.exitCode,
-        completion.partialState !== undefined ? JSON.stringify(completion.partialState) : null,
-        id,
-      );
+      .run(completion.state, completion.endedAt, completion.exitCode, partialStateJson, id);
     const updated = this.findById(id);
     if (!updated) {
       throw new Error(`Operation ${id} vanished while completing`);

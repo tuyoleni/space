@@ -26,3 +26,4 @@ export * from './bootstrap-state';
 export * from './project-detection';
 export * from './package-manager';
 export * from './project-templates';
+export * from './download-cache';

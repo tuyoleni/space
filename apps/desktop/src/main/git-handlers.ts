@@ -206,7 +206,10 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   async function status(input: GitProjectInput): Promise<GitStatusSummary> {
     const project = await requireProject(input.projectId);
     const cwd = repoCwd(project);
-    const full = await queue.coalesceStatusRefresh(cwd, () => readFullStatus(cwd));
+    // Coalesced per repository first (spec 11.13), then bounded globally
+    // (spec 27.4) — a burst of *distinct* repositories' status refreshes
+    // still cannot exceed the concurrent-read cap.
+    const full = await queue.coalesceStatusRefresh(cwd, () => queue.enqueueRead(() => readFullStatus(cwd)));
     return toGitStatusSummary(full);
   }
 
@@ -335,7 +338,13 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     const project = await requireProject(input.projectId);
     const cwd = repoCwd(project);
     const store = historyStoreFor(project, cwd);
-    const page = input.offset === 0 ? await store.loadInitial(input.count) : await store.getPage(input.offset, input.count);
+    // History paging is a non-mutating read, so it goes through the global
+    // concurrent-read cap (spec 27.4) rather than the per-repository
+    // mutating lock — a burst of history requests across many open
+    // projects must not spawn unbounded `git log` processes at once.
+    const page = await queue.enqueueRead(() =>
+      input.offset === 0 ? store.loadInitial(input.count) : store.getPage(input.offset, input.count),
+    );
     return {
       commits: page.commits.map((commit) => ({
         sha: commit.sha,

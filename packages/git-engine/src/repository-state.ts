@@ -7,6 +7,7 @@
  * The filesystem check is injected so this stays testable without a real
  * repository.
  */
+import path from 'node:path';
 
 export type RepositoryOperationState =
   | { readonly kind: 'none' }
@@ -21,8 +22,9 @@ export interface GitDirFsPort {
   exists(path: string): Promise<boolean>;
 }
 
+/** Platform-aware join (spec 30.3: "never concatenate paths manually") — `gitDir` comes from `git rev-parse --git-dir`, a real filesystem path, not a display/URL string. */
 function join(gitDir: string, ...segments: string[]): string {
-  return [gitDir, ...segments].join('/');
+  return path.join(gitDir, ...segments);
 }
 
 /**

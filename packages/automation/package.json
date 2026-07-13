@@ -7,6 +7,10 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet for @space/automation\""
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@space/domain": "^0.1.0",
+    "zod": "^4.4.3"
   }
 }

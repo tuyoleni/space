@@ -34,6 +34,15 @@ export interface ActivityDateRange {
 }
 
 /**
+ * Days of activity history retained before `pruneOlderThan` removes a row
+ * (spec 27.4's resource-limit requirement, spec 17.4 "activity is local by
+ * default"). Kept in lockstep with `@space/domain`'s `RESOURCE_LIMITS.
+ * activityRetentionDays` by convention, not by importing it (this package
+ * stays dependency-light on purpose).
+ */
+export const ACTIVITY_RETENTION_DAYS = 400;
+
+/**
  * Pure data access over `activity_events` (spec 23.2.9). Every row here
  * traces back to `@space/activity`'s `activityEventFromOperation` or a
  * direct observed-state recording call — this repository never invents
@@ -79,5 +88,11 @@ export class ActivityRepository {
       )
       .all(workspaceId, range.fromInclusive, range.toInclusive) as SqliteActivityEventRow[];
     return rows.map(fromSqlite);
+  }
+
+  /** Deletes every event older than `ACTIVITY_RETENTION_DAYS` (spec 27.4) — a bounded, tested retention window, not just documentation. Returns the number of rows removed. */
+  pruneOlderThan(cutoffIso: string): number {
+    const result = this.db.prepare('DELETE FROM activity_events WHERE occurred_at < ?').run(cutoffIso);
+    return result.changes;
   }
 }

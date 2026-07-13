@@ -110,3 +110,49 @@ describe('RepositoryOperationQueue.coalesceStatusRefresh', () => {
     expect(opB).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('RepositoryOperationQueue.enqueueRead (spec 27.4: concurrent repository reads)', () => {
+  it('never allows more than the configured cap to run at once, across different repositories', async () => {
+    const queue = new RepositoryOperationQueue({ maxConcurrentReads: 2 });
+    let inFlight = 0;
+    let maxObservedInFlight = 0;
+    const gate = deferred<void>();
+
+    const run = () =>
+      queue.enqueueRead(async () => {
+        inFlight += 1;
+        maxObservedInFlight = Math.max(maxObservedInFlight, inFlight);
+        await gate.promise;
+        inFlight -= 1;
+        return 'ok';
+      });
+
+    const results = Promise.all([run(), run(), run(), run()]);
+    // Give the first two a chance to start; the other two must be waiting.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(inFlight).toBe(2);
+    expect(queue.inFlightReadCount).toBe(2);
+
+    gate.resolve();
+    await results;
+    expect(maxObservedInFlight).toBe(2);
+    expect(queue.inFlightReadCount).toBe(0);
+  });
+
+  it('lets a caller through immediately once a slot frees up (FIFO), never dropping or rejecting a read', async () => {
+    const queue = new RepositoryOperationQueue({ maxConcurrentReads: 1 });
+    const order: string[] = [];
+
+    const first = queue.enqueueRead(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push('first');
+    });
+    const second = queue.enqueueRead(async () => {
+      order.push('second');
+    });
+
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first', 'second']);
+  });
+});

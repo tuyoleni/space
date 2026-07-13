@@ -36,7 +36,18 @@ export type StorageMethod =
   | 'agentPermission.grant'
   | 'agentPermission.revoke'
   | 'agentPermission.list'
-  | 'agentPermission.findActiveGrant';
+  | 'agentPermission.findActiveGrant'
+  // M8: automations (spec section 18)
+  | 'automation.create'
+  | 'automation.list'
+  | 'automation.setEnabled'
+  | 'automation.setLastExecutionId'
+  | 'automation.delete'
+  | 'automationRun.start'
+  | 'automationRun.complete'
+  | 'automationRun.listByAutomation'
+  | 'automationSettings.isAllEnabled'
+  | 'automationSettings.setAllEnabled';
 
 export interface StorageRequest {
   readonly id: string;

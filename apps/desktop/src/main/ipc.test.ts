@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
 import type { AgentHandlers } from './agent-handlers';
+import type { AutomationHandlers } from './automation-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
@@ -138,8 +139,18 @@ function setup() {
     listPermissions: vi.fn(),
     computeIntrinsicRisk: vi.fn(),
   } as unknown as AgentHandlers;
-  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers, agentHandlers };
+  const automationHandlers = {
+    createAutomation: vi.fn(),
+    listAutomations: vi.fn(),
+    setEnabled: vi.fn(),
+    deleteAutomation: vi.fn(),
+    getAllEnabled: vi.fn(),
+    setAllEnabled: vi.fn(),
+    listRuns: vi.fn(),
+    handleTriggerEvent: vi.fn().mockResolvedValue([]),
+  } as unknown as AutomationHandlers;
+  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers);
+  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers };
 }
 
 function handlerFor(channel: string): Handler {
@@ -217,6 +228,65 @@ describe('registerIpcHandlers', () => {
       const { agentHandlers } = setup();
       await handlerFor(IPC_CHANNELS.agentPermissionList)(validEvent, 'ws-1');
       expect(agentHandlers.listPermissions).toHaveBeenCalledWith('ws-1');
+    });
+  });
+
+  describe('M8: automation channels route to automationHandlers with a valid sender', () => {
+    it('automation:create routes to createAutomation with the parsed definition', async () => {
+      const { automationHandlers } = setup();
+      const input = { workspaceId: 'ws-1', projectId: null, name: 'Notify on failure', trigger: { type: 'check-failed' }, conditions: [], actions: [{ id: '1', type: 'notifyUser', parameters: { message: 'x' } }] };
+      (automationHandlers.createAutomation as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'auto-1' });
+      const result = await handlerFor(IPC_CHANNELS.automationCreate)(validEvent, input);
+      expect(automationHandlers.createAutomation).toHaveBeenCalledWith(input);
+      expect(result).toEqual({ id: 'auto-1' });
+    });
+
+    it('automation:list routes to listAutomations', async () => {
+      const { automationHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.automationList)(validEvent, 'ws-1');
+      expect(automationHandlers.listAutomations).toHaveBeenCalledWith('ws-1');
+    });
+
+    it('automation:setEnabled routes to setEnabled', async () => {
+      const { automationHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.automationSetEnabled)(validEvent, { id: 'auto-1', enabled: false });
+      expect(automationHandlers.setEnabled).toHaveBeenCalledWith('auto-1', false);
+    });
+
+    it('automation:settings:set routes to the instant kill switch', async () => {
+      const { automationHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.automationSettingsSet)(validEvent, { workspaceId: 'ws-1', enabled: false });
+      expect(automationHandlers.setAllEnabled).toHaveBeenCalledWith('ws-1', false);
+    });
+
+    it('git:commit fires a commit-created automation trigger after a successful commit, scoped to the project\'s workspace', async () => {
+      const { gitHandlers, storageCall, automationHandlers } = setup();
+      (gitHandlers.commit as ReturnType<typeof vi.fn>).mockResolvedValue({ sha: 'abc123', hookOutput: '' });
+      storageCall.mockResolvedValue({ workspaceId: 'ws-1' });
+      await handlerFor(IPC_CHANNELS.gitCommit)(validEvent, { projectId: 'p-1', message: 'fix' });
+      // Automation trigger handling is fire-and-forget — flush microtasks.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(automationHandlers.handleTriggerEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'commit-created', workspaceId: 'ws-1', projectId: 'p-1', context: { sha: 'abc123' } }),
+      );
+    });
+
+    it('project:opened fires a project-opened automation trigger scoped to the project\'s workspace', async () => {
+      const { storageCall, automationHandlers } = setup();
+      storageCall.mockResolvedValue({ workspaceId: 'ws-1' });
+      await handlerFor(IPC_CHANNELS.projectOpened)(validEvent, { projectId: 'p-1' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(automationHandlers.handleTriggerEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'project-opened', workspaceId: 'ws-1', projectId: 'p-1' }),
+      );
+    });
+
+    it('project:opened does nothing when the project no longer exists', async () => {
+      const { storageCall, automationHandlers } = setup();
+      storageCall.mockResolvedValue(null);
+      await handlerFor(IPC_CHANNELS.projectOpened)(validEvent, { projectId: 'gone' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(automationHandlers.handleTriggerEvent).not.toHaveBeenCalled();
     });
   });
 

@@ -10,6 +10,12 @@ import type {
   AgentPermissionRevokeInput,
   AgentPlanDispatchInput,
   AgentStandingPermissionSummary,
+  AutomationCreateInput,
+  AutomationListRunsInput,
+  AutomationRunSummary,
+  AutomationSetEnabledInput,
+  AutomationSettingsSetInput,
+  AutomationSummary,
   CloneProjectInput,
   CreateProjectFromTemplateInput,
   CreateTerminalInput,
@@ -145,6 +151,8 @@ export interface SpaceAPI {
     installDependencies(input: InstallDependenciesInput): Promise<InstallDependenciesResult>;
     /** Opens the native folder picker for a create/clone destination parent. */
     pickParentDirectory(): Promise<string | null>;
+    /** M8: fires the `project-opened` automation trigger (spec 18.2) — call once when the user actually opens a project's working view, not on every list render. */
+    opened(projectId: string): Promise<void>;
   };
   readonly terminal: {
     /** TERM-002: permanently binds the session to workspaceId/projectId at creation. */
@@ -267,5 +275,18 @@ export interface SpaceAPI {
     permissionGrant(input: AgentPermissionGrantInput): Promise<AgentStandingPermissionSummary>;
     permissionRevoke(input: AgentPermissionRevokeInput): Promise<void>;
     permissionList(workspaceId: string): Promise<readonly AgentStandingPermissionSummary[]>;
+  };
+  readonly automation: {
+    /** spec 18.1: validated (workspaceId/project scope/trigger/conditions/ordered actions) before it is ever persisted. */
+    create(input: AutomationCreateInput): Promise<AutomationSummary>;
+    list(workspaceId: string): Promise<AutomationSummary[]>;
+    /** spec 18.4: an individual automation's own enabled state — separate from the workspace-wide instant kill switch below. */
+    setEnabled(input: AutomationSetEnabledInput): Promise<AutomationSummary>;
+    delete(id: string): Promise<void>;
+    /** spec 18.1's execution history / 18.4's "each run produces a receipt". */
+    listRuns(input: AutomationListRunsInput): Promise<AutomationRunSummary[]>;
+    /** spec 18.4: "a user can disable all automations immediately" — a real, instant, workspace-wide kill switch. */
+    getAllEnabled(workspaceId: string): Promise<boolean>;
+    setAllEnabled(input: AutomationSettingsSetInput): Promise<void>;
   };
 }

@@ -1062,3 +1062,67 @@ export interface AgentStandingPermissionSummary {
   readonly grantedAt: string;
   readonly revokedAt: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// M8: automation (spec section 18). `trigger`/`conditions`/`actions` are
+// opaque `unknown` at this IPC boundary deliberately, the same reasoning
+// AgentPlanDispatchInput documents — they are produced and consumed by
+// @space/automation's own strict, Zod-validated schemas
+// (AutomationDefinitionSchema, AutomationActionSchema), not re-validated a
+// second time here.
+// ---------------------------------------------------------------------------
+
+export interface AutomationSummary {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly name: string;
+  readonly trigger: unknown;
+  readonly conditions: readonly unknown[];
+  readonly actions: readonly unknown[];
+  readonly enabled: boolean;
+  readonly lastExecutionId: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface AutomationCreateInput {
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly name: string;
+  readonly trigger: unknown;
+  readonly conditions: readonly unknown[];
+  readonly actions: readonly unknown[];
+}
+
+export interface AutomationSetEnabledInput {
+  readonly id: string;
+  readonly enabled: boolean;
+}
+
+export interface AutomationRunSummary {
+  readonly id: string;
+  readonly automationId: string;
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly triggerType: string;
+  readonly state: 'running' | 'succeeded' | 'failed' | 'skipped-disabled' | 'skipped-conditions';
+  readonly startedAt: string;
+  readonly endedAt: string | null;
+  readonly failureReason: string | null;
+  readonly attempts: number;
+}
+
+export interface AutomationListRunsInput {
+  readonly automationId: string;
+  readonly limit?: number;
+}
+
+export interface AutomationSettingsGetInput {
+  readonly workspaceId: string;
+}
+
+export interface AutomationSettingsSetInput {
+  readonly workspaceId: string;
+  readonly enabled: boolean;
+}

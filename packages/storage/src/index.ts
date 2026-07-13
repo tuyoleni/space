@@ -20,4 +20,7 @@ export * from './repositories/activity-repository';
 export * from './repositories/secret-ref-repository';
 export * from './repositories/service-connection-repository';
 export * from './repositories/agent-permission-repository';
+export * from './repositories/automation-repository';
+export * from './repositories/automation-run-repository';
+export * from './repositories/automation-settings-repository';
 export * from './receipts';

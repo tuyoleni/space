@@ -53,6 +53,7 @@ const OPERATION_TYPE_TO_ACTIVITY: Readonly<Record<string, Mapping>> = {
   'git.fetch': { eventType: 'fetch', weight: 1 },
   'git.pull': { eventType: 'pull', weight: 2 },
   'git.push': { eventType: 'push', weight: 2 },
+  'automation.run': { eventType: 'automation-execution', weight: 1 },
 };
 
 /** Returns null for operation types that are not activity-worthy (unmapped) or that did not succeed. */

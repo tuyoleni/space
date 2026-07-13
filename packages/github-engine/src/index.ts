@@ -22,3 +22,4 @@ export * from './actions';
 export * from './issues';
 export * from './releases';
 export * from './connectivity';
+export * from './cache';

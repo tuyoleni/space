@@ -519,3 +519,44 @@ export const agentPermissionGrantInputSchema = z.object({
 export const agentPermissionRevokeInputSchema = z.object({
   id: z.string().min(1),
 });
+
+// ---------------------------------------------------------------------------
+// M8: automation (spec section 18). `trigger`/`conditions`/`actions` are
+// validated for real by @space/automation's own schemas inside
+// automation-handlers.ts — this layer only validates the transport
+// envelope, matching the M7 agent-plan convention this file already
+// documents.
+// ---------------------------------------------------------------------------
+
+export const automationListInputSchema = z.object({ workspaceId: z.string().min(1) });
+
+export const automationCreateInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  name: z.string().trim().min(1).max(200),
+  trigger: z.unknown(),
+  conditions: z.array(z.unknown()),
+  actions: z.array(z.unknown()),
+});
+
+export const automationSetEnabledInputSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+export const automationDeleteInputSchema = z.object({ id: z.string().min(1) });
+
+export const automationListRunsInputSchema = z.object({
+  automationId: z.string().min(1),
+  limit: z.number().int().min(1).max(500).optional(),
+});
+
+export const automationSettingsGetInputSchema = z.object({ workspaceId: z.string().min(1) });
+
+export const automationSettingsSetInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  enabled: z.boolean(),
+});
+
+/** M8: the `project-opened` trigger's transport envelope (spec 18.2) — just the project id. */
+export const projectOpenedInputSchema = z.object({ projectId: z.string().min(1) });

@@ -39,6 +39,8 @@ import { detectPackageManager, detectProject, detectedTypesFromReport, nodeProje
 import {
   withReceipt,
   type AgentStandingPermissionRow,
+  type AutomationRow,
+  type AutomationRunRow,
   type DevProcessRow,
   type OperationRisk,
   type OperationRow,
@@ -368,6 +370,49 @@ const agentPermissionFindActiveGrantSchema = z.object({
   actionType: z.string().min(1),
 });
 
+// ---------------------------------------------------------------------------
+// M8: automations (spec section 18) — this worker only ever owns the
+// database (ADR-003); the engine, trigger matching, and dispatch to real
+// capabilities live in automation-handlers.ts, exactly like git/github/
+// project handlers.
+// ---------------------------------------------------------------------------
+
+const automationCreateSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  name: z.string().min(1),
+  trigger: z.unknown(),
+  conditions: z.array(z.unknown()),
+  actions: z.array(z.unknown()),
+  createdAt: z.string().min(1),
+});
+const automationListSchema = z.object({ workspaceId: z.string().min(1) });
+const automationSetEnabledSchema = z.object({ id: z.string().min(1), enabled: z.boolean(), updatedAt: z.string().min(1) });
+const automationSetLastExecutionIdSchema = z.object({ id: z.string().min(1), lastExecutionId: z.string().min(1), updatedAt: z.string().min(1) });
+const automationDeleteSchema = z.object({ id: z.string().min(1) });
+
+const automationRunStartSchema = z.object({
+  id: z.string().min(1),
+  automationId: z.string().min(1),
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  triggerType: z.string().min(1),
+  triggerEvent: z.unknown(),
+  startedAt: z.string().min(1),
+  operationId: z.string().min(1).nullable().optional(),
+});
+const automationRunCompleteSchema = z.object({
+  id: z.string().min(1),
+  state: z.enum(['succeeded', 'failed', 'skipped-disabled', 'skipped-conditions']),
+  endedAt: z.string().min(1),
+  failureReason: z.string().nullable().optional(),
+  attempts: z.number().int().min(0),
+});
+const automationRunListByAutomationSchema = z.object({ automationId: z.string().min(1), limit: z.number().int().min(1).optional() });
+const automationSettingsIsAllEnabledSchema = z.object({ workspaceId: z.string().min(1) });
+const automationSettingsSetAllEnabledSchema = z.object({ workspaceId: z.string().min(1), enabled: z.boolean(), updatedAt: z.string().min(1) });
+
 export async function handleStorageRequest(storage: Storage, request: StorageRequest): Promise<unknown> {
   const method = request.method as StorageMethod;
   switch (method) {
@@ -653,6 +698,77 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'agentPermission.findActiveGrant': {
       const input = agentPermissionFindActiveGrantSchema.parse(request.payload);
       return storage.agentPermissions.findActiveGrant(input.workspaceId, input.projectId, input.actionType);
+    }
+
+    case 'automation.create': {
+      const input = automationCreateSchema.parse(request.payload);
+      const row: AutomationRow = storage.automations.create(input);
+      return row;
+    }
+
+    case 'automation.list': {
+      const input = automationListSchema.parse(request.payload);
+      return storage.automations.listByWorkspace(input.workspaceId);
+    }
+
+    case 'automation.setEnabled': {
+      const input = automationSetEnabledSchema.parse(request.payload);
+      const row: AutomationRow = storage.automations.setEnabled(input.id, input.enabled, input.updatedAt);
+      return row;
+    }
+
+    case 'automation.setLastExecutionId': {
+      const input = automationSetLastExecutionIdSchema.parse(request.payload);
+      storage.automations.setLastExecutionId(input.id, input.lastExecutionId, input.updatedAt);
+      return undefined;
+    }
+
+    case 'automation.delete': {
+      const input = automationDeleteSchema.parse(request.payload);
+      storage.automations.delete(input.id);
+      return undefined;
+    }
+
+    case 'automationRun.start': {
+      const input = automationRunStartSchema.parse(request.payload);
+      const row: AutomationRunRow = storage.automationRuns.start({
+        id: input.id,
+        automationId: input.automationId,
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        triggerType: input.triggerType,
+        triggerEvent: input.triggerEvent,
+        startedAt: input.startedAt,
+        operationId: input.operationId ?? null,
+      });
+      return row;
+    }
+
+    case 'automationRun.complete': {
+      const input = automationRunCompleteSchema.parse(request.payload);
+      const row: AutomationRunRow = storage.automationRuns.complete(input.id, {
+        state: input.state,
+        endedAt: input.endedAt,
+        failureReason: input.failureReason ?? null,
+        attempts: input.attempts,
+      });
+      return row;
+    }
+
+    case 'automationRun.listByAutomation': {
+      const input = automationRunListByAutomationSchema.parse(request.payload);
+      return storage.automationRuns.listByAutomation(input.automationId, input.limit);
+    }
+
+    case 'automationSettings.isAllEnabled': {
+      const input = automationSettingsIsAllEnabledSchema.parse(request.payload);
+      return storage.automationSettings.isAllEnabled(input.workspaceId);
+    }
+
+    case 'automationSettings.setAllEnabled': {
+      const input = automationSettingsSetAllEnabledSchema.parse(request.payload);
+      storage.automationSettings.setAllEnabled(input.workspaceId, input.enabled, input.updatedAt);
+      return undefined;
     }
 
     default: {

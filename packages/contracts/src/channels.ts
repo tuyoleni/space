@@ -22,6 +22,8 @@ export const IPC_CHANNELS = {
   projectClone: 'project:clone',
   projectInstallDependencies: 'project:installDependencies',
   projectPickParentDirectory: 'project:pickParentDirectory',
+  /** M8: fires the `project-opened` automation trigger (spec 18.2) — no other side effect. */
+  projectOpened: 'project:opened',
 
   terminalCreate: 'terminal:create',
   terminalWrite: 'terminal:write',
@@ -104,6 +106,15 @@ export const IPC_CHANNELS = {
   agentPermissionGrant: 'agent:permission:grant',
   agentPermissionRevoke: 'agent:permission:revoke',
   agentPermissionList: 'agent:permission:list',
+
+  // M8: automation (spec section 18)
+  automationList: 'automation:list',
+  automationCreate: 'automation:create',
+  automationSetEnabled: 'automation:setEnabled',
+  automationDelete: 'automation:delete',
+  automationListRuns: 'automation:listRuns',
+  automationSettingsGet: 'automation:settings:get',
+  automationSettingsSet: 'automation:settings:set',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

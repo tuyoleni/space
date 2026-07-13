@@ -2,6 +2,9 @@ import type Database from 'better-sqlite3';
 import { openDatabase } from './database';
 import { ActivityRepository } from './repositories/activity-repository';
 import { AgentPermissionRepository } from './repositories/agent-permission-repository';
+import { AutomationRepository } from './repositories/automation-repository';
+import { AutomationRunRepository } from './repositories/automation-run-repository';
+import { AutomationSettingsRepository } from './repositories/automation-settings-repository';
 import { BootstrapRepository } from './repositories/bootstrap-repository';
 import { DevProcessRepository } from './repositories/dev-process-repository';
 import { OperationRepository } from './repositories/operation-repository';
@@ -23,6 +26,9 @@ export interface Storage {
   readonly secretRefs: SecretRefRepository;
   readonly serviceConnections: ServiceConnectionRepository;
   readonly agentPermissions: AgentPermissionRepository;
+  readonly automations: AutomationRepository;
+  readonly automationRuns: AutomationRunRepository;
+  readonly automationSettings: AutomationSettingsRepository;
   close(): void;
 }
 
@@ -45,6 +51,9 @@ export function createStorage(dbPath: string): Storage {
     secretRefs: new SecretRefRepository(db),
     serviceConnections: new ServiceConnectionRepository(db),
     agentPermissions: new AgentPermissionRepository(db),
+    automations: new AutomationRepository(db),
+    automationRuns: new AutomationRunRepository(db),
+    automationSettings: new AutomationSettingsRepository(db),
     close: () => db.close(),
   };
 }

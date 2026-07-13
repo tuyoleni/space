@@ -226,7 +226,15 @@ export function App() {
   }
 
   function handleToggleGitPanel(project: Project): void {
-    setOpenGitPanel((prev) => ({ ...prev, [project.id]: !prev[project.id] }));
+    setOpenGitPanel((prev) => {
+      const next = !prev[project.id];
+      if (next) {
+        // M8: "project opened" (spec 18.2) — fire-and-forget, never blocks
+        // the panel toggle even if this fails.
+        void window.space.project.opened(project.id).catch(() => undefined);
+      }
+      return { ...prev, [project.id]: next };
+    });
   }
 
   function handleToggleAgentPanel(project: Project): void {

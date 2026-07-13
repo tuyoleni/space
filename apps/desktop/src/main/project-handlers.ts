@@ -53,6 +53,23 @@ export interface StorageCaller {
 export interface ProjectHandlersOptions {
   readonly resolveExecutable?: ExecutableResolver;
   readonly gitExecutor?: GitExecutor;
+  /**
+   * M8: fires the `dev-process-exited` automation trigger (spec 18.2) from
+   * the one place a dev process's exit is already observed — no parallel
+   * detection. Optional and late-bindable (a plain callback, not a
+   * constructor dependency on `AutomationHandlers`) because
+   * `createAutomationHandlers` itself depends on `ProjectHandlers`
+   * (`automation-handlers.ts` calls `projectHandlers.detectPackageManager`)
+   * — main.ts wires this after both are constructed, same "mutable hook
+   * set after the fact" shape as `fireAutomationTrigger`'s call sites.
+   */
+  readonly onDevProcessExited?: (event: {
+    readonly workspaceId: string;
+    readonly projectId: string;
+    readonly devProcessId: string;
+    readonly exitCode: number | null;
+    readonly state: 'stopped' | 'crashed';
+  }) => void;
 }
 
 const passthroughResolver: ExecutableResolver = async (executableId) => executableId;
@@ -343,6 +360,7 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
       const wasExplicitStop = expectedStops.delete(id);
       const state = wasExplicitStop || exitCode === 0 ? 'stopped' : 'crashed';
       void storage.call('devProcess.markStopped', { id, state, exitCode, endedAt: new Date().toISOString() });
+      options.onDevProcessExited?.({ workspaceId: project.workspaceId, projectId: project.id, devProcessId: id, exitCode, state });
     });
 
     return record;
