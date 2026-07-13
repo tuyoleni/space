@@ -10,6 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
+import type { AgentHandlers } from './agent-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
@@ -126,8 +127,19 @@ function setup() {
     releaseUploadArtifactFiles: vi.fn(),
     remoteAvailability: vi.fn(),
   } as unknown as GithubHandlers;
-  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers };
+  const agentHandlers = {
+    loadEvidence: vi.fn(),
+    generateIntentGroups: vi.fn(),
+    generateIntentGroupsWithModel: vi.fn(),
+    composeCommit: vi.fn(),
+    dispatchPlan: vi.fn(),
+    grantPermission: vi.fn(),
+    revokePermission: vi.fn(),
+    listPermissions: vi.fn(),
+    computeIntrinsicRisk: vi.fn(),
+  } as unknown as AgentHandlers;
+  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers);
+  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers, agentHandlers };
 }
 
 function handlerFor(channel: string): Handler {
@@ -175,6 +187,38 @@ describe('registerIpcHandlers', () => {
       expect(projectHandlers.detect).not.toHaveBeenCalled();
     },
   );
+
+  describe('M7: agent channels route to agentHandlers with a valid sender', () => {
+    it('agent:diff:load routes to loadEvidence', async () => {
+      const { agentHandlers } = setup();
+      (agentHandlers.loadEvidence as ReturnType<typeof vi.fn>).mockResolvedValue(['evidence']);
+      const result = await handlerFor(IPC_CHANNELS.agentDiffLoad)(validEvent, { projectId: 'proj-1' });
+      expect(agentHandlers.loadEvidence).toHaveBeenCalledWith({ projectId: 'proj-1' });
+      expect(result).toEqual(['evidence']);
+    });
+
+    it('agent:plan:dispatch routes to dispatchPlan with the raw action and confirmed flag', async () => {
+      const { agentHandlers } = setup();
+      (agentHandlers.dispatchPlan as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+      const action = { id: 'a1', type: 'git.stage' };
+      const result = await handlerFor(IPC_CHANNELS.agentPlanDispatch)(validEvent, { action, confirmed: true });
+      expect(agentHandlers.dispatchPlan).toHaveBeenCalledWith({ rawAction: action, confirmed: true });
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('agent:permission:grant routes to grantPermission', async () => {
+      const { agentHandlers } = setup();
+      const input = { workspaceId: 'ws-1', projectId: null, actionType: 'github.createPullRequest' };
+      await handlerFor(IPC_CHANNELS.agentPermissionGrant)(validEvent, input);
+      expect(agentHandlers.grantPermission).toHaveBeenCalledWith(input);
+    });
+
+    it('agent:permission:list routes to listPermissions', async () => {
+      const { agentHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.agentPermissionList)(validEvent, 'ws-1');
+      expect(agentHandlers.listPermissions).toHaveBeenCalledWith('ws-1');
+    });
+  });
 
   describe('project:pickFolder / project:pickParentDirectory', () => {
     it('returns the selected path when the user picks a folder', async () => {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
+import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
 import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
 import { registerIpcHandlers } from './main/ipc';
@@ -53,6 +54,7 @@ let terminalClient: TerminalClient | null = null;
 let projectHandlers: ProjectHandlers | null = null;
 let gitHandlers: GitHandlers | null = null;
 let githubHandlers: GithubHandlers | null = null;
+let agentHandlers: AgentHandlers | null = null;
 let handlersRegistered = false;
 
 function startStorageWorker(): StorageClient {
@@ -208,6 +210,10 @@ app.on('ready', () => {
     terminal,
     ghConfigDirFor: (workspaceId) => path.join(app.getPath('userData'), 'workspaces', workspaceId, 'gh-config'),
   });
+  // M7: no ModelProvider is passed — rule-based grouping is the real,
+  // always-available default (spec 13.3, ADR-008); a remote/local model
+  // provider is an architecturally-supported but not-yet-connected seam.
+  agentHandlers = createAgentHandlers(storage, { gitHandlers, projectHandlers, githubHandlers });
 
   // TERM-004/PRJ-006: live PTY/dev processes from a previous run cannot be
   // assumed recoverable — represent them honestly as history before the
@@ -215,7 +221,7 @@ app.on('ready', () => {
   void storage.call('system.reconcileOrphans', undefined);
 
   if (!handlersRegistered) {
-    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers, githubHandlers);
+    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers);
     handlersRegistered = true;
   }
 
@@ -229,6 +235,7 @@ app.on('before-quit', () => {
   projectHandlers = null;
   gitHandlers = null;
   githubHandlers = null;
+  agentHandlers = null;
   terminalClient = null;
   storageClient = null;
 });

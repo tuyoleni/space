@@ -117,6 +117,15 @@ const spaceAPI: SpaceAPI = {
     releasePickArtifactFiles: () => ipcRenderer.invoke(IPC_CHANNELS.githubReleasePickArtifactFiles),
     remoteAvailability: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubRemoteAvailability, input),
   },
+  agent: {
+    diffLoad: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentDiffLoad, input),
+    intentGenerate: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentIntentGenerate, input),
+    commitCompose: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentCommitCompose, input),
+    planDispatch: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPlanDispatch, input),
+    permissionGrant: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionGrant, input),
+    permissionRevoke: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionRevoke, input),
+    permissionList: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionList, workspaceId),
+  },
 };
 
 contextBridge.exposeInMainWorld('space', spaceAPI);

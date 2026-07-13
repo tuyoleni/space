@@ -1009,3 +1009,56 @@ export interface GithubRemoteActionAvailability {
   readonly available: boolean;
   readonly reason: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// M7: intent/agent layer (spec sections 13, 19). Evidence/intent-group/
+// agent-action payloads are opaque `unknown` at this IPC boundary
+// deliberately — they are produced and consumed entirely by
+// @space/agent's own strict, tested schemas (ChangeIntentSchema,
+// AgentActionSchema) inside agent-handlers.ts; this layer only validates
+// the transport envelope, not domain semantics duplicated a second time.
+// ---------------------------------------------------------------------------
+
+export interface AgentDiffLoadInput {
+  readonly projectId: string;
+}
+
+export interface AgentIntentGenerateInput {
+  readonly evidence: readonly unknown[];
+}
+
+export interface AgentCommitComposeInput {
+  readonly projectId: string;
+  readonly evidence: readonly unknown[];
+  readonly message: string;
+}
+
+export interface AgentCommitComposeResult {
+  readonly sha: string;
+  readonly hookOutput: string;
+}
+
+export interface AgentPlanDispatchInput {
+  /** An untrusted, possibly model-produced AgentAction — validated by @space/agent's AgentActionSchema before anything acts on it. */
+  readonly action: unknown;
+  readonly confirmed: boolean;
+}
+
+export interface AgentPermissionGrantInput {
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly actionType: string;
+}
+
+export interface AgentPermissionRevokeInput {
+  readonly id: string;
+}
+
+export interface AgentStandingPermissionSummary {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly projectId: string | null;
+  readonly actionType: string;
+  readonly grantedAt: string;
+  readonly revokedAt: string | null;
+}

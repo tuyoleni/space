@@ -95,6 +95,15 @@ export const IPC_CHANNELS = {
   githubReleaseUploadArtifacts: 'github:release:uploadArtifacts',
   githubReleasePickArtifactFiles: 'github:release:pickArtifactFiles',
   githubRemoteAvailability: 'github:remoteAvailability',
+
+  // M7: intent/agent layer (spec sections 13, 19)
+  agentDiffLoad: 'agent:diff:load',
+  agentIntentGenerate: 'agent:intent:generate',
+  agentCommitCompose: 'agent:commit:compose',
+  agentPlanDispatch: 'agent:plan:dispatch',
+  agentPermissionGrant: 'agent:permission:grant',
+  agentPermissionRevoke: 'agent:permission:revoke',
+  agentPermissionList: 'agent:permission:list',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

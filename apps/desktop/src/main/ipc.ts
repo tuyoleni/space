@@ -12,6 +12,12 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import {
   activityListRangeInputSchema,
+  agentCommitComposeInputSchema,
+  agentDiffLoadInputSchema,
+  agentIntentGenerateInputSchema,
+  agentPermissionGrantInputSchema,
+  agentPermissionRevokeInputSchema,
+  agentPlanDispatchInputSchema,
   gitCommitInputSchema,
   gitCreateBranchInputSchema,
   gitDeleteBranchInputSchema,
@@ -64,6 +70,7 @@ import {
   type TerminalEvent,
 } from '@space/contracts';
 import { assertIpcSender, type TrustedSender } from '@space/security';
+import type { AgentHandlers } from './agent-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
@@ -104,6 +111,7 @@ export function registerIpcHandlers(
   projectHandlers: ProjectHandlers,
   gitHandlers: GitHandlers,
   githubHandlers: GithubHandlers,
+  agentHandlers: AgentHandlers,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
@@ -672,5 +680,50 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = githubRemoteAvailabilityInputSchema.parse(input);
     return githubHandlers.remoteAvailability(parsed.connectivity);
+  });
+
+  // ---------------------------------------------------------------------
+  // M7: intent/agent layer (spec sections 13, 19)
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.agentDiffLoad, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentDiffLoadInputSchema.parse(input);
+    return agentHandlers.loadEvidence(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentIntentGenerate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentIntentGenerateInputSchema.parse(input);
+    return agentHandlers.generateIntentGroups(parsed.evidence as never);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentCommitCompose, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentCommitComposeInputSchema.parse(input);
+    return agentHandlers.composeCommit({ projectId: parsed.projectId, evidence: parsed.evidence as never, message: parsed.message });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentPlanDispatch, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentPlanDispatchInputSchema.parse(input);
+    return agentHandlers.dispatchPlan({ rawAction: parsed.action, confirmed: parsed.confirmed });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentPermissionGrant, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentPermissionGrantInputSchema.parse(input);
+    return agentHandlers.grantPermission(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentPermissionRevoke, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = agentPermissionRevokeInputSchema.parse(input);
+    return agentHandlers.revokePermission(parsed.id);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.agentPermissionList, async (event, workspaceId) => {
+    assertIpcSender(event, trusted);
+    return agentHandlers.listPermissions(workspaceId as string);
   });
 }

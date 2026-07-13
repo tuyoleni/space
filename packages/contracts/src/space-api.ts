@@ -2,6 +2,14 @@ import type {
   ActivityEvent,
   ActivityListRangeInput,
   AddProjectInput,
+  AgentCommitComposeInput,
+  AgentCommitComposeResult,
+  AgentDiffLoadInput,
+  AgentIntentGenerateInput,
+  AgentPermissionGrantInput,
+  AgentPermissionRevokeInput,
+  AgentPlanDispatchInput,
+  AgentStandingPermissionSummary,
   CloneProjectInput,
   CreateProjectFromTemplateInput,
   CreateTerminalInput,
@@ -246,5 +254,18 @@ export interface SpaceAPI {
     releasePickArtifactFiles(): Promise<readonly string[] | null>;
     /** GH-009: pure gate, no I/O — local Git always stays available regardless of this result. */
     remoteAvailability(input: GithubRemoteAvailabilityInput): Promise<GithubRemoteActionAvailability>;
+  };
+  readonly agent: {
+    /** CHG-001/002: real evidence (DiffSelection[]) from the project's actual staged+unstaged diff, and the always-available rule-based intent groups (ChangeIntent[]) built from it. Both are opaque here — see @space/agent for their real shape. */
+    diffLoad(input: AgentDiffLoadInput): Promise<readonly unknown[]>;
+    intentGenerate(input: AgentIntentGenerateInput): Promise<readonly unknown[]>;
+    /** CHG-004: refreshes the diff, rejects stale selections, and commits through the same real GIT-005 commit path as a manual commit. */
+    commitCompose(input: AgentCommitComposeInput): Promise<AgentCommitComposeResult>;
+    /** spec 19.1/19.3: schema-validates `action` before anything acts on it, then routes it through the structural confirmation gate and the real M4-M6 capability it maps to. */
+    planDispatch(input: AgentPlanDispatchInput): Promise<unknown>;
+    /** spec 19.2.3: narrow, revocable standing permission — never usable for a destructive action's confirmation. */
+    permissionGrant(input: AgentPermissionGrantInput): Promise<AgentStandingPermissionSummary>;
+    permissionRevoke(input: AgentPermissionRevokeInput): Promise<void>;
+    permissionList(workspaceId: string): Promise<readonly AgentStandingPermissionSummary[]>;
   };
 }

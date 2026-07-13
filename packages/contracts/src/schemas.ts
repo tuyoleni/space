@@ -482,3 +482,40 @@ export const githubReleaseUploadArtifactsInputSchema = z.object({
 export const githubRemoteAvailabilityInputSchema = z.object({
   connectivity: z.enum(['online', 'degraded', 'offline']),
 });
+
+// ---------------------------------------------------------------------------
+// M7: intent/agent layer (spec sections 13, 19). These validate only the
+// transport envelope — `evidence`/`action` are opaque here and get their
+// real, strict validation inside @space/agent (ChangeIntentSchema,
+// AgentActionSchema), which every model-produced or otherwise untrusted
+// payload must pass before anything acts on it.
+// ---------------------------------------------------------------------------
+
+export const agentDiffLoadInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export const agentIntentGenerateInputSchema = z.object({
+  evidence: z.array(z.unknown()),
+});
+
+export const agentCommitComposeInputSchema = z.object({
+  projectId: z.string().min(1),
+  evidence: z.array(z.unknown()),
+  message: z.string().min(1),
+});
+
+export const agentPlanDispatchInputSchema = z.object({
+  action: z.unknown(),
+  confirmed: z.boolean(),
+});
+
+export const agentPermissionGrantInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  actionType: z.string().min(1),
+});
+
+export const agentPermissionRevokeInputSchema = z.object({
+  id: z.string().min(1),
+});
