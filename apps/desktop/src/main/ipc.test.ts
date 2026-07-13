@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
 import type { GitHandlers } from './git-handlers';
+import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
@@ -22,6 +23,7 @@ const handlers = vi.hoisted(() => new Map<string, Handler>());
 const showOpenDialog = vi.hoisted(() => vi.fn());
 const fromWebContents = vi.hoisted(() => vi.fn());
 const getAllWindows = vi.hoisted(() => vi.fn(() => [] as unknown[]));
+const getPath = vi.hoisted(() => vi.fn(() => '/home/test'));
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -31,6 +33,7 @@ vi.mock('electron', () => ({
   },
   dialog: { showOpenDialog },
   BrowserWindow: { fromWebContents, getAllWindows },
+  app: { getPath },
 }));
 
 import { registerIpcHandlers } from './ipc';
@@ -83,8 +86,48 @@ function setup() {
     continueConflict: vi.fn(),
     abortConflict: vi.fn(),
   } as unknown as GitHandlers;
-  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers };
+  const githubHandlers = {
+    authReport: vi.fn(),
+    startAuthLogin: vi.fn().mockResolvedValue({ sessionId: 'gh-session-1' }),
+    logout: vi.fn(),
+    setupGit: vi.fn(),
+    planPublish: vi.fn(),
+    publishRepository: vi.fn(),
+    prList: vi.fn(),
+    prView: vi.fn(),
+    prCreate: vi.fn(),
+    prEdit: vi.fn(),
+    prCheckout: vi.fn(),
+    prMerge: vi.fn(),
+    issuesList: vi.fn(),
+    issuesView: vi.fn(),
+    issuesCreate: vi.fn(),
+    issuesEdit: vi.fn(),
+    issuesComment: vi.fn(),
+    issuesClose: vi.fn(),
+    issuesReopen: vi.fn(),
+    issuesStartWork: vi.fn(),
+    prChecks: vi.fn(),
+    actionsListWorkflows: vi.fn(),
+    actionsListRuns: vi.fn(),
+    actionsWorkflowInputs: vi.fn(),
+    actionsTrigger: vi.fn(),
+    actionsViewRun: vi.fn(),
+    actionsRunLog: vi.fn(),
+    actionsDownloadArtifacts: vi.fn(),
+    actionsCancel: vi.fn(),
+    actionsRerun: vi.fn(),
+    releaseCompare: vi.fn(),
+    releaseSuggestVersion: vi.fn(),
+    releaseNotes: vi.fn(),
+    releaseCreateDraft: vi.fn(),
+    releasePublish: vi.fn(),
+    releaseTriggerWorkflow: vi.fn(),
+    releaseUploadArtifactFiles: vi.fn(),
+    remoteAvailability: vi.fn(),
+  } as unknown as GithubHandlers;
+  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers);
+  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers };
 }
 
 function handlerFor(channel: string): Handler {
@@ -272,6 +315,266 @@ describe('registerIpcHandlers', () => {
       const result = await handlerFor(IPC_CHANNELS.activityListRange)(validEvent, input);
       expect(storageCall).toHaveBeenCalledWith('activity.listRange', input);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('github:* routed to githubHandlers, through zod validation', () => {
+    it('githubAuthReport routes to authReport(workspaceId, host)', async () => {
+      const { githubHandlers } = setup();
+      (githubHandlers.authReport as ReturnType<typeof vi.fn>).mockResolvedValue({ cliInstalled: true });
+      const result = await handlerFor(IPC_CHANNELS.githubAuthReport)(validEvent, { workspaceId: 'ws-1', host: 'github.com' });
+      expect(githubHandlers.authReport).toHaveBeenCalledWith('ws-1', 'github.com');
+      expect(result).toEqual({ cliInstalled: true });
+    });
+
+    it('githubAuthStartLogin routes to startAuthLogin with a resolved cwd, and subscribes to fan out the PTY stream', async () => {
+      const { githubHandlers, terminalSubscribe } = setup();
+      const result = await handlerFor(IPC_CHANNELS.githubAuthStartLogin)(validEvent, { workspaceId: 'ws-1' });
+      expect(githubHandlers.startAuthLogin).toHaveBeenCalledWith({ workspaceId: 'ws-1', cwd: '/home/test' });
+      expect(terminalSubscribe).toHaveBeenCalledWith('gh-session-1', expect.any(Function));
+      expect(result).toEqual({ sessionId: 'gh-session-1' });
+    });
+
+    it('githubAuthStartLogin fans PTY output out to the trusted window only', async () => {
+      const { terminalSubscribe } = setup();
+      const send = vi.fn();
+      getAllWindows.mockReturnValue([{ webContents: { id: 1, send } }, { webContents: { id: 2, send: vi.fn() } }]);
+      await handlerFor(IPC_CHANNELS.githubAuthStartLogin)(validEvent, { workspaceId: 'ws-1' });
+      const listener = terminalSubscribe.mock.calls[0]?.[1] as (event: unknown) => void;
+      listener({ kind: 'event', type: 'output', sessionId: 'gh-session-1', chunk: 'Open https://github.com/login/device', sequence: 1, timestamp: 't1' });
+      expect(send).toHaveBeenCalledWith(IPC_CHANNELS.terminalEvent, expect.objectContaining({ type: 'output', sessionId: 'gh-session-1' }));
+    });
+
+    it('githubAuthLogout routes to logout(workspaceId, host)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubAuthLogout)(validEvent, { workspaceId: 'ws-1' });
+      expect(githubHandlers.logout).toHaveBeenCalledWith('ws-1', undefined);
+    });
+
+    it('githubRepoPlanPublish routes to planPublish(workspaceId, owner, name, host)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubRepoPlanPublish)(validEvent, { workspaceId: 'ws-1', owner: 'acme', name: 'widgets' });
+      expect(githubHandlers.planPublish).toHaveBeenCalledWith('ws-1', 'acme', 'widgets', undefined);
+    });
+
+    it('githubRepoPublish routes to publishRepository with a mapped input, never inventing a connect resolution', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubRepoPublish)(validEvent, {
+        projectId: 'p-1',
+        owner: 'acme',
+        name: 'widgets',
+        visibility: 'public',
+        sourceFolder: '/proj',
+        push: true,
+      });
+      expect(githubHandlers.publishRepository).toHaveBeenCalledWith(
+        'p-1',
+        { owner: 'acme', name: 'widgets', visibility: 'public', sourceFolder: '/proj', push: true },
+        undefined,
+      );
+    });
+
+    it('githubPrList routes to prList with the parsed filter', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrList)(validEvent, { workspaceId: 'ws-1', state: 'open' });
+      expect(githubHandlers.prList).toHaveBeenCalledWith('ws-1', { state: 'open' });
+    });
+
+    it('githubPrCreate routes to prCreate with the parsed input', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrCreate)(validEvent, { workspaceId: 'ws-1', title: 't', body: 'b', base: 'main', head: 'feature' });
+      expect(githubHandlers.prCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b', base: 'main', head: 'feature' });
+    });
+
+    it('githubPrMerge rejects an unconfirmed merge before it ever reaches githubHandlers', async () => {
+      const { githubHandlers } = setup();
+      await expect(
+        handlerFor(IPC_CHANNELS.githubPrMerge)(validEvent, { workspaceId: 'ws-1', number: 42, method: 'squash' }),
+      ).rejects.toThrow();
+      expect(githubHandlers.prMerge).not.toHaveBeenCalled();
+    });
+
+    it('githubPrMerge routes to prMerge once confirmed:true is present', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrMerge)(validEvent, { workspaceId: 'ws-1', number: 42, method: 'squash', confirmed: true });
+      expect(githubHandlers.prMerge).toHaveBeenCalledWith('ws-1', 42, 'squash', false, true);
+    });
+
+    it('githubIssueList / githubIssueCreate route to issuesList/issuesCreate', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubIssueList)(validEvent, { workspaceId: 'ws-1' });
+      expect(githubHandlers.issuesList).toHaveBeenCalledWith('ws-1', {});
+      await handlerFor(IPC_CHANNELS.githubIssueCreate)(validEvent, { workspaceId: 'ws-1', title: 't', body: 'b' });
+      expect(githubHandlers.issuesCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b' });
+    });
+
+    it('githubChecksLoad routes to prChecks with the parsed input', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubChecksLoad)(validEvent, { workspaceId: 'ws-1', number: 42, nameWithOwner: 'acme/widgets', branch: 'main' });
+      expect(githubHandlers.prChecks).toHaveBeenCalledWith('ws-1', 42, 'acme/widgets', 'main');
+    });
+
+    it('githubActionsListRuns routes to actionsListRuns with the parsed filter', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubActionsListRuns)(validEvent, { workspaceId: 'ws-1', workflow: 'release.yml' });
+      expect(githubHandlers.actionsListRuns).toHaveBeenCalledWith('ws-1', { workflow: 'release.yml' });
+    });
+
+    it('githubReleaseCompare routes to releaseCompare with the parsed input', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubReleaseCompare)(validEvent, { workspaceId: 'ws-1', nameWithOwner: 'acme/widgets', sinceTag: 'v1.0.0', head: 'main' });
+      expect(githubHandlers.releaseCompare).toHaveBeenCalledWith('ws-1', 'acme/widgets', 'v1.0.0', 'main');
+    });
+  });
+
+  describe('github:* (continued): the rest of GH-001..009 routed to githubHandlers', () => {
+    it('githubSetupGit routes to setupGit(workspaceId, remoteUrl, host)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubSetupGit)(validEvent, { workspaceId: 'ws-1', remoteUrl: 'https://github.com/acme/widgets.git' });
+      expect(githubHandlers.setupGit).toHaveBeenCalledWith('ws-1', 'https://github.com/acme/widgets.git', undefined);
+    });
+
+    it('githubPrView routes to prView(workspaceId, number, host)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrView)(validEvent, { workspaceId: 'ws-1', number: 42 });
+      expect(githubHandlers.prView).toHaveBeenCalledWith('ws-1', 42, undefined);
+    });
+
+    it('githubPrEdit routes to prEdit with the parsed input', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrEdit)(validEvent, { workspaceId: 'ws-1', number: 42, addLabels: ['bug'] });
+      expect(githubHandlers.prEdit).toHaveBeenCalledWith('ws-1', 42, { addLabels: ['bug'] }, undefined);
+    });
+
+    it('githubPrCheckout routes to prCheckout(projectId, number, host)', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrCheckout)(validEvent, { projectId: 'p-1', number: 42 });
+      expect(githubHandlers.prCheckout).toHaveBeenCalledWith('p-1', 42, undefined);
+    });
+
+    it('githubIssueView / githubIssueEdit / githubIssueComment / githubIssueClose / githubIssueReopen route through, with reason optional', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubIssueView)(validEvent, { workspaceId: 'ws-1', number: 7 });
+      expect(githubHandlers.issuesView).toHaveBeenCalledWith('ws-1', 7, undefined);
+      await handlerFor(IPC_CHANNELS.githubIssueEdit)(validEvent, { workspaceId: 'ws-1', number: 7, title: 'New title' });
+      expect(githubHandlers.issuesEdit).toHaveBeenCalledWith('ws-1', 7, { title: 'New title' }, undefined);
+      await handlerFor(IPC_CHANNELS.githubIssueComment)(validEvent, { workspaceId: 'ws-1', number: 7, body: 'On it' });
+      expect(githubHandlers.issuesComment).toHaveBeenCalledWith('ws-1', 7, 'On it', undefined);
+      await handlerFor(IPC_CHANNELS.githubIssueClose)(validEvent, { workspaceId: 'ws-1', number: 7 });
+      expect(githubHandlers.issuesClose).toHaveBeenCalledWith('ws-1', 7, undefined, undefined);
+      await handlerFor(IPC_CHANNELS.githubIssueReopen)(validEvent, { workspaceId: 'ws-1', number: 7 });
+      expect(githubHandlers.issuesReopen).toHaveBeenCalledWith('ws-1', 7, undefined);
+    });
+
+    it('githubIssueStartWork routes to issuesStartWork with the issue reassembled from flat fields', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubIssueStartWork)(validEvent, { projectId: 'p-1', issueNumber: 7, issueTitle: 'Add widget filtering', baseBranch: 'main' });
+      expect(githubHandlers.issuesStartWork).toHaveBeenCalledWith('p-1', { number: 7, title: 'Add widget filtering' }, 'main');
+    });
+
+    it('githubActionsListWorkflows / githubActionsWorkflowInputs route through', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubActionsListWorkflows)(validEvent, { workspaceId: 'ws-1' });
+      expect(githubHandlers.actionsListWorkflows).toHaveBeenCalledWith('ws-1', undefined);
+      await handlerFor(IPC_CHANNELS.githubActionsWorkflowInputs)(validEvent, { workspaceId: 'ws-1', nameWithOwner: 'acme/widgets', workflowPath: '.github/workflows/release.yml' });
+      expect(githubHandlers.actionsWorkflowInputs).toHaveBeenCalledWith('ws-1', 'acme/widgets', '.github/workflows/release.yml', undefined, undefined);
+    });
+
+    it('githubActionsTrigger requires confirmed:true, same shape as prMerge', async () => {
+      const { githubHandlers } = setup();
+      await expect(
+        handlerFor(IPC_CHANNELS.githubActionsTrigger)(validEvent, { workspaceId: 'ws-1', workflow: 'release.yml', ref: 'main', inputs: {} }),
+      ).rejects.toThrow();
+      expect(githubHandlers.actionsTrigger).not.toHaveBeenCalled();
+      await handlerFor(IPC_CHANNELS.githubActionsTrigger)(validEvent, { workspaceId: 'ws-1', workflow: 'release.yml', ref: 'main', inputs: { env: 'prod' }, confirmed: true });
+      expect(githubHandlers.actionsTrigger).toHaveBeenCalledWith('ws-1', 'release.yml', 'main', { env: 'prod' }, true, undefined);
+    });
+
+    it('githubActionsViewRun / githubActionsRunLog / githubActionsCancel / githubActionsRerun route through', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubActionsViewRun)(validEvent, { workspaceId: 'ws-1', id: 99 });
+      expect(githubHandlers.actionsViewRun).toHaveBeenCalledWith('ws-1', 99, undefined);
+      await handlerFor(IPC_CHANNELS.githubActionsRunLog)(validEvent, { workspaceId: 'ws-1', id: 99 });
+      expect(githubHandlers.actionsRunLog).toHaveBeenCalledWith('ws-1', 99, undefined);
+      await handlerFor(IPC_CHANNELS.githubActionsCancel)(validEvent, { workspaceId: 'ws-1', id: 99 });
+      expect(githubHandlers.actionsCancel).toHaveBeenCalledWith('ws-1', 99, undefined);
+      await handlerFor(IPC_CHANNELS.githubActionsRerun)(validEvent, { workspaceId: 'ws-1', id: 99, failedOnly: true });
+      expect(githubHandlers.actionsRerun).toHaveBeenCalledWith('ws-1', 99, true, undefined);
+    });
+
+    it('githubActionsDownloadArtifacts routes with the already-picked destinationDir', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubActionsDownloadArtifacts)(validEvent, { workspaceId: 'ws-1', id: 99, destinationDir: '/tmp/artifacts' });
+      expect(githubHandlers.actionsDownloadArtifacts).toHaveBeenCalledWith('ws-1', 99, '/tmp/artifacts', undefined, undefined);
+    });
+
+    it('githubReleaseSuggestVersion / githubReleaseNotes route through as pure/read reads', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubReleaseSuggestVersion)(validEvent, { previousTag: 'v1.2.3', commitSubjects: ['fix: bug'] });
+      expect(githubHandlers.releaseSuggestVersion).toHaveBeenCalledWith('v1.2.3', ['fix: bug']);
+      await handlerFor(IPC_CHANNELS.githubReleaseNotes)(validEvent, { workspaceId: 'ws-1', nameWithOwner: 'acme/widgets', tagName: 'v1.3.0' });
+      expect(githubHandlers.releaseNotes).toHaveBeenCalledWith('ws-1', 'acme/widgets', 'v1.3.0', undefined, undefined);
+    });
+
+    it('githubReleaseCreateDraft routes to releaseCreateDraft with a reassembled ReleaseCreateInput', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubReleaseCreateDraft)(validEvent, {
+        projectId: 'p-1',
+        tagMessage: 'Release v1.3.0',
+        tagName: 'v1.3.0',
+        title: 'v1.3.0',
+        notes: 'Notes',
+      });
+      expect(githubHandlers.releaseCreateDraft).toHaveBeenCalledWith('p-1', 'Release v1.3.0', { tagName: 'v1.3.0', title: 'v1.3.0', notes: 'Notes' }, undefined);
+    });
+
+    it('githubReleasePublish rejects unconfirmed and routes once confirmed', async () => {
+      const { githubHandlers } = setup();
+      await expect(
+        handlerFor(IPC_CHANNELS.githubReleasePublish)(validEvent, { workspaceId: 'ws-1', tagName: 'v1.3.0' }),
+      ).rejects.toThrow();
+      expect(githubHandlers.releasePublish).not.toHaveBeenCalled();
+      await handlerFor(IPC_CHANNELS.githubReleasePublish)(validEvent, { workspaceId: 'ws-1', tagName: 'v1.3.0', confirmed: true });
+      expect(githubHandlers.releasePublish).toHaveBeenCalledWith('ws-1', 'v1.3.0', true, undefined);
+    });
+
+    it('githubReleaseTriggerWorkflow rejects unconfirmed and routes once confirmed', async () => {
+      const { githubHandlers } = setup();
+      await expect(
+        handlerFor(IPC_CHANNELS.githubReleaseTriggerWorkflow)(validEvent, { workspaceId: 'ws-1', workflow: 'publish.yml', ref: 'v1.3.0', inputs: {} }),
+      ).rejects.toThrow();
+      expect(githubHandlers.releaseTriggerWorkflow).not.toHaveBeenCalled();
+      await handlerFor(IPC_CHANNELS.githubReleaseTriggerWorkflow)(validEvent, { workspaceId: 'ws-1', workflow: 'publish.yml', ref: 'v1.3.0', inputs: {}, confirmed: true });
+      expect(githubHandlers.releaseTriggerWorkflow).toHaveBeenCalledWith('ws-1', 'publish.yml', 'v1.3.0', {}, true, undefined);
+    });
+
+    it('githubReleaseUploadArtifacts routes with already-picked filePaths', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubReleaseUploadArtifacts)(validEvent, { workspaceId: 'ws-1', tagName: 'v1.3.0', filePaths: ['/tmp/app.dmg'] });
+      expect(githubHandlers.releaseUploadArtifactFiles).toHaveBeenCalledWith('ws-1', 'v1.3.0', ['/tmp/app.dmg'], undefined);
+    });
+
+    it('githubReleasePickArtifactFiles opens a multi-file picker and returns the picked paths', async () => {
+      setup();
+      showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/tmp/app.dmg', '/tmp/app.dmg.sig'] });
+      fromWebContents.mockReturnValue({ id: 'win-1' });
+      const result = await handlerFor(IPC_CHANNELS.githubReleasePickArtifactFiles)(validEvent);
+      expect(showOpenDialog).toHaveBeenCalledWith({ id: 'win-1' }, { properties: ['openFile', 'multiSelections'] });
+      expect(result).toEqual(['/tmp/app.dmg', '/tmp/app.dmg.sig']);
+    });
+
+    it('githubReleasePickArtifactFiles resolves null when the dialog is cancelled', async () => {
+      setup();
+      showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
+      fromWebContents.mockReturnValue({ id: 'win-1' });
+      const result = await handlerFor(IPC_CHANNELS.githubReleasePickArtifactFiles)(validEvent);
+      expect(result).toBeNull();
+    });
+
+    it('githubRemoteAvailability routes to remoteAvailability with the parsed connectivity', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubRemoteAvailability)(validEvent, { connectivity: 'offline' });
+      expect(githubHandlers.remoteAvailability).toHaveBeenCalledWith('offline');
     });
   });
 

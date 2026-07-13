@@ -10,6 +10,7 @@ import type {
 } from '@space/contracts';
 import { ActivityGrid } from './ActivityGrid';
 import { GitPanel } from './GitPanel';
+import { GithubPanel } from './GithubPanel';
 import { TerminalPanel } from './TerminalPanel';
 
 /**
@@ -418,6 +419,8 @@ export function App() {
           </>
         )}
       </section>
+
+      {activeWorkspace && <GithubPanel workspaceId={activeWorkspace.id} />}
 
       {activeWorkspace && <ActivityGrid workspaceId={activeWorkspace.id} />}
 

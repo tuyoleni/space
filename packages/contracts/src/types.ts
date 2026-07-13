@@ -528,3 +528,479 @@ export interface ActivityListRangeInput {
   readonly fromInclusive: string;
   readonly toInclusive: string;
 }
+
+// ---------------------------------------------------------------------------
+// M6: GitHub (spec section 14, GH-001..009). Field sets are hand-declared
+// here rather than imported from @space/github-engine — that package
+// executes native operations and must never reach the renderer bundle
+// (README's package-boundary rule) — so github-handlers.ts maps its
+// engine-level types onto these narrower, renderer-safe ones.
+// ---------------------------------------------------------------------------
+
+export interface GithubAuthAccountSummary {
+  readonly host: string;
+  readonly account: string;
+  readonly active: boolean;
+  readonly scopes: readonly string[];
+}
+
+export interface GithubOrgSummary {
+  readonly login: string;
+  readonly id: number;
+}
+
+export interface GithubAuthReport {
+  readonly cliInstalled: boolean;
+  readonly cliVersion: string | null;
+  readonly authenticated: boolean;
+  readonly accounts: readonly GithubAuthAccountSummary[];
+  readonly activeAccount: GithubAuthAccountSummary | null;
+  readonly availableOrgs: readonly GithubOrgSummary[] | null;
+  readonly gitProtocol: 'https' | 'ssh' | null;
+  readonly tokenSourceStrategy: string;
+}
+
+export interface GithubAuthReportInput {
+  readonly workspaceId: string;
+  readonly host?: string;
+}
+
+export interface GithubAuthStartLoginInput {
+  readonly workspaceId: string;
+  readonly host?: string;
+  readonly webFlow?: boolean;
+}
+
+export interface GithubAuthStartLoginResult {
+  readonly sessionId: string;
+}
+
+export interface GithubAuthLogoutInput {
+  readonly workspaceId: string;
+  readonly host?: string;
+}
+
+export type GithubRepoVisibility = 'public' | 'private' | 'internal';
+
+export interface GithubRepoPlanPublishInput {
+  readonly workspaceId: string;
+  readonly owner: string;
+  readonly name: string;
+  readonly host?: string;
+}
+
+export interface GithubRepoInfo {
+  readonly owner: string;
+  readonly name: string;
+  readonly nameWithOwner: string;
+  readonly url: string;
+  readonly sshUrl: string;
+  readonly visibility: string;
+}
+
+export type GithubRepoPublishPlan = { readonly kind: 'create' } | { readonly kind: 'conflict'; readonly existing: GithubRepoInfo };
+
+export interface GithubRepoPublishInput {
+  readonly projectId: string;
+  readonly owner: string;
+  readonly name: string;
+  readonly visibility: GithubRepoVisibility;
+  readonly description?: string;
+  readonly sourceFolder: string;
+  readonly remoteName?: string;
+  readonly push: boolean;
+  /** Set only after the caller has already resolved a name conflict as "connect" — never used to silently overwrite (spec 14.5, 39). */
+  readonly connect?: { readonly nameWithOwner: string; readonly url: string };
+}
+
+export interface GithubRepoPublishResult {
+  readonly nameWithOwner: string;
+  readonly url: string;
+}
+
+export type GithubPullRequestState = 'OPEN' | 'CLOSED' | 'MERGED';
+
+export interface GithubPullRequestSummary {
+  readonly number: number;
+  readonly title: string;
+  readonly author: string;
+  readonly headRefName: string;
+  readonly baseRefName: string;
+  readonly state: GithubPullRequestState;
+  readonly isDraft: boolean;
+  readonly labels: readonly string[];
+  readonly url: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GithubPullRequestListInput {
+  readonly workspaceId: string;
+  readonly state?: 'open' | 'closed' | 'merged' | 'all';
+  readonly limit?: number;
+}
+
+export interface GithubPullRequestCreateInput {
+  readonly workspaceId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly base: string;
+  readonly head: string;
+  readonly draft?: boolean;
+}
+
+export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
+
+export interface GithubPullRequestMergeInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly method: GithubMergeMethod;
+  readonly deleteBranch?: boolean;
+  readonly confirmed: boolean;
+}
+
+export type GithubIssueState = 'OPEN' | 'CLOSED';
+
+export interface GithubIssueSummary {
+  readonly number: number;
+  readonly title: string;
+  readonly author: string;
+  readonly state: GithubIssueState;
+  readonly labels: readonly string[];
+  readonly assignees: readonly string[];
+  readonly url: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface GithubIssueListInput {
+  readonly workspaceId: string;
+  readonly state?: 'open' | 'closed' | 'all';
+  readonly search?: string;
+}
+
+export interface GithubIssueCreateInput {
+  readonly workspaceId: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+export interface GithubCheckRun {
+  readonly name: string;
+  readonly state: string;
+  readonly workflow: string;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+  readonly link: string;
+  readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
+}
+
+export interface GithubChecksLoadInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly nameWithOwner: string;
+  readonly branch: string;
+}
+
+export interface GithubChecksReport {
+  readonly checks: readonly GithubCheckRun[];
+  readonly complete: boolean;
+  readonly required: { readonly requiredNames: readonly string[]; readonly missing: readonly string[]; readonly allRequiredPassing: boolean };
+}
+
+export interface GithubWorkflowRunSummary {
+  readonly databaseId: number;
+  readonly name: string;
+  readonly displayTitle: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly workflowName: string;
+  readonly headBranch: string;
+  readonly event: string;
+  readonly createdAt: string;
+  readonly url: string;
+}
+
+export interface GithubActionsListRunsInput {
+  readonly workspaceId: string;
+  readonly workflow?: string;
+  readonly branch?: string;
+  readonly limit?: number;
+}
+
+export interface GithubReleaseCompareInput {
+  readonly workspaceId: string;
+  readonly nameWithOwner: string;
+  readonly sinceTag: string;
+  readonly head: string;
+}
+
+export interface GithubReleaseCompareSummary {
+  readonly aheadBy: number;
+  readonly totalCommits: number;
+  readonly commitSubjects: readonly string[];
+  readonly changedFiles: readonly string[];
+}
+
+// ---------------------------------------------------------------------------
+// M6 (continued): the remainder of GH-001..009's surface — GH-002 credential
+// setup, PR detail/edit/checkout, GH-006 Actions, the rest of GH-007 Issues,
+// the rest of GH-008 Releases, and GH-009's pure offline gate. Wired to IPC
+// so the whole github-handlers.ts surface is reachable, mirroring M5's
+// git-handlers.ts coverage — GithubPanel.tsx's renderer controls remain a
+// deliberately smaller slice on top (spec 36.6's minimal-first-slice
+// pattern), same as GitPanel started before conflict handling followed.
+// ---------------------------------------------------------------------------
+
+export interface GithubSetupGitInput {
+  readonly workspaceId: string;
+  readonly remoteUrl: string;
+  readonly host?: string;
+}
+
+export interface GithubSetupGitResult {
+  readonly verified: boolean;
+  readonly detail: string;
+}
+
+export interface GithubPullRequestFile {
+  readonly path: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+export interface GithubPullRequestCommit {
+  readonly oid: string;
+  readonly messageHeadline: string;
+  readonly authors: readonly string[];
+}
+
+export interface GithubPullRequestDetail extends GithubPullRequestSummary {
+  readonly body: string;
+  readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  readonly mergeStateStatus: string;
+  readonly reviewRequests: readonly string[];
+  readonly assignees: readonly string[];
+  readonly files: readonly GithubPullRequestFile[];
+  readonly commits: readonly GithubPullRequestCommit[];
+  readonly closingIssuesNumbers: readonly number[];
+}
+
+export interface GithubPrViewInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly host?: string;
+}
+
+export interface GithubPullRequestEditInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly addReviewers?: readonly string[];
+  readonly addAssignees?: readonly string[];
+  readonly addLabels?: readonly string[];
+  readonly host?: string;
+}
+
+export interface GithubPrCheckoutInput {
+  readonly projectId: string;
+  readonly number: number;
+  readonly host?: string;
+}
+
+export interface GithubIssueDetail extends GithubIssueSummary {
+  readonly body: string;
+  readonly comments: readonly { readonly author: string; readonly body: string; readonly createdAt: string }[];
+}
+
+export interface GithubIssueViewInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly host?: string;
+}
+
+export interface GithubIssueEditInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly addLabels?: readonly string[];
+  readonly removeLabels?: readonly string[];
+  readonly addAssignees?: readonly string[];
+  readonly removeAssignees?: readonly string[];
+  readonly title?: string;
+  readonly body?: string;
+  readonly host?: string;
+}
+
+export interface GithubIssueCommentInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly body: string;
+  readonly host?: string;
+}
+
+export type GithubIssueCloseReason = 'completed' | 'not planned';
+
+export interface GithubIssueCloseInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly reason?: GithubIssueCloseReason;
+  readonly host?: string;
+}
+
+export interface GithubIssueReopenInput {
+  readonly workspaceId: string;
+  readonly number: number;
+  readonly host?: string;
+}
+
+export interface GithubIssueStartWorkInput {
+  readonly projectId: string;
+  readonly issueNumber: number;
+  readonly issueTitle: string;
+  readonly baseBranch: string;
+}
+
+export interface GithubIssueStartWorkResult {
+  readonly branchName: string;
+  readonly prLinkFragment: string;
+}
+
+export interface GithubWorkflowSummary {
+  readonly id: number;
+  readonly name: string;
+  readonly path: string;
+  readonly state: string;
+}
+
+export interface GithubActionsListWorkflowsInput {
+  readonly workspaceId: string;
+  readonly host?: string;
+}
+
+export type GithubWorkflowDispatchInputType = 'string' | 'boolean' | 'choice' | 'environment' | 'number';
+
+export interface GithubWorkflowDispatchInputDefinition {
+  readonly name: string;
+  readonly description: string | null;
+  readonly required: boolean;
+  readonly default: string | null;
+  readonly type: GithubWorkflowDispatchInputType;
+  readonly options: readonly string[] | null;
+}
+
+export interface GithubActionsWorkflowInputsInput {
+  readonly workspaceId: string;
+  readonly nameWithOwner: string;
+  readonly workflowPath: string;
+  readonly ref?: string;
+  readonly host?: string;
+}
+
+export interface GithubActionsTriggerInput {
+  readonly workspaceId: string;
+  readonly workflow: string;
+  readonly ref: string;
+  readonly inputs: Readonly<Record<string, string>>;
+  readonly confirmed: boolean;
+  readonly host?: string;
+}
+
+export interface GithubRunJob {
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+}
+
+export interface GithubWorkflowRunDetail extends GithubWorkflowRunSummary {
+  readonly jobs: readonly GithubRunJob[];
+}
+
+export interface GithubActionsViewRunInput {
+  readonly workspaceId: string;
+  readonly id: number;
+  readonly host?: string;
+}
+
+export interface GithubActionsRunLogInput {
+  readonly workspaceId: string;
+  readonly id: number;
+  readonly host?: string;
+}
+
+export interface GithubActionsDownloadArtifactsInput {
+  readonly workspaceId: string;
+  readonly id: number;
+  readonly destinationDir: string;
+  readonly artifactName?: string;
+  readonly host?: string;
+}
+
+export interface GithubActionsCancelInput {
+  readonly workspaceId: string;
+  readonly id: number;
+  readonly host?: string;
+}
+
+export interface GithubActionsRerunInput {
+  readonly workspaceId: string;
+  readonly id: number;
+  readonly failedOnly: boolean;
+  readonly host?: string;
+}
+
+export interface GithubReleaseSuggestVersionInput {
+  readonly previousTag: string;
+  readonly commitSubjects: readonly string[];
+}
+
+export interface GithubReleaseNotesInput {
+  readonly workspaceId: string;
+  readonly nameWithOwner: string;
+  readonly tagName: string;
+  readonly targetCommitish?: string;
+  readonly host?: string;
+}
+
+export interface GithubReleaseCreateDraftInput {
+  readonly projectId: string;
+  readonly tagMessage: string;
+  readonly tagName: string;
+  readonly title: string;
+  readonly notes: string;
+  readonly target?: string;
+  readonly prerelease?: boolean;
+  readonly remoteName?: string;
+}
+
+export interface GithubReleasePublishInput {
+  readonly workspaceId: string;
+  readonly tagName: string;
+  readonly confirmed: boolean;
+  readonly host?: string;
+}
+
+export interface GithubReleaseTriggerWorkflowInput {
+  readonly workspaceId: string;
+  readonly workflow: string;
+  readonly ref: string;
+  readonly inputs: Readonly<Record<string, string>>;
+  readonly confirmed: boolean;
+  readonly host?: string;
+}
+
+export interface GithubReleaseUploadArtifactsInput {
+  readonly workspaceId: string;
+  readonly tagName: string;
+  readonly filePaths: readonly string[];
+  readonly host?: string;
+}
+
+export type GithubConnectivity = 'online' | 'degraded' | 'offline';
+
+export interface GithubRemoteAvailabilityInput {
+  readonly connectivity: GithubConnectivity;
+}
+
+export interface GithubRemoteActionAvailability {
+  readonly available: boolean;
+  readonly reason: string | null;
+}

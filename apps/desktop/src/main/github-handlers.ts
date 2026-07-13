@@ -67,7 +67,6 @@ import {
   type GhAuthStatusReport,
   type GhExecutor,
   type GhOrg,
-  type GithubAuthReport,
   type GithubConnectivity,
   type IssueCloseReason,
   type IssueCreateInput,
@@ -93,7 +92,7 @@ import {
 } from '@space/git-engine';
 import type { CredentialStorePort } from '@space/security';
 import { RedactionRegistry } from '@space/workspace-runner';
-import type { Project } from '@space/contracts';
+import type { GithubAuthReport, Project } from '@space/contracts';
 import type { TerminalWorkerEvent, TerminalWorkerMethod } from '@space/terminal';
 import { recordOperation, type StorageCaller } from './project-handlers';
 

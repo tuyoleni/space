@@ -1,13 +1,36 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
-import type { TrustedSender } from '@space/security';
+import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { createGitHandlers, type GitHandlers } from './main/git-handlers';
+import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
 import { registerIpcHandlers } from './main/ipc';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
 import { TerminalClient } from './main/terminal-client';
+
+/**
+ * The real OS credential store (spec 5.6, 24.1, ADR-002) — macOS via the
+ * `security` CLI, Windows via DPAPI (see keychain-credential-store.ts for
+ * why). Space targets only macOS and Windows (README); any other
+ * platform fails loudly here rather than silently falling back to an
+ * insecure store.
+ */
+function createRealCredentialStore(): CredentialStorePort {
+  const executor = createNodeOsCredentialExecutor();
+  if (process.platform === 'darwin') {
+    return new NodeKeychainCredentialStore({ platform: 'darwin', executor });
+  }
+  if (process.platform === 'win32') {
+    return new NodeKeychainCredentialStore({
+      platform: 'win32',
+      executor,
+      windowsCredentialsDir: path.join(app.getPath('userData'), 'credentials'),
+    });
+  }
+  throw new Error(`Space supports macOS and Windows only; unsupported platform for credential storage: ${process.platform}`);
+}
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -29,6 +52,7 @@ let storageClient: StorageClient | null = null;
 let terminalClient: TerminalClient | null = null;
 let projectHandlers: ProjectHandlers | null = null;
 let gitHandlers: GitHandlers | null = null;
+let githubHandlers: GithubHandlers | null = null;
 let handlersRegistered = false;
 
 function startStorageWorker(): StorageClient {
@@ -179,6 +203,11 @@ app.on('ready', () => {
   gitHandlers = createGitHandlers(storage, {
     historyCacheDir: path.join(app.getPath('userData'), 'cache', 'git-history'),
   });
+  githubHandlers = createGithubHandlers(storage, {
+    credentialStore: createRealCredentialStore(),
+    terminal,
+    ghConfigDirFor: (workspaceId) => path.join(app.getPath('userData'), 'workspaces', workspaceId, 'gh-config'),
+  });
 
   // TERM-004/PRJ-006: live PTY/dev processes from a previous run cannot be
   // assumed recoverable — represent them honestly as history before the
@@ -186,7 +215,7 @@ app.on('ready', () => {
   void storage.call('system.reconcileOrphans', undefined);
 
   if (!handlersRegistered) {
-    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers);
+    registerIpcHandlers(trustedSender as TrustedSender, storage, terminal, projectHandlers, gitHandlers, githubHandlers);
     handlersRegistered = true;
   }
 
@@ -199,6 +228,7 @@ app.on('before-quit', () => {
   storageClient?.stop();
   projectHandlers = null;
   gitHandlers = null;
+  githubHandlers = null;
   terminalClient = null;
   storageClient = null;
 });

@@ -195,3 +195,283 @@ export const activityListRangeInputSchema = z.object({
   fromInclusive: z.string().min(1),
   toInclusive: z.string().min(1),
 });
+
+// ---------------------------------------------------------------------------
+// M6: GitHub (spec section 14, GH-001..009)
+// ---------------------------------------------------------------------------
+
+export const githubAuthReportInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+export const githubAuthStartLoginInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  host: z.string().min(1).optional(),
+  webFlow: z.boolean().optional(),
+});
+
+export const githubAuthLogoutInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+const githubRepoVisibilitySchema = z.enum(['public', 'private', 'internal']);
+
+export const githubRepoPlanPublishInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  owner: z.string().min(1),
+  name: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+export const githubRepoPublishInputSchema = z.object({
+  projectId: z.string().min(1),
+  owner: z.string().min(1),
+  name: z.string().min(1),
+  visibility: githubRepoVisibilitySchema,
+  description: z.string().min(1).optional(),
+  sourceFolder: z.string().min(1),
+  remoteName: z.string().min(1).optional(),
+  push: z.boolean(),
+  connect: z.object({ nameWithOwner: z.string().min(1), url: z.string().min(1) }).optional(),
+});
+
+export const githubPullRequestListInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  state: z.enum(['open', 'closed', 'merged', 'all']).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
+export const githubPullRequestCreateInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string(),
+  base: z.string().min(1),
+  head: z.string().min(1),
+  draft: z.boolean().optional(),
+});
+
+export const githubPullRequestMergeInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  method: z.enum(['merge', 'squash', 'rebase']),
+  deleteBranch: z.boolean().optional(),
+  confirmed: z.boolean(),
+});
+
+export const githubIssueListInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  state: z.enum(['open', 'closed', 'all']).optional(),
+  search: z.string().min(1).optional(),
+});
+
+export const githubIssueCreateInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  title: z.string().min(1),
+  body: z.string(),
+});
+
+export const githubChecksLoadInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  nameWithOwner: z.string().min(1),
+  branch: z.string().min(1),
+});
+
+export const githubActionsListRunsInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  workflow: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
+export const githubReleaseCompareInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  nameWithOwner: z.string().min(1),
+  sinceTag: z.string().min(1),
+  head: z.string().min(1),
+});
+
+// ---------------------------------------------------------------------------
+// M6 (continued): the rest of GH-001..009's surface (see types.ts's matching
+// comment for why this exists alongside the smaller slice above).
+// ---------------------------------------------------------------------------
+
+export const githubSetupGitInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  remoteUrl: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+export const githubPrViewInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubPullRequestEditInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  addReviewers: z.array(z.string().min(1)).optional(),
+  addAssignees: z.array(z.string().min(1)).optional(),
+  addLabels: z.array(z.string().min(1)).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubPrCheckoutInputSchema = z.object({
+  projectId: z.string().min(1),
+  number: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueViewInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueEditInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  addLabels: z.array(z.string().min(1)).optional(),
+  removeLabels: z.array(z.string().min(1)).optional(),
+  addAssignees: z.array(z.string().min(1)).optional(),
+  removeAssignees: z.array(z.string().min(1)).optional(),
+  title: z.string().min(1).optional(),
+  body: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueCommentInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  body: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueCloseInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  reason: z.enum(['completed', 'not planned']).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueReopenInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  number: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubIssueStartWorkInputSchema = z.object({
+  projectId: z.string().min(1),
+  issueNumber: z.number().int().positive(),
+  issueTitle: z.string().min(1),
+  baseBranch: z.string().min(1),
+});
+
+export const githubActionsListWorkflowsInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsWorkflowInputsInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  nameWithOwner: z.string().min(1),
+  workflowPath: z.string().min(1),
+  ref: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsTriggerInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  workflow: z.string().min(1),
+  ref: z.string().min(1),
+  inputs: z.record(z.string(), z.string()),
+  confirmed: z.boolean(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsViewRunInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  id: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsRunLogInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  id: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsDownloadArtifactsInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  id: z.number().int().positive(),
+  destinationDir: z.string().min(1),
+  artifactName: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsCancelInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  id: z.number().int().positive(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubActionsRerunInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  id: z.number().int().positive(),
+  failedOnly: z.boolean(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubReleaseSuggestVersionInputSchema = z.object({
+  previousTag: z.string().min(1),
+  commitSubjects: z.array(z.string()),
+});
+
+export const githubReleaseNotesInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  nameWithOwner: z.string().min(1),
+  tagName: z.string().min(1),
+  targetCommitish: z.string().min(1).optional(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubReleaseCreateDraftInputSchema = z.object({
+  projectId: z.string().min(1),
+  tagMessage: z.string().min(1),
+  tagName: z.string().min(1),
+  title: z.string().min(1),
+  notes: z.string(),
+  target: z.string().min(1).optional(),
+  prerelease: z.boolean().optional(),
+  remoteName: z.string().min(1).optional(),
+});
+
+export const githubReleasePublishInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  tagName: z.string().min(1),
+  confirmed: z.boolean(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubReleaseTriggerWorkflowInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  workflow: z.string().min(1),
+  ref: z.string().min(1),
+  inputs: z.record(z.string(), z.string()),
+  confirmed: z.boolean(),
+  host: z.string().min(1).optional(),
+});
+
+export const githubReleaseUploadArtifactsInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  tagName: z.string().min(1),
+  filePaths: z.array(z.string().min(1)),
+  host: z.string().min(1).optional(),
+});
+
+export const githubRemoteAvailabilityInputSchema = z.object({
+  connectivity: z.enum(['online', 'degraded', 'offline']),
+});

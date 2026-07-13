@@ -9,7 +9,7 @@
  * renderer's push-only `terminal:event` channel, since a terminal session
  * is a stream, not a single request/response (spec 22.1).
  */
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import {
   activityListRangeInputSchema,
   gitCommitInputSchema,
@@ -22,11 +22,50 @@ import {
   gitPushInputSchema,
   gitStageInputSchema,
   gitSwitchBranchInputSchema,
+  githubActionsCancelInputSchema,
+  githubActionsDownloadArtifactsInputSchema,
+  githubActionsListRunsInputSchema,
+  githubActionsListWorkflowsInputSchema,
+  githubActionsRerunInputSchema,
+  githubActionsRunLogInputSchema,
+  githubActionsTriggerInputSchema,
+  githubActionsViewRunInputSchema,
+  githubActionsWorkflowInputsInputSchema,
+  githubAuthLogoutInputSchema,
+  githubAuthReportInputSchema,
+  githubAuthStartLoginInputSchema,
+  githubChecksLoadInputSchema,
+  githubIssueCloseInputSchema,
+  githubIssueCommentInputSchema,
+  githubIssueCreateInputSchema,
+  githubIssueEditInputSchema,
+  githubIssueListInputSchema,
+  githubIssueReopenInputSchema,
+  githubIssueStartWorkInputSchema,
+  githubIssueViewInputSchema,
+  githubPrCheckoutInputSchema,
+  githubPrViewInputSchema,
+  githubPullRequestCreateInputSchema,
+  githubPullRequestEditInputSchema,
+  githubPullRequestListInputSchema,
+  githubPullRequestMergeInputSchema,
+  githubReleaseCompareInputSchema,
+  githubReleaseCreateDraftInputSchema,
+  githubReleaseNotesInputSchema,
+  githubReleasePublishInputSchema,
+  githubReleaseSuggestVersionInputSchema,
+  githubReleaseTriggerWorkflowInputSchema,
+  githubReleaseUploadArtifactsInputSchema,
+  githubRemoteAvailabilityInputSchema,
+  githubRepoPlanPublishInputSchema,
+  githubRepoPublishInputSchema,
+  githubSetupGitInputSchema,
   IPC_CHANNELS,
   type TerminalEvent,
 } from '@space/contracts';
 import { assertIpcSender, type TrustedSender } from '@space/security';
 import type { GitHandlers } from './git-handlers';
+import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
@@ -51,12 +90,20 @@ async function pickDirectory(event: IpcMainInvokeEvent): Promise<string | null> 
   return result.canceled || !selected ? null : selected;
 }
 
+/** GH-008's release artifact upload needs real files, not a directory — the one file (not folder) picker in the app. */
+async function pickFiles(event: IpcMainInvokeEvent): Promise<readonly string[] | null> {
+  const window = windowForEvent(event);
+  const result = await dialog.showOpenDialog(window, { properties: ['openFile', 'multiSelections'] });
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths;
+}
+
 export function registerIpcHandlers(
   trusted: TrustedSender,
   storage: StorageClient,
   terminal: TerminalClient,
   projectHandlers: ProjectHandlers,
   gitHandlers: GitHandlers,
+  githubHandlers: GithubHandlers,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
@@ -301,5 +348,321 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.activityListRange, async (event, input) => {
     assertIpcSender(event, trusted);
     return storage.call('activity.listRange', activityListRangeInputSchema.parse(input));
+  });
+
+  // M6: GitHub (spec section 14, GH-001..009).
+
+  ipcMain.handle(IPC_CHANNELS.githubAuthReport, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubAuthReportInputSchema.parse(input);
+    return githubHandlers.authReport(parsed.workspaceId, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubAuthStartLogin, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubAuthStartLoginInputSchema.parse(input);
+    const result = await githubHandlers.startAuthLogin({
+      workspaceId: parsed.workspaceId,
+      ...(parsed.host !== undefined ? { host: parsed.host } : {}),
+      ...(parsed.webFlow !== undefined ? { webFlow: parsed.webFlow } : {}),
+      cwd: app.getPath('home'),
+    });
+    // The login PTY's own output/exit stream reuses the same push channel a
+    // regular terminal session uses (spec 22.2) — the renderer already
+    // knows how to `terminal.subscribe(sessionId, listener)`.
+    terminal.subscribe(result.sessionId, (workerEvent) => {
+      const rendererEvent: TerminalEvent =
+        workerEvent.type === 'output'
+          ? { type: 'output', sessionId: workerEvent.sessionId, chunk: workerEvent.chunk, sequence: workerEvent.sequence, timestamp: workerEvent.timestamp }
+          : workerEvent.type === 'exit'
+            ? { type: 'exit', sessionId: workerEvent.sessionId, exitCode: workerEvent.exitCode, timestamp: workerEvent.timestamp }
+            : { type: 'backpressure', sessionId: workerEvent.sessionId, droppedBytes: workerEvent.droppedBytes, timestamp: workerEvent.timestamp };
+      sendToTrustedWindow(trusted, IPC_CHANNELS.terminalEvent, rendererEvent);
+    });
+    return result;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubAuthLogout, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubAuthLogoutInputSchema.parse(input);
+    return githubHandlers.logout(parsed.workspaceId, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubRepoPlanPublish, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubRepoPlanPublishInputSchema.parse(input);
+    return githubHandlers.planPublish(parsed.workspaceId, parsed.owner, parsed.name, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubRepoPublish, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubRepoPublishInputSchema.parse(input);
+    return githubHandlers.publishRepository(
+      parsed.projectId,
+      {
+        owner: parsed.owner,
+        name: parsed.name,
+        visibility: parsed.visibility,
+        sourceFolder: parsed.sourceFolder,
+        push: parsed.push,
+        ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+        ...(parsed.remoteName !== undefined ? { remoteName: parsed.remoteName } : {}),
+      },
+      parsed.connect,
+    );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPullRequestListInputSchema.parse(input);
+    return githubHandlers.prList(parsed.workspaceId, {
+      ...(parsed.state !== undefined ? { state: parsed.state } : {}),
+      ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrCreate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPullRequestCreateInputSchema.parse(input);
+    return githubHandlers.prCreate(parsed.workspaceId, {
+      title: parsed.title,
+      body: parsed.body,
+      base: parsed.base,
+      head: parsed.head,
+      ...(parsed.draft !== undefined ? { draft: parsed.draft } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrMerge, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPullRequestMergeInputSchema.parse(input);
+    return githubHandlers.prMerge(parsed.workspaceId, parsed.number, parsed.method, parsed.deleteBranch ?? false, parsed.confirmed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueListInputSchema.parse(input);
+    return githubHandlers.issuesList(parsed.workspaceId, {
+      ...(parsed.state !== undefined ? { state: parsed.state } : {}),
+      ...(parsed.search !== undefined ? { search: parsed.search } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueCreate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueCreateInputSchema.parse(input);
+    return githubHandlers.issuesCreate(parsed.workspaceId, { title: parsed.title, body: parsed.body });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubChecksLoad, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubChecksLoadInputSchema.parse(input);
+    return githubHandlers.prChecks(parsed.workspaceId, parsed.number, parsed.nameWithOwner, parsed.branch);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsListRuns, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsListRunsInputSchema.parse(input);
+    return githubHandlers.actionsListRuns(parsed.workspaceId, {
+      ...(parsed.workflow !== undefined ? { workflow: parsed.workflow } : {}),
+      ...(parsed.branch !== undefined ? { branch: parsed.branch } : {}),
+      ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseCompare, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseCompareInputSchema.parse(input);
+    return githubHandlers.releaseCompare(parsed.workspaceId, parsed.nameWithOwner, parsed.sinceTag, parsed.head);
+  });
+
+  // M6 (continued): the rest of GH-001..009's surface (see contracts'
+  // matching comment for why this exists alongside the slice above).
+
+  ipcMain.handle(IPC_CHANNELS.githubSetupGit, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubSetupGitInputSchema.parse(input);
+    return githubHandlers.setupGit(parsed.workspaceId, parsed.remoteUrl, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrView, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPrViewInputSchema.parse(input);
+    return githubHandlers.prView(parsed.workspaceId, parsed.number, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrEdit, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPullRequestEditInputSchema.parse(input);
+    return githubHandlers.prEdit(
+      parsed.workspaceId,
+      parsed.number,
+      {
+        ...(parsed.addReviewers !== undefined ? { addReviewers: parsed.addReviewers } : {}),
+        ...(parsed.addAssignees !== undefined ? { addAssignees: parsed.addAssignees } : {}),
+        ...(parsed.addLabels !== undefined ? { addLabels: parsed.addLabels } : {}),
+      },
+      parsed.host,
+    );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubPrCheckout, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubPrCheckoutInputSchema.parse(input);
+    return githubHandlers.prCheckout(parsed.projectId, parsed.number, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueView, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueViewInputSchema.parse(input);
+    return githubHandlers.issuesView(parsed.workspaceId, parsed.number, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueEdit, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueEditInputSchema.parse(input);
+    return githubHandlers.issuesEdit(
+      parsed.workspaceId,
+      parsed.number,
+      {
+        ...(parsed.addLabels !== undefined ? { addLabels: parsed.addLabels } : {}),
+        ...(parsed.removeLabels !== undefined ? { removeLabels: parsed.removeLabels } : {}),
+        ...(parsed.addAssignees !== undefined ? { addAssignees: parsed.addAssignees } : {}),
+        ...(parsed.removeAssignees !== undefined ? { removeAssignees: parsed.removeAssignees } : {}),
+        ...(parsed.title !== undefined ? { title: parsed.title } : {}),
+        ...(parsed.body !== undefined ? { body: parsed.body } : {}),
+      },
+      parsed.host,
+    );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueComment, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueCommentInputSchema.parse(input);
+    return githubHandlers.issuesComment(parsed.workspaceId, parsed.number, parsed.body, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueClose, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueCloseInputSchema.parse(input);
+    return githubHandlers.issuesClose(parsed.workspaceId, parsed.number, parsed.reason, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueReopen, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueReopenInputSchema.parse(input);
+    return githubHandlers.issuesReopen(parsed.workspaceId, parsed.number, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubIssueStartWork, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubIssueStartWorkInputSchema.parse(input);
+    return githubHandlers.issuesStartWork(parsed.projectId, { number: parsed.issueNumber, title: parsed.issueTitle }, parsed.baseBranch);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsListWorkflows, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsListWorkflowsInputSchema.parse(input);
+    return githubHandlers.actionsListWorkflows(parsed.workspaceId, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsWorkflowInputs, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsWorkflowInputsInputSchema.parse(input);
+    return githubHandlers.actionsWorkflowInputs(parsed.workspaceId, parsed.nameWithOwner, parsed.workflowPath, parsed.ref, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsTrigger, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsTriggerInputSchema.parse(input);
+    return githubHandlers.actionsTrigger(parsed.workspaceId, parsed.workflow, parsed.ref, parsed.inputs, parsed.confirmed, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsViewRun, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsViewRunInputSchema.parse(input);
+    return githubHandlers.actionsViewRun(parsed.workspaceId, parsed.id, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsRunLog, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsRunLogInputSchema.parse(input);
+    return githubHandlers.actionsRunLog(parsed.workspaceId, parsed.id, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsDownloadArtifacts, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsDownloadArtifactsInputSchema.parse(input);
+    return githubHandlers.actionsDownloadArtifacts(parsed.workspaceId, parsed.id, parsed.destinationDir, parsed.artifactName, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsCancel, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsCancelInputSchema.parse(input);
+    return githubHandlers.actionsCancel(parsed.workspaceId, parsed.id, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubActionsRerun, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubActionsRerunInputSchema.parse(input);
+    return githubHandlers.actionsRerun(parsed.workspaceId, parsed.id, parsed.failedOnly, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseSuggestVersion, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseSuggestVersionInputSchema.parse(input);
+    return githubHandlers.releaseSuggestVersion(parsed.previousTag, parsed.commitSubjects);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseNotes, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseNotesInputSchema.parse(input);
+    return githubHandlers.releaseNotes(parsed.workspaceId, parsed.nameWithOwner, parsed.tagName, parsed.targetCommitish, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseCreateDraft, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseCreateDraftInputSchema.parse(input);
+    return githubHandlers.releaseCreateDraft(
+      parsed.projectId,
+      parsed.tagMessage,
+      {
+        tagName: parsed.tagName,
+        title: parsed.title,
+        notes: parsed.notes,
+        ...(parsed.target !== undefined ? { target: parsed.target } : {}),
+        ...(parsed.prerelease !== undefined ? { prerelease: parsed.prerelease } : {}),
+      },
+      parsed.remoteName,
+    );
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleasePublish, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleasePublishInputSchema.parse(input);
+    return githubHandlers.releasePublish(parsed.workspaceId, parsed.tagName, parsed.confirmed, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseTriggerWorkflow, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseTriggerWorkflowInputSchema.parse(input);
+    return githubHandlers.releaseTriggerWorkflow(parsed.workspaceId, parsed.workflow, parsed.ref, parsed.inputs, parsed.confirmed, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleaseUploadArtifacts, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubReleaseUploadArtifactsInputSchema.parse(input);
+    return githubHandlers.releaseUploadArtifactFiles(parsed.workspaceId, parsed.tagName, parsed.filePaths, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubReleasePickArtifactFiles, async (event) => {
+    assertIpcSender(event, trusted);
+    return pickFiles(event);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubRemoteAvailability, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubRemoteAvailabilityInputSchema.parse(input);
+    return githubHandlers.remoteAvailability(parsed.connectivity);
   });
 }
