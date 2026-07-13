@@ -102,4 +102,57 @@ describe('detectListeningUrl', () => {
   it('never matches a non-loopback host, even if it looks like a listening message', () => {
     expect(detectListeningUrl('Network: http://192.168.1.5:5173/')).toBeNull();
   });
+
+  it('cannot find a URL split mid-scheme across two chunks when each chunk is checked in isolation', () => {
+    // This documents exactly why a per-chunk-only caller misses real dev
+    // server output: split squarely inside the "http" literal so *neither*
+    // half contains a regex match on its own (not even a truncated one),
+    // yet the concatenation does. Callers (project-handlers.ts's
+    // startDevServer) must accumulate chunks into a buffer and match
+    // against the whole thing instead.
+    const firstHalf = '➜  Local:   ht';
+    const secondHalf = 'tp://localhost:5173/\n';
+    expect(detectListeningUrl(firstHalf)).toBeNull();
+    expect(detectListeningUrl(secondHalf)).toBeNull();
+    expect(detectListeningUrl(firstHalf + secondHalf)).toBe('http://localhost:5173/');
+  });
+});
+
+describe('startDetachedProcess against a real Node process whose output is split across writes', () => {
+  it('never delivers a matchable "Local:" line in a single onOutput chunk when the process writes it in two writes', async () => {
+    // A real child process, not a mock: this proves the split genuinely
+    // produces two separate stdout 'data' events at the OS/pipe level,
+    // rather than asserting on a fabricated chunk boundary. The write is
+    // split mid-scheme ("ht" / "tp://...") so neither individual chunk
+    // contains anything detectListeningUrl can match.
+    const script = `
+      process.stdout.write('Local:   ht');
+      setTimeout(() => {
+        process.stdout.write('tp://localhost:5173/\\n');
+        process.exit(0);
+      }, 50);
+    `;
+    const handle = await startDetachedProcess(
+      { operationId: 'op-split', workspaceId: 'ws-1', executableId: process.execPath, args: ['-e', script], env: { PATH: process.env['PATH'] ?? '' } },
+      { resolveExecutable: async (id) => id },
+    );
+
+    const chunks: string[] = [];
+    const exited = new Promise<void>((resolve) => handle.onExit(() => resolve()));
+    handle.onOutput((chunk) => chunks.push(chunk));
+    await exited;
+
+    // Sanity: the write really did arrive as (at least) two separate
+    // chunks — otherwise this test isn't exercising a real split.
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    // Each individual chunk must NOT contain a match — otherwise this
+    // test isn't actually exercising the bug.
+    for (const chunk of chunks) {
+      expect(detectListeningUrl(chunk)).toBeNull();
+    }
+    // But the concatenation of everything received does contain it,
+    // proving a buffer-accumulating caller would find it while a
+    // per-chunk-only caller (the bug) never would.
+    expect(detectListeningUrl(chunks.join(''))).toBe('http://localhost:5173/');
+  }, 10000);
 });
