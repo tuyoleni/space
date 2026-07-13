@@ -10,6 +10,7 @@ describe('checkTrust', () => {
       'source-shell-file',
       'load-project-content',
       'inject-secrets',
+      'agent-file-modify',
     ] as const) {
       expect(checkTrust({ trustState: 'trusted', operation })).toEqual({ permitted: true, reason: null });
     }

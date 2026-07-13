@@ -20,7 +20,14 @@ export type GatedOperationKind =
   | 'project-binary'
   | 'source-shell-file'
   | 'load-project-content'
-  | 'inject-secrets';
+  | 'inject-secrets'
+  /**
+   * M7: an agent's `file.modify` action (spec 19.1) applying a patch to a
+   * project file — added alongside the existing kinds rather than reusing
+   * one of them, since none describe "an automated actor editing project
+   * files" precisely.
+   */
+  | 'agent-file-modify';
 
 /** The three trust choices spec section 10.3 requires the prompt to offer. */
 export type TrustDecision = 'allow-once' | 'trust-this-project' | 'keep-untrusted';
@@ -49,6 +56,7 @@ const GATED_OPERATION_EXPLANATION: Record<GatedOperationKind, string> = {
   'source-shell-file': "sourcing the project's shell files can silently alter your shell environment",
   'load-project-content': 'loading project-provided content in a privileged view can run arbitrary script',
   'inject-secrets': 'this project has not been reviewed and should not receive workspace secrets',
+  'agent-file-modify': 'an unreviewed project should not have its files modified automatically by an agent',
 };
 
 export function explainGatedOperation(operation: GatedOperationKind): string {
