@@ -17,6 +17,7 @@ import type { GithubHandlers } from './github-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
 import type { TerminalClient } from './terminal-client';
+import type { TerminalHandlers } from './terminal-handlers';
 import type { TrustedSender } from '@space/security';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
@@ -59,6 +60,8 @@ function setup() {
   const terminalCall = vi.fn();
   const terminalSubscribe = vi.fn();
   const terminal = { call: terminalCall, subscribe: terminalSubscribe } as unknown as TerminalClient;
+  const createTerminal = vi.fn();
+  const terminalHandlers = { createTerminal } as unknown as TerminalHandlers;
   const projectHandlers = {
     detect: vi.fn(),
     detectPackageManager: vi.fn(),
@@ -149,8 +152,8 @@ function setup() {
     listRuns: vi.fn(),
     handleTriggerEvent: vi.fn().mockResolvedValue([]),
   } as unknown as AutomationHandlers;
-  registerIpcHandlers(trusted, storage, terminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers };
+  registerIpcHandlers(trusted, storage, terminal, terminalHandlers, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers);
+  return { storageCall, terminalCall, terminalSubscribe, createTerminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers };
 }
 
 function handlerFor(channel: string): Handler {
@@ -738,8 +741,8 @@ describe('registerIpcHandlers', () => {
   });
 
   describe('terminal:create', () => {
-    it('records the session in storage and subscribes to fan out its stream', async () => {
-      const { storageCall, terminalCall, terminalSubscribe } = setup();
+    it('delegates to terminalHandlers.createTerminal, records the session in storage, and subscribes to fan out its stream', async () => {
+      const { storageCall, createTerminal, terminalSubscribe } = setup();
       const session = {
         id: 'term-1',
         workspaceId: 'ws-1',
@@ -753,12 +756,13 @@ describe('registerIpcHandlers', () => {
         exitCode: null,
         lastOutputAt: null,
       };
-      terminalCall.mockResolvedValue(session);
+      createTerminal.mockResolvedValue(session);
       storageCall.mockResolvedValue(undefined);
 
-      const result = await handlerFor(IPC_CHANNELS.terminalCreate)(validEvent, { workspaceId: 'ws-1', cols: 80, rows: 24 });
+      const input = { workspaceId: 'ws-1', cols: 80, rows: 24 };
+      const result = await handlerFor(IPC_CHANNELS.terminalCreate)(validEvent, input);
 
-      expect(terminalCall).toHaveBeenCalledWith('terminal.create', { workspaceId: 'ws-1', cols: 80, rows: 24 });
+      expect(createTerminal).toHaveBeenCalledWith(input);
       expect(storageCall).toHaveBeenCalledWith(
         'terminal.recordSession',
         expect.objectContaining({ id: 'term-1', pid: 999 }),
@@ -768,10 +772,10 @@ describe('registerIpcHandlers', () => {
     });
 
     it('the subscribed listener persists output/exit to storage and pushes to the trusted window only', async () => {
-      const { terminalCall, terminalSubscribe, storageCall } = setup();
+      const { createTerminal, terminalSubscribe, storageCall } = setup();
       const send = vi.fn();
       getAllWindows.mockReturnValue([{ webContents: { id: 1, send } }, { webContents: { id: 2, send: vi.fn() } }]);
-      terminalCall.mockResolvedValue({
+      createTerminal.mockResolvedValue({
         id: 'term-1',
         workspaceId: 'ws-1',
         projectId: null,

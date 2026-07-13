@@ -13,6 +13,7 @@ import { createAppLogger } from './main/logging';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
 import { TerminalClient } from './main/terminal-client';
+import { createTerminalHandlers, type TerminalHandlers } from './main/terminal-handlers';
 
 /**
  * The real OS credential store (spec 5.6, 24.1, ADR-002) — macOS via the
@@ -54,6 +55,7 @@ const trustedSender: { webContentsId: number; allowedOriginPrefixes: readonly st
 
 let storageClient: StorageClient | null = null;
 let terminalClient: TerminalClient | null = null;
+let terminalHandlers: TerminalHandlers | null = null;
 let projectHandlers: ProjectHandlers | null = null;
 let gitHandlers: GitHandlers | null = null;
 let githubHandlers: GithubHandlers | null = null;
@@ -238,6 +240,10 @@ app.on('ready', () => {
   const terminal = startTerminalWorker();
   storageClient = storage;
   terminalClient = terminal;
+  terminalHandlers = createTerminalHandlers(storage, {
+    terminal,
+    homeDirectory: app.getPath('home'),
+  });
   projectHandlers = createProjectHandlers(storage, {
     onDevProcessExited: (event) => fireDevProcessExitedTrigger?.(event),
   });
@@ -289,6 +295,7 @@ app.on('ready', () => {
       trustedSender as TrustedSender,
       storage,
       terminal,
+      terminalHandlers,
       projectHandlers,
       gitHandlers,
       githubHandlers,
@@ -316,6 +323,7 @@ app.on('before-quit', () => {
   githubHandlers = null;
   agentHandlers = null;
   automationHandlers = null;
+  terminalHandlers = null;
   terminalClient = null;
   storageClient = null;
 });
