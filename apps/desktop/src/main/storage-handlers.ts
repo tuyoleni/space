@@ -158,8 +158,28 @@ function statSafe(target: string): fs.Stats | null {
   }
 }
 
+/**
+ * Resolves a user-supplied path to its real, symlink-free absolute form
+ * (spec 30.3: "Treat symlinks... explicitly"; "store canonical paths
+ * using platform-aware APIs") — `path.resolve` alone only normalises `.`/
+ * `..`/relative segments lexically, it never follows a symlink, so a
+ * project added via a symlinked folder would otherwise be tracked (and
+ * later have every Git/process `cwd` built) under the symlink's own path
+ * rather than the real directory it points to. Falls back to the lexical
+ * resolution when the path does not exist yet (`fs.realpathSync` throws
+ * in that case) so a not-yet-existing/inaccessible path is still reported
+ * as such by `inspectFolder` rather than throwing here.
+ */
+function resolveCanonicalPath(rawPath: string): string {
+  try {
+    return fs.realpathSync(rawPath);
+  } catch {
+    return path.resolve(rawPath);
+  }
+}
+
 function inspectFolder(storage: Storage, rawPath: string): ProjectInspection {
-  const canonicalPath = path.resolve(rawPath);
+  const canonicalPath = resolveCanonicalPath(rawPath);
   const stat = statSafe(canonicalPath);
   const isDirectory = stat?.isDirectory() ?? false;
   const isGitRepository = isDirectory && fs.existsSync(path.join(canonicalPath, '.git'));
@@ -182,7 +202,7 @@ async function addProject(
   storage: Storage,
   input: { workspaceId: string; canonicalPath: string; name?: string | undefined },
 ): Promise<Project> {
-  const canonicalPath = path.resolve(input.canonicalPath);
+  const canonicalPath = resolveCanonicalPath(input.canonicalPath);
   const stat = statSafe(canonicalPath);
   if (!stat || !stat.isDirectory()) {
     throw new Error(`"${canonicalPath}" is not an accessible directory`);

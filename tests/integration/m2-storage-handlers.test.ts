@@ -104,7 +104,11 @@ describe('project.inspectFolder / project.add (spec section 36.2)', () => {
     const project = await send<Project>('project.add', { workspaceId: workspace.id, canonicalPath: projectDir });
     expect(project.workspaceId).toBe(workspace.id);
     expect(project.detectedTypes).toEqual(['node']);
-    expect(project.repositoryRoot).toBe(path.resolve(projectDir));
+    // M8: canonicalPath is now resolved through fs.realpathSync (spec 30.3
+    // "treat symlinks explicitly"), not just path.resolve — on macOS the
+    // real temp dir is under /private/var, which os.tmpdir() masks behind
+    // a /var symlink, so the expectation must resolve the same way.
+    expect(project.repositoryRoot).toBe(fs.realpathSync(projectDir));
     expect(project.trustState).toBe('untrusted');
 
     const after = await send<ProjectInspection>('project.inspectFolder', { path: projectDir });
@@ -115,6 +119,30 @@ describe('project.inspectFolder / project.add (spec section 36.2)', () => {
 
     const receipts = storage.operations.listByWorkspace(workspace.id);
     expect(receipts.some((op) => op.type === 'project.add' && op.state === 'succeeded')).toBe(true);
+  });
+
+  it('resolves a symlinked folder to its real target path (spec 30.3: "treat symlinks explicitly")', async () => {
+    const workspace = await send<Workspace>('workspace.create', { name: 'A' });
+    const realDir = fs.mkdtempSync(path.join(dir, 'real-'));
+    fs.writeFileSync(path.join(realDir, 'package.json'), '{}');
+    const symlinkPath = path.join(dir, 'link-to-real');
+    fs.symlinkSync(realDir, symlinkPath, 'dir');
+
+    const inspection = await send<ProjectInspection>('project.inspectFolder', { path: symlinkPath });
+    expect(inspection.path).toBe(fs.realpathSync(realDir));
+    expect(inspection.path).not.toBe(symlinkPath);
+
+    const project = await send<Project>('project.add', { workspaceId: workspace.id, canonicalPath: symlinkPath });
+    // The project is tracked under the real directory, not the symlink
+    // path it was added through — so a later `git`/process spawn using
+    // this canonicalPath as cwd always operates on the real location,
+    // and adding the same real directory again (even via a different
+    // symlink) would be recognised as already registered.
+    expect(project.canonicalPath).toBe(fs.realpathSync(realDir));
+    expect(project.canonicalPath).not.toBe(symlinkPath);
+
+    const reinspected = await send<ProjectInspection>('project.inspectFolder', { path: realDir });
+    expect(reinspected.alreadyRegisteredInWorkspaceId).toBe(workspace.id);
   });
 
   it('project.list is empty for a fresh workspace and scoped per workspace', async () => {

@@ -86,7 +86,10 @@ describe('createFromTemplate + clone (PRJ-001/004)', () => {
     });
 
     expect(project.trustState).toBe('untrusted');
-    expect(project.repositoryRoot).toBe(path.join(dir, 'cloned-app'));
+    // M8: canonicalPath is now resolved through fs.realpathSync (spec 30.3
+    // "treat symlinks explicitly") — see m2-storage-handlers.test.ts's
+    // matching comment for why this must resolve the same way on macOS.
+    expect(project.repositoryRoot).toBe(fs.realpathSync(path.join(dir, 'cloned-app')));
     expect(fs.readFileSync(path.join(dir, 'cloned-app', 'README.md'), 'utf-8')).toBe('# fixture\n');
 
     const receipts = storage.operations.listByWorkspace(workspace.id);
