@@ -78,17 +78,18 @@ describe('migrations (spec section 23.3)', () => {
       { version: 3, name: 'terminal_and_dev_process', sql: '' }, // already applied, filtered out
       { version: 4, name: 'activity', sql: '' }, // already applied, filtered out
       { version: 5, name: 'github', sql: '' }, // already applied, filtered out
-      { version: 6, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
-      { version: 7, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
+      { version: 6, name: 'agent', sql: '' }, // already applied, filtered out
+      { version: 7, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
+      { version: 8, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
     ];
 
-    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 7.*rolled back/);
+    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 8.*rolled back/);
 
-    // version 6 committed (its own transaction succeeded before version 7 failed)
+    // version 7 committed (its own transaction succeeded before version 8 failed)
     const applied = db.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{
       version: number;
     }>;
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(
       db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ok_table'").get(),
     ).toBeTruthy();
