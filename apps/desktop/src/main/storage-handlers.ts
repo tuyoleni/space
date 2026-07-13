@@ -38,6 +38,7 @@ import { applyTrustDecision } from '@space/domain';
 import { detectPackageManager, detectProject, detectedTypesFromReport, nodeProjectDetectionFs } from '@space/environment';
 import {
   withReceipt,
+  type AgentStandingPermissionRow,
   type DevProcessRow,
   type OperationRisk,
   type OperationRow,
@@ -345,6 +346,28 @@ const githubConnectionUpsertSchema = z.object({
 const githubConnectionGetSchema = z.object({ workspaceId: z.string().min(1), adapterId: z.string().min(1), host: z.string().min(1) });
 const githubConnectionListSchema = z.object({ workspaceId: z.string().min(1) });
 
+// ---------------------------------------------------------------------------
+// M7: agent standing permissions (spec 19.2.3/19.2.4) — narrow, revocable
+// grants; a row here can only ever satisfy the confirmation gate for
+// remote-risk agent actions (@space/domain's assertAgentActionConfirmed
+// never lets one substitute for a destructive action's confirmation).
+// ---------------------------------------------------------------------------
+
+const agentPermissionGrantSchema = z.object({
+  id: z.string().min(1),
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  actionType: z.string().min(1),
+  grantedAt: z.string().min(1),
+});
+const agentPermissionRevokeSchema = z.object({ id: z.string().min(1), revokedAt: z.string().min(1) });
+const agentPermissionListSchema = z.object({ workspaceId: z.string().min(1) });
+const agentPermissionFindActiveGrantSchema = z.object({
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1).nullable(),
+  actionType: z.string().min(1),
+});
+
 export async function handleStorageRequest(storage: Storage, request: StorageRequest): Promise<unknown> {
   const method = request.method as StorageMethod;
   switch (method) {
@@ -608,6 +631,28 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'githubConnection.list': {
       const input = githubConnectionListSchema.parse(request.payload);
       return storage.serviceConnections.listByWorkspace(input.workspaceId);
+    }
+
+    case 'agentPermission.grant': {
+      const input = agentPermissionGrantSchema.parse(request.payload);
+      const row: AgentStandingPermissionRow = storage.agentPermissions.grant(input);
+      return row;
+    }
+
+    case 'agentPermission.revoke': {
+      const input = agentPermissionRevokeSchema.parse(request.payload);
+      storage.agentPermissions.revoke(input.id, input.revokedAt);
+      return undefined;
+    }
+
+    case 'agentPermission.list': {
+      const input = agentPermissionListSchema.parse(request.payload);
+      return storage.agentPermissions.listByWorkspace(input.workspaceId);
+    }
+
+    case 'agentPermission.findActiveGrant': {
+      const input = agentPermissionFindActiveGrantSchema.parse(request.payload);
+      return storage.agentPermissions.findActiveGrant(input.workspaceId, input.projectId, input.actionType);
     }
 
     default: {

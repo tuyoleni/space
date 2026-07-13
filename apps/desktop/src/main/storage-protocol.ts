@@ -31,7 +31,12 @@ export type StorageMethod =
   | 'githubSecretRef.delete'
   | 'githubConnection.upsert'
   | 'githubConnection.get'
-  | 'githubConnection.list';
+  | 'githubConnection.list'
+  // M7: agent standing permissions (spec 19.2.3/19.2.4)
+  | 'agentPermission.grant'
+  | 'agentPermission.revoke'
+  | 'agentPermission.list'
+  | 'agentPermission.findActiveGrant';
 
 export interface StorageRequest {
   readonly id: string;
