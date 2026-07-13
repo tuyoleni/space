@@ -40,14 +40,18 @@ packages/activity/        Event model and aggregation
 packages/automation/      Triggers, conditions, actions
 packages/storage/         SQLite repositories and migrations
 packages/security/        Permission policy, redaction, sender validation
+packages/logging/         Structured logs, rotation/retention, support bundles
+packages/updater/         Update-feed seam, signature verification, apply gate
+packages/telemetry/       Opt-in event schema and sink seam
 packages/ui/              Shared renderer components
 tests/{fixtures,integration,e2e}/
 docs/{adr,threat-model,runbooks}/
 ```
 
 Packages that execute native operations (`workspace-runner`, `git-engine`,
-`github-engine`, `environment`, `terminal`, `storage`, `security`) must
-never be imported into the renderer bundle (spec section 32).
+`github-engine`, `environment`, `terminal`, `storage`, `security`,
+`logging`) must never be imported into the renderer bundle (spec
+section 32).
 
 ## Milestones
 
