@@ -283,6 +283,7 @@ export function App() {
           <input
             type="text"
             placeholder="New workspace name"
+            aria-label="New workspace name"
             value={newWorkspaceName}
             onChange={(event) => setNewWorkspaceName(event.target.value)}
             disabled={busy}
@@ -306,7 +307,7 @@ export function App() {
 
               <fieldset disabled={busy}>
                 <legend>Create new project</legend>
-                <select value={createTemplateId} onChange={(event) => setCreateTemplateId(event.target.value)}>
+                <select aria-label="Project template" value={createTemplateId} onChange={(event) => setCreateTemplateId(event.target.value)}>
                   {templates.map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.displayName}
@@ -316,6 +317,7 @@ export function App() {
                 <input
                   type="text"
                   placeholder="Directory name"
+                  aria-label="New project directory name"
                   value={createName}
                   onChange={(event) => setCreateName(event.target.value)}
                 />
@@ -329,12 +331,14 @@ export function App() {
                 <input
                   type="text"
                   placeholder="Remote URL or path"
+                  aria-label="Remote URL or path to clone"
                   value={cloneUrl}
                   onChange={(event) => setCloneUrl(event.target.value)}
                 />
                 <input
                   type="text"
                   placeholder="Directory name (optional)"
+                  aria-label="Clone destination directory name (optional)"
                   value={cloneName}
                   onChange={(event) => setCloneName(event.target.value)}
                 />

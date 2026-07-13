@@ -39,13 +39,36 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
       margin: 1,
       borderRadius: 2,
       background: cell.isFuture ? 'transparent' : INTENSITY_COLOR[cell.intensityLevel],
+      // spec 28: "Colour is not the only signal ... for activity
+      // intensity" — border width scales with intensity level too, so the
+      // level is still distinguishable by shape/size alone (e.g. under
+      // grayscale, low vision, or a color-vision deficiency) without
+      // reading the color itself.
+      border: cell.isFuture ? 'none' : `${cell.intensityLevel === 0 ? 1 : cell.intensityLevel + 1}px solid rgba(255,255,255,0.35)`,
+      boxSizing: 'border-box',
       cursor: cell.isFuture ? 'default' : 'pointer',
     };
+  }
+
+  function handleCellKeyDown(event: React.KeyboardEvent<HTMLDivElement>, cell: DayCell): void {
+    if (cell.isFuture) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setSelectedDate(cell.date);
+    }
   }
 
   return (
     <section>
       <h2>Activity</h2>
+      {/* spec 28: "Full keyboard navigation for primary actions" — each day
+          cell is its own focusable, keyboard-activatable control (role
+          "button", Tab to reach it, Enter/Space to open its detail),
+          rather than a mouse-only onClick div. The grid's own role stays
+          "img" with a summary label since it reads as one visual whole;
+          each cell overrides that with its own per-day label. */}
       <div style={{ display: 'flex', overflowX: 'auto' }} role="img" aria-label="52-week activity grid">
         {grid.weeks.map((week, weekIndex) => (
           <div key={weekIndex} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -54,8 +77,11 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
                 key={cell.date}
                 title={dayCellAriaLabel(cell)}
                 aria-label={dayCellAriaLabel(cell)}
+                role={cell.isFuture ? undefined : 'button'}
+                tabIndex={cell.isFuture ? undefined : 0}
                 style={cellStyle(cell)}
                 onClick={() => !cell.isFuture && setSelectedDate(cell.date)}
+                onKeyDown={(event) => handleCellKeyDown(event, cell)}
               />
             ))}
           </div>

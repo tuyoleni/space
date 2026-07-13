@@ -5,6 +5,9 @@
  * core modules, perform IPC calls directly, or contain business logic
  * (spec section 33) — components receive data and callbacks as props.
  *
- * Populated as renderer screens are built across later milestones.
+ * `relative-time.ts` is pure formatting logic (spec 28's "relative times
+ * expose exact accessible labels") deliberately kept dependency-free of
+ * React/JSX so it stays testable under this repo's Node-only test runner;
+ * the renderer itself does the actual `<time>` markup with it.
  */
-export {};
+export * from './relative-time';

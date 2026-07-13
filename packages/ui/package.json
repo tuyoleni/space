@@ -7,6 +7,6 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests yet for @space/ui\""
+    "test": "vitest run src"
   }
 }

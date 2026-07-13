@@ -189,9 +189,9 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
           </ul>
           <fieldset disabled={busy}>
             <legend>Create PR from current branch</legend>
-            <input type="text" placeholder="Title" value={prTitle} onChange={(event) => setPrTitle(event.target.value)} />
-            <input type="text" placeholder="Head branch" value={prHead} onChange={(event) => setPrHead(event.target.value)} />
-            <input type="text" placeholder="Base branch" value={prBase} onChange={(event) => setPrBase(event.target.value)} />
+            <input type="text" placeholder="Title" aria-label="Pull request title" value={prTitle} onChange={(event) => setPrTitle(event.target.value)} />
+            <input type="text" placeholder="Head branch" aria-label="Head branch" value={prHead} onChange={(event) => setPrHead(event.target.value)} />
+            <input type="text" placeholder="Base branch" aria-label="Base branch" value={prBase} onChange={(event) => setPrBase(event.target.value)} />
             <button type="button" disabled={!prTitle.trim() || !prHead.trim()} onClick={handleCreatePr}>
               Create PR
             </button>
@@ -212,7 +212,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
           </ul>
           <fieldset disabled={busy}>
             <legend>Create issue</legend>
-            <input type="text" placeholder="Title" value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} />
+            <input type="text" placeholder="Title" aria-label="Issue title" value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} />
             <button type="button" disabled={!issueTitle.trim()} onClick={handleCreateIssue}>
               Create issue
             </button>

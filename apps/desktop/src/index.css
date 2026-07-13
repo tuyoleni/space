@@ -1,5 +1,9 @@
 :root {
   color-scheme: light dark;
+  /* spec 28: "visible focus states" — a single token so every focusable
+     element in the app gets a consistent, always-visible ring, never left
+     to the platform's (sometimes-suppressed) default. */
+  --space-focus-ring: #4da3ff;
 }
 
 html,
@@ -13,4 +17,59 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
     sans-serif;
+}
+
+/* spec 28: "Visible focus states" for every keyboard-focusable element —
+   :focus-visible so a mouse click never shows a ring, only real keyboard
+   navigation does. */
+:focus-visible {
+  outline: 2px solid var(--space-focus-ring);
+  outline-offset: 2px;
+}
+
+/* spec 28: "Respect operating-system reduced-motion settings." Space has
+   no decorative animation today, but this is a structural guarantee for
+   every future one (and already applies to xterm's cursor blink, which
+   TerminalPanel reads via prefers-reduced-motion in script). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* spec 28: "Support high-contrast themes." Windows High Contrast / forced-
+   colors mode overrides most authored colors already; this only
+   strengthens the one thing that must never be lost under it — the focus
+   ring — and widens it slightly for prefers-contrast: more. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :focus-visible {
+    outline-width: 3px;
+  }
+}
+
+/* spec 28: screen-reader-only text — visually hidden but still announced,
+   for exact-timestamp/status text that would be redundant to show
+   sighted users twice (the visible relative/icon form already covers
+   them) but must still reach assistive tech. */
+.space-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

@@ -203,6 +203,7 @@ export function GitPanel({ project }: GitPanelProps) {
       <div style={{ marginTop: '0.5rem' }}>
         <textarea
           placeholder="Commit message"
+          aria-label="Commit message"
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           rows={2}
@@ -230,7 +231,12 @@ export function GitPanel({ project }: GitPanelProps) {
       </div>
 
       <div style={{ marginTop: '0.5rem' }}>
-        <select disabled={busy} onChange={(event) => event.target.value && handleSwitchBranch(event.target.value)} value="">
+        <select
+          disabled={busy}
+          aria-label="Switch branch"
+          onChange={(event) => event.target.value && handleSwitchBranch(event.target.value)}
+          value=""
+        >
           <option value="" disabled>
             Switch branch&hellip;
           </option>
@@ -246,6 +252,7 @@ export function GitPanel({ project }: GitPanelProps) {
         <input
           type="text"
           placeholder="New branch name"
+          aria-label="New branch name"
           value={newBranchName}
           onChange={(event) => setNewBranchName(event.target.value)}
           disabled={busy}

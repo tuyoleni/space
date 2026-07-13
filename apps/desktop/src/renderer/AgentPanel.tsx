@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { AgentStandingPermissionSummary, Project } from '@space/contracts';
+import { formatRelativeTime } from '@space/ui';
 
 /**
  * Minimal M7 intent/agent surface (spec 36.7 exit criteria: agent changes
@@ -183,6 +184,7 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
             <input
               type="text"
               placeholder="Commit message"
+              aria-label="Commit message"
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               style={{ width: '20rem' }}
@@ -198,9 +200,14 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
         <div style={{ marginTop: '0.5rem' }}>
           <h4>Standing permissions</h4>
           <ul style={{ margin: '0.5rem 0', paddingLeft: '1rem', fontSize: '0.85rem' }}>
-            {permissions.map((permission) => (
+            {permissions.map((permission) => {
+              const granted = formatRelativeTime(permission.grantedAt);
+              return (
               <li key={permission.id}>
-                {permission.actionType} &mdash; granted {permission.grantedAt}
+                {permission.actionType} &mdash; granted{' '}
+                <time dateTime={permission.grantedAt} title={granted.exact} aria-label={`granted ${granted.exact}`}>
+                  {granted.relative}
+                </time>
                 {permission.revokedAt ? ' (revoked)' : (
                   <>
                     {' '}
@@ -210,7 +217,8 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
                   </>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}
