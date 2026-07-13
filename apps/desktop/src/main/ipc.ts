@@ -18,6 +18,7 @@ import {
   agentPermissionGrantInputSchema,
   agentPermissionRevokeInputSchema,
   agentPlanDispatchInputSchema,
+  appSettingsTelemetrySetInputSchema,
   automationCreateInputSchema,
   automationDeleteInputSchema,
   automationListInputSchema,
@@ -862,5 +863,20 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = automationSettingsSetInputSchema.parse(input);
     return automationHandlers.setAllEnabled(parsed.workspaceId, parsed.enabled);
+  });
+
+  // ---------------------------------------------------------------------
+  // M8: app-level settings (spec 29.2 telemetry opt-in, default OFF)
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.appSettingsTelemetryGet, async (event) => {
+    assertIpcSender(event, trusted);
+    return storage.call<boolean>('appSettings.isTelemetryEnabled', undefined);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.appSettingsTelemetrySet, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = appSettingsTelemetrySetInputSchema.parse(input);
+    return storage.call('appSettings.setTelemetryEnabled', { enabled: parsed.enabled, updatedAt: new Date().toISOString() });
   });
 }

@@ -413,6 +413,9 @@ const automationRunListByAutomationSchema = z.object({ automationId: z.string().
 const automationSettingsIsAllEnabledSchema = z.object({ workspaceId: z.string().min(1) });
 const automationSettingsSetAllEnabledSchema = z.object({ workspaceId: z.string().min(1), enabled: z.boolean(), updatedAt: z.string().min(1) });
 
+// M8: app-level settings (spec 29.2 telemetry opt-in) — not workspace-scoped.
+const appSettingsSetTelemetryEnabledSchema = z.object({ enabled: z.boolean(), updatedAt: z.string().min(1) });
+
 export async function handleStorageRequest(storage: Storage, request: StorageRequest): Promise<unknown> {
   const method = request.method as StorageMethod;
   switch (method) {
@@ -768,6 +771,16 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'automationSettings.setAllEnabled': {
       const input = automationSettingsSetAllEnabledSchema.parse(request.payload);
       storage.automationSettings.setAllEnabled(input.workspaceId, input.enabled, input.updatedAt);
+      return undefined;
+    }
+
+    case 'appSettings.isTelemetryEnabled': {
+      return storage.appSettings.isTelemetryEnabled();
+    }
+
+    case 'appSettings.setTelemetryEnabled': {
+      const input = appSettingsSetTelemetryEnabledSchema.parse(request.payload);
+      storage.appSettings.setTelemetryEnabled(input.enabled, input.updatedAt);
       return undefined;
     }
 

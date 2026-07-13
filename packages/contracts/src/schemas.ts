@@ -560,3 +560,6 @@ export const automationSettingsSetInputSchema = z.object({
 
 /** M8: the `project-opened` trigger's transport envelope (spec 18.2) — just the project id. */
 export const projectOpenedInputSchema = z.object({ projectId: z.string().min(1) });
+
+/** M8: telemetry opt-in (spec 29.2) — app-level, not workspace-scoped. */
+export const appSettingsTelemetrySetInputSchema = z.object({ enabled: z.boolean() });

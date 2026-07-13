@@ -289,4 +289,9 @@ export interface SpaceAPI {
     getAllEnabled(workspaceId: string): Promise<boolean>;
     setAllEnabled(input: AutomationSettingsSetInput): Promise<void>;
   };
+  readonly appSettings: {
+    /** spec 29.2: opt-in beta telemetry, default OFF, app-level (not per-workspace). */
+    getTelemetryEnabled(): Promise<boolean>;
+    setTelemetryEnabled(enabled: boolean): Promise<void>;
+  };
 }

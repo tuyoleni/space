@@ -1,0 +1,12 @@
+{
+  "name": "@space/telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Opt-in (default OFF) beta telemetry: a structurally-constrained event schema and a DI'd sink seam (spec section 29.2).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src"
+  }
+}

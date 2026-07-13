@@ -23,4 +23,5 @@ export * from './repositories/agent-permission-repository';
 export * from './repositories/automation-repository';
 export * from './repositories/automation-run-repository';
 export * from './repositories/automation-settings-repository';
+export * from './repositories/app-settings-repository';
 export * from './receipts';

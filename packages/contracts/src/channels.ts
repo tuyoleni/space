@@ -115,6 +115,10 @@ export const IPC_CHANNELS = {
   automationListRuns: 'automation:listRuns',
   automationSettingsGet: 'automation:settings:get',
   automationSettingsSet: 'automation:settings:set',
+
+  // M8: app-level settings (spec 29.2 telemetry opt-in)
+  appSettingsTelemetryGet: 'appSettings:telemetry:get',
+  appSettingsTelemetrySet: 'appSettings:telemetry:set',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

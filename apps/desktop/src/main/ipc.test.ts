@@ -290,6 +290,22 @@ describe('registerIpcHandlers', () => {
     });
   });
 
+  describe('M8: app-level telemetry opt-in (spec 29.2)', () => {
+    it('appSettings:telemetry:get reads from storage', async () => {
+      const { storageCall } = setup();
+      storageCall.mockResolvedValue(true);
+      const result = await handlerFor(IPC_CHANNELS.appSettingsTelemetryGet)(validEvent);
+      expect(storageCall).toHaveBeenCalledWith('appSettings.isTelemetryEnabled', undefined);
+      expect(result).toBe(true);
+    });
+
+    it('appSettings:telemetry:set writes the opt-in through storage', async () => {
+      const { storageCall } = setup();
+      await handlerFor(IPC_CHANNELS.appSettingsTelemetrySet)(validEvent, { enabled: true });
+      expect(storageCall).toHaveBeenCalledWith('appSettings.setTelemetryEnabled', expect.objectContaining({ enabled: true }));
+    });
+  });
+
   describe('project:pickFolder / project:pickParentDirectory', () => {
     it('returns the selected path when the user picks a folder', async () => {
       setup();

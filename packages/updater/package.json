@@ -1,0 +1,12 @@
+{
+  "name": "@space/updater",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Client-side auto-update seam: signed/verified update checks, an apply-safety gate, and defer/restart-later decisions (spec section 31.3).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src"
+  }
+}

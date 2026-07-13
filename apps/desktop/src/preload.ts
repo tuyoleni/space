@@ -136,6 +136,10 @@ const spaceAPI: SpaceAPI = {
     getAllEnabled: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.automationSettingsGet, workspaceId),
     setAllEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationSettingsSet, input),
   },
+  appSettings: {
+    getTelemetryEnabled: () => ipcRenderer.invoke(IPC_CHANNELS.appSettingsTelemetryGet),
+    setTelemetryEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.appSettingsTelemetrySet, { enabled }),
+  },
 };
 
 contextBridge.exposeInMainWorld('space', spaceAPI);

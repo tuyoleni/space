@@ -47,7 +47,10 @@ export type StorageMethod =
   | 'automationRun.complete'
   | 'automationRun.listByAutomation'
   | 'automationSettings.isAllEnabled'
-  | 'automationSettings.setAllEnabled';
+  | 'automationSettings.setAllEnabled'
+  // M8: app-level settings (spec 29.2 telemetry opt-in)
+  | 'appSettings.isTelemetryEnabled'
+  | 'appSettings.setTelemetryEnabled';
 
 export interface StorageRequest {
   readonly id: string;

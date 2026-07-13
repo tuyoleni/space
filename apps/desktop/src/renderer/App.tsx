@@ -38,6 +38,7 @@ export function App() {
   const [createTemplateId, setCreateTemplateId] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneName, setCloneName] = useState('');
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
     setWorkspaces(await window.space.workspace.list());
@@ -49,7 +50,18 @@ export function App() {
       setTemplates(list);
       setCreateTemplateId((current) => current || list[0]?.id || '');
     });
+    // spec 29.2: telemetry is opt-in, default OFF — read the persisted
+    // setting rather than assuming a default in the renderer.
+    void window.space.appSettings.getTelemetryEnabled().then(setTelemetryEnabled);
   }, [refreshWorkspaces]);
+
+  function handleToggleTelemetry(): void {
+    const next = !telemetryEnabled;
+    void runGuarded(async () => {
+      await window.space.appSettings.setTelemetryEnabled(next);
+      setTelemetryEnabled(next);
+    });
+  }
 
   const activeWorkspace = workspaces.find((workspace) => workspace.active) ?? null;
   const activeWorkspaceId = activeWorkspace?.id ?? null;
@@ -259,6 +271,13 @@ export function App() {
   return (
     <main style={{ padding: '1.5rem', maxWidth: 900 }}>
       <h1>Space</h1>
+
+      <section style={{ marginBottom: '1rem' }}>
+        <label>
+          <input type="checkbox" checked={telemetryEnabled} onChange={handleToggleTelemetry} disabled={busy} />
+          {' '}Share anonymous usage telemetry (off by default; never includes source code, file paths, commit messages, or credentials)
+        </label>
+      </section>
 
       <section>
         <h2>Workspaces</h2>
