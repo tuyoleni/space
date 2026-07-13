@@ -36,6 +36,7 @@ import {
   editPullRequest,
   fetchRunLog,
   generateReleaseNotes,
+  getAuthToken,
   ghAuthLoginArgs,
   listAvailableOrgs,
   listIssues,
@@ -187,6 +188,37 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
     return { gh: scopedGhExecutor(workspaceId, host, token), git: scopedGitExecutor(workspaceId, host, token), token };
   }
 
+  /**
+   * Completes ADR-002's fallback design (spec 5.6) after a real login:
+   * `gh auth token` reads the token `gh` itself just obtained, this
+   * function stores it in Space's own OS credential store under a
+   * Space-owned service/account identifier (never in SQLite), registers
+   * it with the redactor before it is used anywhere else, and records a
+   * reference-only `SecretRef` row so `ServiceConnection.secretRefId` is
+   * real rather than always null. Resolves to `null` (not an error) when
+   * `gh auth token` has nothing to report — a legitimate "gh manages this
+   * host's credential itself" outcome, not a failure.
+   */
+  async function captureTokenIntoCredentialStore(workspaceId: string, host: string, gh: GhExecutor): Promise<string | null> {
+    const token = await getAuthToken(gh, host);
+    if (!token) {
+      return null;
+    }
+    redaction.register(token);
+    const ref = buildGithubCredentialRef(workspaceId, host);
+    await options.credentialStore.set(ref, token);
+    const secretRefId = `${workspaceId}:github:${host}`;
+    await storage.call('githubSecretRef.upsert', {
+      id: secretRefId,
+      workspaceId,
+      provider: 'github',
+      serviceName: ref.service,
+      accountKey: ref.account,
+      createdAt: now(),
+    });
+    return secretRefId;
+  }
+
   // ---------------------------------------------------------------------
   // GH-001: Authentication
   // ---------------------------------------------------------------------
@@ -242,9 +274,15 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
       void (async () => {
         const succeeded = event.exitCode === 0;
         if (succeeded) {
+          // The scoped executor here still resolves `GH_TOKEN` from Space's
+          // credential store, which is empty on a first-ever login — that's
+          // fine, `gh auth login` just completed and wrote its own
+          // GH_CONFIG_DIR-scoped credentials, which is all `gh auth
+          // status`/`gh auth token` below need to read.
           const { gh } = await scopedExecutors(input.workspaceId, host);
           const status: GhAuthStatusReport = await loadAuthStatus(gh);
           const active = status.accounts.find((account) => account.active) ?? status.accounts[0] ?? null;
+          const secretRefId = status.authenticated ? await captureTokenIntoCredentialStore(input.workspaceId, host, gh) : null;
           await storage.call('githubConnection.upsert', {
             id: `${input.workspaceId}:github:${host}`,
             workspaceId: input.workspaceId,
@@ -252,7 +290,7 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
             host,
             accountLabel: active?.account ?? null,
             profileLabel: null,
-            secretRefId: null,
+            secretRefId,
             state: status.authenticated ? 'connected' : 'error',
             lastVerifiedAt: now(),
           });
@@ -284,6 +322,12 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
       exitCode: 0,
     });
     await ghLogout(gh, host);
+    // Mirror captureTokenIntoCredentialStore's write with a real delete —
+    // a stale credential-store entry / SecretRef row for a logged-out
+    // connection would be exactly the kind of orphaned secret spec 39
+    // warns against.
+    await options.credentialStore.delete(buildGithubCredentialRef(workspaceId, host));
+    await storage.call('githubSecretRef.delete', { id: `${workspaceId}:github:${host}` });
     await storage.call('githubConnection.upsert', {
       id: `${workspaceId}:github:${host}`,
       workspaceId,

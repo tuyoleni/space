@@ -191,6 +191,116 @@ describe('GH-001: interactive auth login via the reused PTY host', () => {
     expect(connection).toMatchObject({ state: 'connected', accountLabel: 'octocat' });
   });
 
+  it('captures the real token gh just obtained into the credential store and records a real SecretRef (ADR-002 fallback, spec 5.6)', async () => {
+    const workspace = await makeWorkspace();
+    const credentialStore = new InMemoryCredentialStore();
+    const ghExecutor: GhExecutor = async (args) => {
+      if (args[0] === 'auth' && args[1] === 'status') {
+        return {
+          exitCode: 0,
+          stdout: 'github.com\n  ✓ Logged in to github.com account octocat (keyring)\n  - Active account: true\n',
+          stderr: '',
+        };
+      }
+      if (args[0] === 'auth' && args[1] === 'token') {
+        return { exitCode: 0, stdout: 'gho_freshlogintoken\n', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const handlers = createGithubHandlers(storageCaller, {
+      ghExecutor,
+      credentialStore,
+      terminal: fakeTerminal(0),
+      ghConfigDirFor: (id) => path.join(dir, 'gh-config', id),
+    });
+
+    await handlers.startAuthLogin({ workspaceId: workspace.id, cwd: dir });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // The credential store — never SQLite — now really holds the token.
+    expect(await credentialStore.get(buildGithubCredentialRef(workspace.id, 'github.com'))).toBe('gho_freshlogintoken');
+
+    // The ServiceConnection row references it for real, not with a
+    // permanently-null secretRefId.
+    const connection = await storageCaller.call<{ secretRefId: string | null }>('githubConnection.get', {
+      workspaceId: workspace.id,
+      adapterId: 'github',
+      host: 'github.com',
+    });
+    expect(connection?.secretRefId).toBe(`${workspace.id}:github:github.com`);
+
+    // The raw token never appears anywhere in the real SQLite database.
+    storage.close();
+    const rawDbBytes = fs.readFileSync(path.join(dir, 'space.sqlite'));
+    expect(rawDbBytes.includes('gho_freshlogintoken')).toBe(false);
+  });
+
+  it('a subsequent call resolves the captured token from the credential store and injects it into gh/git child process env', async () => {
+    const workspace = await makeWorkspace();
+    const credentialStore = new InMemoryCredentialStore();
+    const seen: { args: readonly string[]; env: Record<string, string> }[] = [];
+    const ghExecutor: GhExecutor = async (args, options) => {
+      seen.push({ args: [...args], env: { ...(options?.env ?? {}) } });
+      if (args[0] === 'auth' && args[1] === 'status') {
+        return { exitCode: 0, stdout: 'github.com\n  ✓ Logged in to github.com account octocat (keyring)\n  - Active account: true\n', stderr: '' };
+      }
+      if (args[0] === 'auth' && args[1] === 'token') {
+        return { exitCode: 0, stdout: 'gho_freshlogintoken\n', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const handlers = createGithubHandlers(storageCaller, {
+      ghExecutor,
+      credentialStore,
+      terminal: fakeTerminal(0),
+      ghConfigDirFor: (id) => path.join(dir, 'gh-config', id),
+    });
+
+    await handlers.startAuthLogin({ workspaceId: workspace.id, cwd: dir });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    seen.length = 0;
+
+    await handlers.authReport(workspace.id);
+    expect(seen.some((call) => call.env['GH_TOKEN'] === 'gho_freshlogintoken')).toBe(true);
+  });
+
+  it('logout deletes both the credential store entry and the SecretRef row, never leaving an orphaned secret', async () => {
+    const workspace = await makeWorkspace();
+    const credentialStore = new InMemoryCredentialStore();
+    const ghExecutor: GhExecutor = async (args) => {
+      if (args[0] === 'auth' && args[1] === 'status') {
+        return { exitCode: 0, stdout: 'github.com\n  ✓ Logged in to github.com account octocat (keyring)\n  - Active account: true\n', stderr: '' };
+      }
+      if (args[0] === 'auth' && args[1] === 'token') {
+        return { exitCode: 0, stdout: 'gho_freshlogintoken\n', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const handlers = createGithubHandlers(storageCaller, {
+      ghExecutor,
+      credentialStore,
+      terminal: fakeTerminal(0),
+      ghConfigDirFor: (id) => path.join(dir, 'gh-config', id),
+    });
+
+    await handlers.startAuthLogin({ workspaceId: workspace.id, cwd: dir });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await credentialStore.get(buildGithubCredentialRef(workspace.id, 'github.com'))).not.toBeNull();
+
+    await handlers.logout(workspace.id);
+    expect(await credentialStore.get(buildGithubCredentialRef(workspace.id, 'github.com'))).toBeNull();
+
+    const connection = await storageCaller.call<{ secretRefId: string | null } | null>('githubConnection.get', {
+      workspaceId: workspace.id,
+      adapterId: 'github',
+      host: 'github.com',
+    });
+    expect(connection?.secretRefId).toBeNull();
+  });
+
   it('records a failed receipt and never creates a ServiceConnection row when the PTY exits non-zero', async () => {
     const workspace = await makeWorkspace();
     const credentialStore = new InMemoryCredentialStore();

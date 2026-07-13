@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   activeAccountFor,
   detectGhVersion,
+  getAuthToken,
   getGitProtocol,
   ghAuthLoginArgs,
   ghAuthLogoutArgs,
+  ghAuthTokenArgs,
   listAvailableOrgs,
   loadAuthStatus,
   loadGithubAuthReport,
@@ -234,5 +236,30 @@ describe('ghAuthLogoutArgs / logout', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
     await expect(logout(executor, 'github.com')).resolves.toBeUndefined();
+  });
+});
+
+describe('ghAuthTokenArgs / getAuthToken', () => {
+  it('builds a bare token command by default, and scopes it with --hostname when given', () => {
+    expect(ghAuthTokenArgs()).toEqual(['auth', 'token']);
+    expect(ghAuthTokenArgs('github.com')).toEqual(['auth', 'token', '--hostname', 'github.com']);
+  });
+
+  it('returns the trimmed token on success', async () => {
+    const executor = fakeExecutor((args) => {
+      expect(args).toEqual(['auth', 'token', '--hostname', 'github.com']);
+      return { exitCode: 0, stdout: 'gho_realtoken\n', stderr: '' };
+    });
+    await expect(getAuthToken(executor, 'github.com')).resolves.toBe('gho_realtoken');
+  });
+
+  it('resolves null rather than throwing when gh has no token for that host', async () => {
+    const executor = fakeExecutor(() => ({ exitCode: 1, stdout: '', stderr: 'no oauth token' }));
+    await expect(getAuthToken(executor, 'github.com')).resolves.toBeNull();
+  });
+
+  it('resolves null on a real but empty stdout, rather than an empty-string token', async () => {
+    const executor = fakeExecutor(() => ({ exitCode: 0, stdout: '\n', stderr: '' }));
+    await expect(getAuthToken(executor, 'github.com')).resolves.toBeNull();
   });
 });

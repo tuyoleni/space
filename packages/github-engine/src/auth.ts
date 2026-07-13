@@ -256,3 +256,30 @@ export function ghAuthLogoutArgs(hostname?: string): string[] {
 export async function logout(executor: GhExecutor, hostname?: string): Promise<void> {
   await runGh(executor, ghAuthLogoutArgs(hostname));
 }
+
+/** `gh auth token [--hostname <host>]` prints the current, real token for that host and nothing else — the one command whose stdout is deliberately sensitive rather than something safe to log or return in an error message. */
+export function ghAuthTokenArgs(hostname?: string): string[] {
+  const args = ['auth', 'token'];
+  if (hostname) {
+    args.push('--hostname', hostname);
+  }
+  return args;
+}
+
+/**
+ * Reads the real token `gh` just obtained after a successful interactive
+ * login (spec 5.6, ADR-002: the caller stores this in Space's own OS
+ * credential store under its own service/account identifier — this
+ * function never persists anything itself). Resolves to `null` rather
+ * than throwing when `gh` has no token for that host, since that is a
+ * legitimate "login didn't actually succeed" state the caller must
+ * handle, not a crash.
+ */
+export async function getAuthToken(executor: GhExecutor, hostname?: string): Promise<string | null> {
+  const result = await executor(ghAuthTokenArgs(hostname));
+  if (result.exitCode !== 0) {
+    return null;
+  }
+  const token = result.stdout.trim();
+  return token.length > 0 ? token : null;
+}
