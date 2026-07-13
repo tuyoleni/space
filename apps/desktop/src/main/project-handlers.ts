@@ -33,7 +33,7 @@ import type {
   StartDevServerInput,
   StopDevServerInput,
 } from '@space/contracts';
-import { TrustGateError, assertTrusted } from '@space/domain';
+import { RESOURCE_LIMITS, TrustGateError, assertTrusted } from '@space/domain';
 import { BUILT_IN_PROJECT_TEMPLATES, detectDevScript, findProjectTemplate, installCommandFor } from '@space/environment';
 import { cloneRepository, createNodeGitExecutor, type GitExecutor } from '@space/git-engine';
 import {
@@ -125,11 +125,34 @@ export async function recordOperation(
   });
 }
 
+/**
+ * How long `stopDevServer` waits for a SIGTERM'd process to actually exit
+ * (and its terminal state to persist) before escalating to SIGKILL. No
+ * existing pattern in this codebase escalates signals on a timeout (the
+ * closest analogues — runner.ts's `timeoutMs`, node-git-executor.ts,
+ * node-gh-executor.ts — all send a single SIGTERM and let the process die
+ * in its own time), so this is a new, deliberately generous bound: real
+ * dev servers (webpack/vite/next) can take a moment to tear down open
+ * sockets/watchers on SIGTERM, and this is a user-initiated "Stop" click
+ * that should feel synchronous, not a background reap.
+ */
+const DEV_SERVER_STOP_GRACE_MS = 5000;
+
 export function createProjectHandlers(storage: StorageCaller, options: ProjectHandlersOptions = {}) {
   const resolveExecutable = options.resolveExecutable ?? passthroughResolver;
   const gitExecutor = options.gitExecutor ?? createNodeGitExecutor();
   const liveDevProcesses = new Map<string, DetachedProcessHandle>();
   const expectedStops = new Set<string>();
+  /**
+   * Resolves once a dev process's exit has been fully handled — its
+   * terminal state (`stopped`/`crashed`) written through `storage`, not
+   * merely once the OS reports the process gone. `stopDevServer` awaits
+   * this (bounded by `DEV_SERVER_STOP_GRACE_MS`) so a renderer refresh
+   * immediately after `stop()` resolves reliably reads the persisted
+   * terminal state instead of racing the async `devProcess.markStopped`
+   * write — the exact bug this map exists to close.
+   */
+  const devProcessExitHandled = new Map<string, Promise<void>>();
 
   async function detect(input: DetectProjectInput): Promise<ProjectDetectionReport> {
     return storage.call('project.detect', input);
@@ -345,22 +368,58 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
 
     liveDevProcesses.set(id, handle);
     let urlDetected = false;
+    // Real dev-server output (Vite's "➜  Local:   http://localhost:5173/"
+    // and friends) routinely arrives split across multiple stdout `data`
+    // events with no guaranteed line boundary, so matching each chunk in
+    // isolation can miss a URL that only completes across two chunks.
+    // Accumulate into a rolling buffer and match against the whole thing
+    // instead — bounded by the same retained-output limit `@space/domain`
+    // already defines for operation receipts (spec 27.4), reused here by
+    // convention rather than inventing a separate unbounded buffer.
+    let outputBuffer = '';
+    const maxBufferLength = RESOURCE_LIMITS.maxRetainedOperationOutputBytes;
     handle.onOutput((chunk) => {
       if (urlDetected) {
         return;
       }
-      const url = detectListeningUrl(chunk);
+      outputBuffer += chunk;
+      if (outputBuffer.length > maxBufferLength) {
+        // Keep the most recent tail — a listening-URL line is typically
+        // emitted once during startup, and trimming from the front keeps
+        // memory bounded without ever discarding output that just arrived.
+        outputBuffer = outputBuffer.slice(outputBuffer.length - maxBufferLength);
+      }
+      const url = detectListeningUrl(outputBuffer);
       if (url) {
         urlDetected = true;
         void storage.call('devProcess.setDetectedUrl', { id, url });
       }
     });
+
+    let resolveExitHandled: (() => void) | undefined;
+    devProcessExitHandled.set(
+      id,
+      new Promise<void>((resolve) => {
+        resolveExitHandled = resolve;
+      }),
+    );
     handle.onExit((exitCode) => {
       liveDevProcesses.delete(id);
       const wasExplicitStop = expectedStops.delete(id);
       const state = wasExplicitStop || exitCode === 0 ? 'stopped' : 'crashed';
-      void storage.call('devProcess.markStopped', { id, state, exitCode, endedAt: new Date().toISOString() });
-      options.onDevProcessExited?.({ workspaceId: project.workspaceId, projectId: project.id, devProcessId: id, exitCode, state });
+      void (async () => {
+        try {
+          await storage.call('devProcess.markStopped', { id, state, exitCode, endedAt: new Date().toISOString() });
+        } catch {
+          // Best-effort persistence: even if the write fails, still unblock
+          // any pending stopDevServer() wait and fire the exit hook below
+          // rather than hanging or silently dropping the trigger.
+        } finally {
+          options.onDevProcessExited?.({ workspaceId: project.workspaceId, projectId: project.id, devProcessId: id, exitCode, state });
+          devProcessExitHandled.delete(id);
+          resolveExitHandled?.();
+        }
+      })();
     });
 
     return record;
@@ -368,11 +427,42 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
 
   async function stopDevServer(input: StopDevServerInput): Promise<void> {
     const handle = liveDevProcesses.get(input.devProcessId);
+    const handled = devProcessExitHandled.get(input.devProcessId);
     if (!handle) {
+      // Not live in this process instance — either it already exited (and
+      // its markStopped write may still be in flight; wait for that so a
+      // stop call arriving right after a spontaneous crash still observes
+      // the persisted terminal state once this resolves) or it was never
+      // started this process lifetime. Either way there's nothing to kill.
+      if (handled) {
+        await handled;
+      }
       return;
     }
+
     expectedStops.add(input.devProcessId);
     handle.kill('SIGTERM');
+    if (!handled) {
+      return;
+    }
+
+    // Wait for the process to actually exit and its terminal state to
+    // persist — not just for kill() to be called — so a renderer refresh
+    // immediately after this promise resolves reliably reads "stopped"
+    // rather than racing the async exit handler above.
+    const timedOut = Symbol('dev-server-stop-timeout');
+    const outcome = await Promise.race([
+      handled.then(() => null),
+      new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), DEV_SERVER_STOP_GRACE_MS)),
+    ]);
+    if (outcome === timedOut) {
+      // SIGTERM didn't get an ack in time — escalate. SIGKILL cannot be
+      // caught or blocked, so the exit handler above is guaranteed to run
+      // shortly after this; awaiting `handled` again here is therefore
+      // bounded in practice, not an indefinite hang.
+      handle.kill('SIGKILL');
+      await handled;
+    }
   }
 
   async function listDevServers(projectId: string): Promise<DevProcessInfo[]> {

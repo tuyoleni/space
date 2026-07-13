@@ -205,3 +205,160 @@ describe('startDevServer fires onDevProcessExited (M8 spec 18.2 "Development pro
     expect(exitEvents[0]).toMatchObject({ workspaceId: workspace.id, projectId: project.id, exitCode: 0, state: 'stopped' });
   }, 15000);
 });
+
+/**
+ * Regression coverage for the manually-reported bug: "stop dev server ...
+ * says stop dev server after i start when i click stop iy then showing the
+ * link on button". Root cause was stopDevServer() resolving as soon as
+ * SIGTERM was sent, before the process had actually exited and before its
+ * `devProcess.markStopped` write had landed — so a renderer refresh right
+ * after stop() resolved could still read `state: 'running'`. This spawns a
+ * real, genuinely long-lived Node HTTP server (never a fixed real port —
+ * `listen(0, ...)`) whose SIGTERM handler deliberately delays its exit, so
+ * the old race window is actually observable rather than accidentally too
+ * fast to hit.
+ */
+describe('stopDevServer waits for the real process exit and its persisted state (race fix)', () => {
+  const DEV_SERVER_SCRIPT = `
+const http = require('http');
+const server = http.createServer((req, res) => res.end('ok'));
+server.listen(0, '127.0.0.1', () => {
+  console.log('Local: http://localhost:' + server.address().port + '/');
+});
+// Deliberately delayed shutdown — makes the fixed-vs-buggy race window
+// actually observable instead of the process happening to exit before the
+// test gets a chance to query storage.
+process.on('SIGTERM', () => setTimeout(() => process.exit(0), 75));
+`;
+
+  it('shows the dev server as stopped, not running, immediately after stop() resolves', async () => {
+    const workspace = await makeWorkspace();
+    const projectDir = fs.mkdtempSync(path.join(dir, 'proj-'));
+    fs.writeFileSync(path.join(projectDir, 'server.js'), DEV_SERVER_SCRIPT);
+    fs.writeFileSync(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'x', scripts: { dev: 'node server.js' } }),
+    );
+    const project = await storageCaller.call<Project>('project.add', { workspaceId: workspace.id, canonicalPath: projectDir });
+
+    const handlers = createProjectHandlers(storageCaller);
+    await handlers.trustDecision({ projectId: project.id, decision: 'trust-this-project' });
+    const record = await handlers.startDevServer({ projectId: project.id });
+    expect(record.state).toBe('running');
+
+    // Wait for the real listening URL so we know the server is genuinely
+    // up (and its process fully spawned) before stopping it — mirrors how
+    // a real user would only click "Stop" once the server had started.
+    await expect
+      .poll(
+        async () => {
+          const [devProcess] = await handlers.listDevServers(project.id);
+          return devProcess?.detectedUrl ?? null;
+        },
+        { timeout: 5000 },
+      )
+      .toMatch(/^http:\/\/localhost:\d+\/$/);
+
+    await handlers.stopDevServer({ devProcessId: record.id });
+
+    // The crux of the fix: query immediately after stop() resolves, with
+    // no additional wait — this must already reflect the persisted
+    // terminal state, not race the async exit handler.
+    const [afterStop] = await handlers.listDevServers(project.id);
+    expect(afterStop.state).toBe('stopped');
+    expect(afterStop.exitCode).toBe(0);
+  }, 15000);
+
+  it('escalates to SIGKILL and still resolves once the grace period elapses for a process that ignores SIGTERM', async () => {
+    const workspace = await makeWorkspace();
+    const projectDir = fs.mkdtempSync(path.join(dir, 'proj-'));
+    // Ignores SIGTERM entirely so stopDevServer() is forced through its
+    // timeout-then-SIGKILL escalation path for real. Prints a fake
+    // "listening" line immediately so the test can wait for the real
+    // "npm run dev" -> node child chain to be genuinely up (SIGTERM
+    // arriving before npm has even spawned the script isn't the scenario
+    // under test here) before requesting a stop — mirrors how a real user
+    // would only click "Stop" once the server has actually started.
+    fs.writeFileSync(
+      path.join(projectDir, 'server.js'),
+      "console.log('Local: http://localhost:1/'); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+    );
+    fs.writeFileSync(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'x', scripts: { dev: 'node server.js' } }),
+    );
+    const project = await storageCaller.call<Project>('project.add', { workspaceId: workspace.id, canonicalPath: projectDir });
+
+    const handlers = createProjectHandlers(storageCaller);
+    await handlers.trustDecision({ projectId: project.id, decision: 'trust-this-project' });
+    const record = await handlers.startDevServer({ projectId: project.id });
+
+    await expect
+      .poll(
+        async () => {
+          const [devProcess] = await handlers.listDevServers(project.id);
+          return devProcess?.detectedUrl ?? null;
+        },
+        { timeout: 5000 },
+      )
+      .toBe('http://localhost:1/');
+
+    const startedAt = Date.now();
+    await handlers.stopDevServer({ devProcessId: record.id });
+    const elapsedMs = Date.now() - startedAt;
+
+    // It was still an explicitly-requested stop (SIGKILL was only the
+    // escalation path, not a spontaneous crash), so the persisted state is
+    // 'stopped', not 'crashed' — the fix's timeout forced it to actually
+    // happen instead of the promise resolving early. A signal-terminated
+    // process reports a null exit code, never 0.
+    const [afterStop] = await handlers.listDevServers(project.id);
+    expect(afterStop.state).toBe('stopped');
+    expect(afterStop.exitCode).toBeNull();
+    // Bounded: proves this didn't hang forever waiting on a process that
+    // will never voluntarily exit on its own, and that it really did take
+    // the timeout-then-escalate path (a deliberately non-trivial wait)
+    // rather than exiting immediately.
+    expect(elapsedMs).toBeGreaterThanOrEqual(1000);
+    expect(elapsedMs).toBeLessThan(15000);
+  }, 20000);
+});
+
+describe('startDevServer detects a listening URL split across chunk boundaries (PRJ-006)', () => {
+  it('still finds the URL when the process writes it in two separate, genuinely split stdout writes', async () => {
+    const workspace = await makeWorkspace();
+    const projectDir = fs.mkdtempSync(path.join(dir, 'proj-'));
+    // Split mid-scheme, exactly like packages/workspace-runner's
+    // detached.test.ts split-write regression test — neither half alone
+    // contains anything detectListeningUrl can match.
+    fs.writeFileSync(
+      path.join(projectDir, 'server.js'),
+      [
+        "process.stdout.write('Local:   ht');",
+        "setTimeout(() => process.stdout.write('tp://localhost:5199/\\n'), 50);",
+        'setInterval(() => {}, 1000);',
+      ].join('\n'),
+    );
+    fs.writeFileSync(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'x', scripts: { dev: 'node server.js' } }),
+    );
+    const project = await storageCaller.call<Project>('project.add', { workspaceId: workspace.id, canonicalPath: projectDir });
+
+    const handlers = createProjectHandlers(storageCaller);
+    await handlers.trustDecision({ projectId: project.id, decision: 'trust-this-project' });
+    const record = await handlers.startDevServer({ projectId: project.id });
+
+    await expect
+      .poll(
+        async () => {
+          const [devProcess] = await handlers.listDevServers(project.id);
+          return devProcess?.detectedUrl ?? null;
+        },
+        { timeout: 5000 },
+      )
+      .toBe('http://localhost:5199/');
+
+    await handlers.stopDevServer({ devProcessId: record.id });
+  }, 15000);
+});
