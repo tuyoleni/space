@@ -1,0 +1,18 @@
+{
+  "name": "@space/agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Intent/change grouping, agent-action typing/validation, and model-privacy policy (spec sections 13, 19).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@space/domain": "^0.1.0",
+    "@space/git-engine": "^0.1.0",
+    "@space/workspace-runner": "^0.1.0",
+    "zod": "^4.4.3"
+  }
+}
