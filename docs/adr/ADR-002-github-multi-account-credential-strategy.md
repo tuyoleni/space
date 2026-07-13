@@ -1,14 +1,19 @@
 # ADR-002: GitHub multi-account credential strategy
 
 ## Status
-Partially resolved (2026-07-12, M6). The spec 5.6 fallback design is
-implemented and shipped regardless of spike outcome, per this ADR's own
-original decision drivers. What remains open is empirical: the manual
-two-account protocol in `docs/runbooks/p0b-github-multi-account-spike.md`
-has not been run on either macOS or Windows, because it requires two real
-GitHub accounts and a real `gh auth login`, both explicitly outside what
-this milestone's implementer was permitted to do autonomously. This ADR
-cannot be marked "Accepted" until a human operator runs that protocol.
+Partially resolved (2026-07-12, M6; credential-capture gap closed
+2026-07-13). The spec 5.6 fallback design is implemented and shipped
+regardless of spike outcome, per this ADR's own original decision
+drivers. As of 2026-07-13 it is also actually wired end to end — an
+earlier pass had built the store/resolve/inject/redaction path but never
+called `credentialStore.set()` from the real login flow, so the fallback
+was structurally present but never populated (see decision point 6
+below). What remains open is empirical: the manual two-account protocol
+in `docs/runbooks/p0b-github-multi-account-spike.md` has not been run on
+either macOS or Windows, because it requires two real GitHub accounts and
+a real `gh auth login`, both explicitly outside what this milestone's
+implementer was permitted to do autonomously. This ADR cannot be marked
+"Accepted" until a human operator runs that protocol.
 
 ## Context
 Spec sections 5.6 and 40.2: `GH_CONFIG_DIR` isolates GitHub CLI
@@ -90,6 +95,26 @@ behaviour.
    through that registry before it can reach a receipt, an activity
    event, or a log. Verified in
    `tests/integration/m6-github-handlers.test.ts`.
+6. **The credential store is actually populated after a real login, not
+   just readable.** An earlier pass of this milestone built the store,
+   the resolver, the env injection, and the redaction path, but never
+   called `credentialStore.set()` anywhere — `startAuthLogin` always
+   upserted `secretRefId: null`, so `tokenSourceStrategy` was `'gh-
+   default'` in every real run and the storage layer's already-built
+   `secret_refs` bookkeeping (spec 23.2.6) was unreachable dead code.
+   Fixed by adding `@space/github-engine`'s `getAuthToken()` (`gh auth
+   token --hostname <host>`, the one command whose stdout is the real
+   token) and calling it from `startAuthLogin`'s success path via
+   `captureTokenIntoCredentialStore()`: it stores the real token under
+   `buildGithubCredentialRef(workspaceId, host)`, registers it with the
+   redactor before anything else touches it, and records a real
+   `SecretRef` row so `ServiceConnection.secretRefId` is no longer
+   permanently null. `logout()` mirrors this with a real delete of both
+   the credential-store entry and the `SecretRef` row. Verified in
+   `tests/integration/m6-github-handlers.test.ts` (token lands in the
+   credential store and never SQLite; a later call resolves it back out
+   into the `gh`/`git` child process env; logout leaves no orphaned
+   secret).
 
 **What was not run (and must not have been, per this milestone's explicit
 boundary):** the manual two-account protocol itself. That requires real
