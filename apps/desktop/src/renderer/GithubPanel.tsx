@@ -1,6 +1,33 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { GithubAuthReport, GithubIssueSummary, GithubPullRequestSummary, TerminalSessionInfo } from '@space/contracts';
 import { TerminalPanel } from './TerminalPanel';
+
+/**
+ * IPC failures arrive double-wrapped: Electron prefixes
+ * `Error invoking remote method '<channel>': ` onto whatever the main
+ * process threw, and that error's own `<ClassName>: ` prefix (e.g.
+ * `GhCommandError: `) is still attached to `.message`. `GhCommandError`
+ * itself formats its message as `gh <args> failed: <reason>`, burying the
+ * actually-useful part (the `gh` stderr/stdout) behind the full invoked
+ * command line (spec 14.11 GH-009 requires remote-action failures to
+ * surface "a clear reason", not a raw nested CLI dump). Strip all of that
+ * down to just the reason. No shared helper for this exists elsewhere in
+ * the renderer yet (GitPanel/AgentPanel both just use `.message` verbatim,
+ * since they don't shell out to a CLI whose stderr gets wrapped this way);
+ * this stays local until a second panel needs the same treatment.
+ */
+function friendlyErrorMessage(caught: unknown): string {
+  const raw = caught instanceof Error ? caught.message : String(caught);
+  let message = raw.replace(/^Error invoking remote method '[^']*':\s*/, '');
+  message = message.replace(/^[A-Za-z][A-Za-z0-9]*Error:\s*/, '');
+  message = message.split('\n')[0]?.trim() ?? '';
+  const failedMarker = ' failed: ';
+  const failedIndex = message.lastIndexOf(failedMarker);
+  if (failedIndex !== -1) {
+    message = message.slice(failedIndex + failedMarker.length).trim();
+  }
+  return message || raw.trim();
+}
 
 /**
  * Minimal M6 GitHub surface (spec 36.6 exit criteria: publish, PR,
@@ -47,17 +74,27 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
     setReport(await window.space.github.authReport({ workspaceId }));
   }, [workspaceId]);
 
+  // Populate auth status proactively on mount / workspace change, mirroring
+  // GitPanel's unguarded mount-fetch precedent, so the panel knows whether
+  // remote actions are usable before the user has to think to click
+  // "Refresh auth status" themselves.
+  useEffect(() => {
+    void refreshReport();
+  }, [refreshReport]);
+
   async function guarded(action: () => Promise<void>): Promise<void> {
     setBusy(true);
     setError(null);
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(friendlyErrorMessage(caught));
     } finally {
       setBusy(false);
     }
   }
+
+  const authenticated = report?.authenticated ?? false;
 
   function handleSignIn(): void {
     void guarded(async () => {
@@ -171,28 +208,35 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
         </div>
       )}
 
+      {!authenticated && (
+        <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#a15c00' }}>
+          Sign in to GitHub above to use pull request and issue actions (spec GH-009: remote actions are
+          disabled with a clear reason while GitHub is unavailable).
+        </p>
+      )}
+
       <div style={{ marginTop: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
         <div>
           <h3>Pull requests</h3>
-          <button type="button" disabled={busy} onClick={handleListPrs}>
+          <button type="button" disabled={busy || !authenticated} onClick={handleListPrs}>
             List open PRs
           </button>
           <ul style={{ margin: '0.5rem 0', paddingLeft: '1rem', fontSize: '0.85rem' }}>
             {prs.map((pr) => (
               <li key={pr.number}>
                 #{pr.number} {pr.title} ({pr.headRefName} &rarr; {pr.baseRefName}){' '}
-                <button type="button" disabled={busy} onClick={() => handleMergePr(pr)}>
+                <button type="button" disabled={busy || !authenticated} onClick={() => handleMergePr(pr)}>
                   Merge
                 </button>
               </li>
             ))}
           </ul>
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy || !authenticated}>
             <legend>Create PR from current branch</legend>
             <input type="text" placeholder="Title" aria-label="Pull request title" value={prTitle} onChange={(event) => setPrTitle(event.target.value)} />
             <input type="text" placeholder="Head branch" aria-label="Head branch" value={prHead} onChange={(event) => setPrHead(event.target.value)} />
             <input type="text" placeholder="Base branch" aria-label="Base branch" value={prBase} onChange={(event) => setPrBase(event.target.value)} />
-            <button type="button" disabled={!prTitle.trim() || !prHead.trim()} onClick={handleCreatePr}>
+            <button type="button" disabled={!authenticated || !prTitle.trim() || !prHead.trim()} onClick={handleCreatePr}>
               Create PR
             </button>
           </fieldset>
@@ -200,7 +244,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
 
         <div>
           <h3>Issues</h3>
-          <button type="button" disabled={busy} onClick={handleListIssues}>
+          <button type="button" disabled={busy || !authenticated} onClick={handleListIssues}>
             List open issues
           </button>
           <ul style={{ margin: '0.5rem 0', paddingLeft: '1rem', fontSize: '0.85rem' }}>
@@ -210,10 +254,10 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
               </li>
             ))}
           </ul>
-          <fieldset disabled={busy}>
+          <fieldset disabled={busy || !authenticated}>
             <legend>Create issue</legend>
             <input type="text" placeholder="Title" aria-label="Issue title" value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} />
-            <button type="button" disabled={!issueTitle.trim()} onClick={handleCreateIssue}>
+            <button type="button" disabled={!authenticated || !issueTitle.trim()} onClick={handleCreateIssue}>
               Create issue
             </button>
           </fieldset>
