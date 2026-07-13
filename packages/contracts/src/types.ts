@@ -169,6 +169,14 @@ export interface ProjectTemplateSummary {
   readonly verifyCommand: ProjectTemplateCommand;
   readonly devCommand: ProjectTemplateCommand | null;
   readonly defaultIgnoreRules: readonly string[];
+  /**
+   * PRJ-004: "the UI MUST show the concrete framework, language, package
+   * manager, and creation command before execution." Computed server-side
+   * from the template's default option values so the renderer never has to
+   * duplicate template logic just to render an accurate preview — this is
+   * the literal command that will run (modulo the final directory name).
+   */
+  readonly previewCreationCommand: ProjectTemplateCommand;
 }
 
 export interface CreateProjectFromTemplateInput {

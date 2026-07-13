@@ -47,6 +47,21 @@ async function makeWorkspace(name = 'A'): Promise<Workspace> {
   return storageCaller.call<Workspace>('workspace.create', { name });
 }
 
+describe('listTemplates (PRJ-004: "the UI MUST show the concrete framework, language, package manager, and creation command before execution")', () => {
+  it('exposes a literal, ready-to-display creation command for the built-in node-minimal template', () => {
+    const handlers = createProjectHandlers(storageCaller);
+    const templates = handlers.listTemplates();
+
+    expect(templates).toHaveLength(1);
+    expect(templates[0]).toMatchObject({
+      id: 'node-minimal',
+      displayName: 'Minimal Node.js package',
+      requiredExecutables: ['npm', 'node'],
+      previewCreationCommand: { executable: 'npm', args: ['init', '--yes'] },
+    });
+  });
+});
+
 describe('createFromTemplate + clone (PRJ-001/004)', () => {
   it('creates a real project from the node-minimal template and registers it untrusted', async () => {
     const workspace = await makeWorkspace();

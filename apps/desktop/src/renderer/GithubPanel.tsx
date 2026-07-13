@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { GithubAuthReport, GithubIssueSummary, GithubPullRequestSummary, TerminalSessionInfo } from '@space/contracts';
+import { toErrorMessage } from './errors';
 import { TerminalPanel } from './TerminalPanel';
 
 /**
@@ -53,7 +54,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(toErrorMessage(caught));
     } finally {
       setBusy(false);
     }
