@@ -1,0 +1,15 @@
+{
+  "name": "@space/logging",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Structured logging (levels, correlation IDs, redaction), rotation/retention, and support-bundle preview/export (spec section 29.3).",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@space/workspace-runner": "^0.1.0"
+  }
+}

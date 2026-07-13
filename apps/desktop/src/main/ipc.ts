@@ -77,6 +77,7 @@ import {
   IPC_CHANNELS,
   type TerminalEvent,
 } from '@space/contracts';
+import { createLogger, type Logger } from '@space/logging';
 import { assertIpcSender, type TrustedSender } from '@space/security';
 import type { AgentHandlers } from './agent-handlers';
 import type { AutomationHandlers } from './automation-handlers';
@@ -110,11 +111,19 @@ function sendToTrustedWindow(trusted: TrustedSender, channel: string, payload: u
  * `void`-fired rather than awaited inline. Exported so main.ts can fire the
  * same trigger from a signal that lives outside this file (M8's
  * `dev-process-exited`, observed in project-handlers.ts's dev-process exit
- * callback) without duplicating this error boundary.
+ * callback) without duplicating this error boundary. `logger` defaults to
+ * a bare console-backed one so every existing call site keeps working
+ * unchanged; main.ts passes the real file-backed logger (spec 29.3).
  */
-export function fireAutomationTrigger(automationHandlers: AutomationHandlers, event: Parameters<AutomationHandlers['handleTriggerEvent']>[0]): void {
+const consoleLogger: Logger = createLogger({ sink: { write: (entry) => console.error(JSON.stringify(entry)) }, minLevel: 'error' });
+
+export function fireAutomationTrigger(
+  automationHandlers: AutomationHandlers,
+  event: Parameters<AutomationHandlers['handleTriggerEvent']>[0],
+  logger: Logger = consoleLogger,
+): void {
   void automationHandlers.handleTriggerEvent(event).catch((error) => {
-    console.error('Automation trigger handling failed', error);
+    logger.error('Automation trigger handling failed', { errorMessage: error instanceof Error ? error.message : String(error), triggerType: event.type });
   });
 }
 
@@ -141,6 +150,7 @@ export function registerIpcHandlers(
   githubHandlers: GithubHandlers,
   agentHandlers: AgentHandlers,
   automationHandlers: AutomationHandlers,
+  logger: Logger = consoleLogger,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
@@ -225,13 +235,17 @@ export function registerIpcHandlers(
     const parsed = projectOpenedInputSchema.parse(input);
     const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
     if (project) {
-      fireAutomationTrigger(automationHandlers, {
-        type: 'project-opened',
-        workspaceId: project.workspaceId,
-        projectId: parsed.projectId,
-        occurredAt: new Date().toISOString(),
-        context: {},
-      });
+      fireAutomationTrigger(
+        automationHandlers,
+        {
+          type: 'project-opened',
+          workspaceId: project.workspaceId,
+          projectId: parsed.projectId,
+          occurredAt: new Date().toISOString(),
+          context: {},
+        },
+        logger,
+      );
     }
   });
 
@@ -342,13 +356,17 @@ export function registerIpcHandlers(
     const result = await gitHandlers.commit(parsed);
     const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
     if (project) {
-      fireAutomationTrigger(automationHandlers, {
-        type: 'commit-created',
-        workspaceId: project.workspaceId,
-        projectId: parsed.projectId,
-        occurredAt: new Date().toISOString(),
-        context: { sha: result.sha },
-      });
+      fireAutomationTrigger(
+        automationHandlers,
+        {
+          type: 'commit-created',
+          workspaceId: project.workspaceId,
+          projectId: parsed.projectId,
+          occurredAt: new Date().toISOString(),
+          context: { sha: result.sha },
+        },
+        logger,
+      );
     }
     return result;
   });
@@ -394,13 +412,17 @@ export function registerIpcHandlers(
     const result = await gitHandlers.push(parsed);
     const project = await storage.call<{ workspaceId: string } | null>('project.get', { projectId: parsed.projectId });
     if (project) {
-      fireAutomationTrigger(automationHandlers, {
-        type: 'branch-pushed',
-        workspaceId: project.workspaceId,
-        projectId: parsed.projectId,
-        occurredAt: new Date().toISOString(),
-        context: { branch: parsed.branch },
-      });
+      fireAutomationTrigger(
+        automationHandlers,
+        {
+          type: 'branch-pushed',
+          workspaceId: project.workspaceId,
+          projectId: parsed.projectId,
+          occurredAt: new Date().toISOString(),
+          context: { branch: parsed.branch },
+        },
+        logger,
+      );
     }
     return result;
   });

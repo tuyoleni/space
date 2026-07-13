@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import type { Logger } from '@space/logging';
 import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
@@ -8,6 +9,7 @@ import { createAutomationHandlers, type AutomationHandlers } from './main/automa
 import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
 import { fireAutomationTrigger, registerIpcHandlers } from './main/ipc';
+import { createAppLogger } from './main/logging';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
 import { TerminalClient } from './main/terminal-client';
@@ -227,6 +229,11 @@ app.on('ready', () => {
   }
   applyContentSecurityPolicy();
 
+  // spec 29.3: real, local-only, rotating/redacted logging — replaces the
+  // ad hoc console.error this file and ipc.ts used before M8.
+  const logger: Logger = createAppLogger(path.join(app.getPath('userData'), 'logs'), app.isPackaged);
+  logger.info('Space starting', { packaged: app.isPackaged, platform: process.platform });
+
   const storage = startStorageWorker();
   const terminal = startTerminalWorker();
   storageClient = storage;
@@ -251,20 +258,24 @@ app.on('ready', () => {
   // M4-M6 — no parallel capability implementation (spec 18.3).
   automationHandlers = createAutomationHandlers(storage, { gitHandlers, githubHandlers, projectHandlers });
   fireDevProcessExitedTrigger = (event) =>
-    fireAutomationTrigger(automationHandlers as AutomationHandlers, {
-      type: 'dev-process-exited',
-      workspaceId: event.workspaceId,
-      projectId: event.projectId,
-      occurredAt: new Date().toISOString(),
-      context: { devProcessId: event.devProcessId, exitCode: event.exitCode, state: event.state },
-    });
+    fireAutomationTrigger(
+      automationHandlers as AutomationHandlers,
+      {
+        type: 'dev-process-exited',
+        workspaceId: event.workspaceId,
+        projectId: event.projectId,
+        occurredAt: new Date().toISOString(),
+        context: { devProcessId: event.devProcessId, exitCode: event.exitCode, state: event.state },
+      },
+      logger,
+    );
 
   // M8: the one clock driving the `scheduled` trigger (spec 18.2) — see
   // `SCHEDULED_AUTOMATION_TICK_MS`'s comment. Failures here must never
   // crash the app; each tick has its own error boundary.
   scheduledAutomationTimer = setInterval(() => {
     automationHandlers?.runDueScheduledAutomations().catch((error) => {
-      console.error('Scheduled automation tick failed', error);
+      logger.error('Scheduled automation tick failed', { errorMessage: error instanceof Error ? error.message : String(error) });
     });
   }, SCHEDULED_AUTOMATION_TICK_MS);
 
@@ -283,6 +294,7 @@ app.on('ready', () => {
       githubHandlers,
       agentHandlers,
       automationHandlers,
+      logger,
     );
     handlersRegistered = true;
   }

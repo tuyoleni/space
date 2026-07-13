@@ -46,6 +46,7 @@
     "@space/domain": "^0.1.0",
     "@space/git-engine": "^0.1.0",
     "@space/github-engine": "^0.1.0",
+    "@space/logging": "^0.1.0",
     "@space/security": "^0.1.0",
     "@space/storage": "^0.1.0",
     "@space/terminal": "^0.1.0",
