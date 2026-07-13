@@ -75,6 +75,9 @@ export interface ProjectHandlersOptions {
 const passthroughResolver: ExecutableResolver = async (executableId) => executableId;
 
 function toTemplateSummary(template: (typeof BUILT_IN_PROJECT_TEMPLATES)[number]): ProjectTemplateSummary {
+  const defaultOptions = Object.fromEntries(
+    template.userEditableOptions.map((option) => [option.id, option.defaultValue]),
+  );
   return {
     id: template.id,
     displayName: template.displayName,
@@ -85,6 +88,9 @@ function toTemplateSummary(template: (typeof BUILT_IN_PROJECT_TEMPLATES)[number]
     verifyCommand: template.verifyCommand,
     devCommand: template.devCommand,
     defaultIgnoreRules: template.defaultIgnoreRules,
+    // Preview only — the real invocation re-resolves this from the user's
+    // actual chosen options and directory name (see createFromTemplate).
+    previewCreationCommand: template.creationCommand(defaultOptions, '<project-name>'),
   };
 }
 

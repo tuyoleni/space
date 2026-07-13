@@ -11,10 +11,16 @@ import { TerminalPanel } from './TerminalPanel';
  * actually-useful part (the `gh` stderr/stdout) behind the full invoked
  * command line (spec 14.11 GH-009 requires remote-action failures to
  * surface "a clear reason", not a raw nested CLI dump). Strip all of that
- * down to just the reason. No shared helper for this exists elsewhere in
- * the renderer yet (GitPanel/AgentPanel both just use `.message` verbatim,
- * since they don't shell out to a CLI whose stderr gets wrapped this way);
- * this stays local until a second panel needs the same treatment.
+ * down to just the reason.
+ *
+ * `./errors.ts`'s `toErrorMessage` handles the general IPC-wrapper case
+ * for the other panels, but it deliberately doesn't strip a `<ClassName>:`
+ * prefix or a ` failed: ` command-line, and it never collapses to a single
+ * line — those would be *wrong* for e.g. App.tsx's multi-line `git clone`
+ * failures, where the real reason lives on line two or three. This stays
+ * a separate, file-local function tuned specifically to `GhCommandError`'s
+ * single-line shape rather than generalizing the shared helper and
+ * breaking the other callers.
  */
 function friendlyErrorMessage(caught: unknown): string {
   const raw = caught instanceof Error ? caught.message : String(caught);

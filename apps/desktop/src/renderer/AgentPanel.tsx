@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { AgentStandingPermissionSummary, Project } from '@space/contracts';
 import { formatRelativeTime } from '@space/ui';
+import { toErrorMessage } from './errors';
 
 /**
  * Minimal M7 intent/agent surface (spec 36.7 exit criteria: agent changes
@@ -56,7 +57,7 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(toErrorMessage(caught));
     } finally {
       setBusy(false);
     }

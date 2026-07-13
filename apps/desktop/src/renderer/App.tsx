@@ -10,6 +10,7 @@ import type {
 } from '@space/contracts';
 import { ActivityGrid } from './ActivityGrid';
 import { AgentPanel } from './AgentPanel';
+import { toErrorMessage } from './errors';
 import { GitPanel } from './GitPanel';
 import { GithubPanel } from './GithubPanel';
 import { TerminalPanel } from './TerminalPanel';
@@ -27,6 +28,7 @@ export function App() {
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
 
   const [detections, setDetections] = useState<Record<string, ProjectDetectionReport>>({});
   const [devServers, setDevServers] = useState<Record<string, DevProcessInfo[]>>({});
@@ -65,6 +67,7 @@ export function App() {
 
   const activeWorkspace = workspaces.find((workspace) => workspace.active) ?? null;
   const activeWorkspaceId = activeWorkspace?.id ?? null;
+  const selectedTemplate = templates.find((template) => template.id === createTemplateId) ?? null;
 
   const refreshProjects = useCallback(async (workspaceId: string) => {
     setProjects(await window.space.project.list(workspaceId));
@@ -81,10 +84,11 @@ export function App() {
   async function runGuarded(action: () => Promise<void>): Promise<void> {
     setBusy(true);
     setError(null);
+    setConfirmation(null);
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(toErrorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -137,19 +141,24 @@ export function App() {
       return;
     }
     const workspaceId = activeWorkspace.id;
+    const name = createName.trim();
+    const template = templates.find((candidate) => candidate.id === createTemplateId);
     void runGuarded(async () => {
       const destinationParentDirectory = await window.space.project.pickParentDirectory();
       if (!destinationParentDirectory) {
         return;
       }
-      await window.space.project.createFromTemplate({
+      const project = await window.space.project.createFromTemplate({
         workspaceId,
         templateId: createTemplateId,
         destinationParentDirectory,
-        name: createName.trim(),
+        name,
       });
       setCreateName('');
       await refreshProjects(workspaceId);
+      setConfirmation(
+        `Created "${project.name}" using ${template?.displayName ?? createTemplateId} at ${project.canonicalPath}.`,
+      );
     });
   }
 
@@ -163,7 +172,7 @@ export function App() {
       if (!destinationParentDirectory) {
         return;
       }
-      await window.space.project.clone({
+      const project = await window.space.project.clone({
         workspaceId,
         remoteUrl: cloneUrl.trim(),
         destinationParentDirectory,
@@ -172,6 +181,7 @@ export function App() {
       setCloneUrl('');
       setCloneName('');
       await refreshProjects(workspaceId);
+      setConfirmation(`Cloned "${project.name}" from ${cloneUrl.trim()} to ${project.canonicalPath}.`);
     });
   }
 
@@ -343,6 +353,18 @@ export function App() {
                 <button type="button" disabled={!createName.trim()} onClick={handleCreateProject}>
                   Create&hellip;
                 </button>
+                {/* PRJ-004 (spec 10.4): show the concrete framework, required
+                    tools, and the exact non-interactive command that will
+                    run — before the user commits to creating anything. */}
+                {selectedTemplate && (
+                  <p style={{ fontSize: '0.8rem', color: '#888', margin: '0.35rem 0 0' }}>
+                    No framework is scaffolded (not Vite/Expo/Next/etc.) — this creates a plain{' '}
+                    {selectedTemplate.displayName.toLowerCase()}. Requires: {selectedTemplate.requiredExecutables.join(', ')}. Runs:{' '}
+                    <code>
+                      {selectedTemplate.previewCreationCommand.executable} {selectedTemplate.previewCreationCommand.args.join(' ')}
+                    </code>
+                  </p>
+                )}
               </fieldset>
 
               <fieldset disabled={busy}>
@@ -366,6 +388,12 @@ export function App() {
                 </button>
               </fieldset>
             </div>
+
+            {confirmation && (
+              <p role="status" style={{ color: 'green', marginTop: '-0.5rem' }}>
+                {confirmation}
+              </p>
+            )}
 
             {projects.length === 0 ? (
               <p>No projects registered in this workspace yet.</p>

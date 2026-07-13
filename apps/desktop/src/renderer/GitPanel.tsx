@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GitCommitNode, GitRefEntry, GitStatusSummary, Project } from '@space/contracts';
+import { toErrorMessage } from './errors';
 
 /**
  * Minimal M5 Git surface (spec 36.5 exit criteria: "daily Git work can be
@@ -49,7 +50,7 @@ export function GitPanel({ project }: GitPanelProps) {
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(toErrorMessage(caught));
     } finally {
       setBusy(false);
     }
