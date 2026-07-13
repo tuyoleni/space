@@ -70,6 +70,14 @@ export class ActivityRepository {
         input.weight,
         input.metadata ? JSON.stringify(input.metadata) : null,
       );
+    // Enforces ACTIVITY_RETENTION_DAYS on every write (spec 27.4) — the
+    // same self-enforcing shape `AutomationRunRepository.start` uses for
+    // its own retention cap, rather than relying on an external caller to
+    // remember to prune. `input.occurredAt` (always "now" in real usage —
+    // see `activityEventFromOperation`'s `occurredAt: operation.endedAt`)
+    // stands in for a clock so this repository does not need one injected.
+    const cutoff = new Date(new Date(input.occurredAt).getTime() - ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    this.pruneOlderThan(cutoff);
     const row = this.db.prepare('SELECT * FROM activity_events WHERE id = ?').get(id) as
       | SqliteActivityEventRow
       | undefined;

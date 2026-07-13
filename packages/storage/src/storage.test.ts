@@ -465,15 +465,19 @@ describe('ActivityRepository (spec 23.2.9, section 17)', () => {
     expect(found[0]?.summary).toBe('in range, ws-a');
   });
 
-  it('pruneOlderThan enforces the activity retention resource limit (spec 27.4)', () => {
+  it('pruneOlderThan removes exactly the rows older than an explicit cutoff (spec 27.4)', () => {
     makeWorkspace(storage, 'ws-a');
+    // Both events are well within ACTIVITY_RETENTION_DAYS of each other, so
+    // `record()`'s own auto-prune (tested separately below) never touches
+    // either one — this test is purely about `pruneOlderThan`'s own
+    // cutoff-based deletion, called explicitly with an arbitrary date.
     storage.activity.record({
       workspaceId: 'ws-a',
       projectId: null,
       eventType: 'commit',
-      occurredAt: '2020-01-01T00:00:00.000Z',
+      occurredAt: '2026-01-01T00:00:00.000Z',
       subjectRef: null,
-      summary: 'ancient',
+      summary: 'earlier-in-2026',
       weight: 1,
       metadata: null,
     });
@@ -488,8 +492,42 @@ describe('ActivityRepository (spec 23.2.9, section 17)', () => {
       metadata: null,
     });
 
-    const removed = storage.activity.pruneOlderThan('2025-01-01T00:00:00.000Z');
+    const removed = storage.activity.pruneOlderThan('2026-03-01T00:00:00.000Z');
     expect(removed).toBe(1);
+
+    const remaining = storage.activity.listByWorkspaceInRange('ws-a', {
+      fromInclusive: '2000-01-01T00:00:00.000Z',
+      toInclusive: '2030-01-01T00:00:00.000Z',
+    });
+    expect(remaining.map((e) => e.summary)).toEqual(['recent']);
+  });
+
+  it('record() self-enforces the activity retention limit on every write (spec 27.4) — no external caller has to remember to prune', () => {
+    makeWorkspace(storage, 'ws-a');
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2020-01-01T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'ancient',
+      weight: 1,
+      metadata: null,
+    });
+
+    // No manual pruneOlderThan call here — recording a second, far-later
+    // event is itself what should evict the first (well beyond
+    // ACTIVITY_RETENTION_DAYS = 400 days before this one).
+    storage.activity.record({
+      workspaceId: 'ws-a',
+      projectId: null,
+      eventType: 'commit',
+      occurredAt: '2026-07-13T00:00:00.000Z',
+      subjectRef: null,
+      summary: 'recent',
+      weight: 1,
+      metadata: null,
+    });
 
     const remaining = storage.activity.listByWorkspaceInRange('ws-a', {
       fromInclusive: '2000-01-01T00:00:00.000Z',

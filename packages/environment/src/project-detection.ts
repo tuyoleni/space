@@ -14,6 +14,7 @@
  * particular are reported by name only, never opened, so a secret value
  * can never end up in a detection fact or downstream telemetry.
  */
+import path from 'node:path';
 
 export interface ProjectDetectionFsPort {
   /** Returns entry names (not full paths) directly inside `targetPath`, or `[]` if unreadable. */
@@ -156,7 +157,8 @@ export async function detectProject(
       evidence: 'package.json found at project root',
     });
 
-    const raw = await fs.readTextFile(`${canonicalPath}/package.json`);
+    // Platform-aware join (spec 30.3: "never concatenate paths manually") — `path` is a pure string-manipulation module, not I/O, so importing it directly here does not compromise this module's injected-fs testability.
+    const raw = await fs.readTextFile(path.join(canonicalPath, 'package.json'));
     const parsed = raw ? safeParsePackageJson(raw) : null;
     if (parsed?.volta !== undefined) {
       facts.push({

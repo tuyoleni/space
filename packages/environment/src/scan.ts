@@ -7,6 +7,7 @@
  * write/spawn-for-mutation primitive available to this function at all,
  * so a reviewer can see the constraint is structural, not just observed.
  */
+import path from 'node:path';
 import type { EditorDetectionResult, PackageManagerScanResult, ScanDependencies, ScanResult, ScanToolResult, ToolManifest } from './types';
 import { extractVersion, meetsMinimumVersion } from './version';
 
@@ -83,10 +84,15 @@ async function scanEditors(deps: ScanDependencies): Promise<EditorDetectionResul
 async function detectSpaceShellIntegration(deps: ScanDependencies): Promise<boolean> {
   const platform = deps.os.platform();
   const home = deps.os.homeDir();
+  // Platform-aware join (spec 30.3: "never concatenate paths manually")
+  // against the *injected* platform, not the real host OS — `deps.os.
+  // platform()` can legitimately differ from `process.platform` in tests,
+  // so this explicitly picks `path.posix`/`path.win32` rather than the
+  // ambient `path` (which always resolves against the real host).
   const candidates =
     platform === 'darwin'
-      ? [`${home}/.zshrc`, `${home}/.bash_profile`, `${home}/.bashrc`]
-      : [`${home}\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1`];
+      ? [path.posix.join(home, '.zshrc'), path.posix.join(home, '.bash_profile'), path.posix.join(home, '.bashrc')]
+      : [path.win32.join(home, 'Documents', 'WindowsPowerShell', 'Microsoft.PowerShell_profile.ps1')];
 
   for (const candidate of candidates) {
     const content = await deps.fs.readTextFile(candidate);
