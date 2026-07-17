@@ -4,6 +4,7 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { rebuild } from '@electron/rebuild';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -35,7 +36,12 @@ async function resolveRuntimeClosure(roots: string[]): Promise<string[]> {
   return [...seen];
 }
 
-async function copyHoistedRuntimeDependencies(buildPath: string): Promise<void> {
+async function copyHoistedRuntimeDependencies(
+  buildPath: string,
+  electronVersion: string,
+  platform: NodeJS.Platform,
+  arch: string,
+): Promise<void> {
   const targetNodeModules = path.join(buildPath, 'node_modules');
   await fs.mkdir(targetNodeModules, { recursive: true });
   for (const pkg of await resolveRuntimeClosure(RUNTIME_ONLY_PACKAGES)) {
@@ -47,6 +53,21 @@ async function copyHoistedRuntimeDependencies(buildPath: string): Promise<void> 
       throw new Error(`Failed to copy hoisted runtime dependency "${pkg}" into packaged app: ${String(error)}`);
     }
   }
+  // The copy above is whatever `npm install` produced on the *host* — right
+  // for a same-arch build, wrong the moment `--arch` cross-targets a CPU
+  // different from the CI runner (e.g. packaging x64 from an Apple Silicon
+  // runner, since GitHub no longer offers Intel-hosted macOS runners). Both
+  // packages ship prebuilt binaries for darwin-x64/-arm64, so rebuild here
+  // just re-fetches the correct prebuild for the packaged app's real target
+  // instead of shipping host-arch .node files inside an other-arch app.
+  await rebuild({
+    buildPath,
+    electronVersion,
+    platform,
+    arch,
+    onlyModules: RUNTIME_ONLY_PACKAGES,
+    force: true,
+  });
   // node-pty's macOS spawn-helper is a plain executable, not a .node file;
   // npm does not preserve its exec bit in prebuilds, and without it every
   // pty.spawn fails with "posix_spawnp failed" (found in the P0-A spike).
@@ -75,8 +96,8 @@ const config: ForgeConfig = {
       unpack: '**/node_modules/{node-pty,better-sqlite3}/**',
     },
     afterCopy: [
-      (buildPath, _electronVersion, _platform, _arch, callback) => {
-        copyHoistedRuntimeDependencies(buildPath).then(
+      (buildPath, electronVersion, platform, arch, callback) => {
+        copyHoistedRuntimeDependencies(buildPath, electronVersion, platform, arch).then(
           () => callback(),
           (error) => callback(error instanceof Error ? error : new Error(String(error))),
         );

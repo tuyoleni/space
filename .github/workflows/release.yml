@@ -5,6 +5,13 @@ name: release
 # add `osxSign`/`osxNotarize` to apps/desktop/forge.config.ts once there's
 # an Apple Developer ID cert, then this workflow needs no changes (electron-
 # forge picks it up automatically).
+#
+# Both arch builds run on the same macos-14 (Apple Silicon) runner — GitHub
+# no longer offers Intel-hosted macOS runners, so the x64 build is
+# cross-packaged: electron-forge's afterCopy hook (forge.config.ts) rebuilds
+# the app's native modules (better-sqlite3, node-pty) for the requested
+# --arch by fetching that arch's prebuilt binary, not by compiling on
+# mismatched host hardware.
 on:
   push:
     tags:
@@ -14,12 +21,8 @@ jobs:
   build-macos:
     strategy:
       matrix:
-        include:
-          - os: macos-14 # Apple Silicon runner
-            arch: arm64
-          - os: macos-13 # Intel runner
-            arch: x64
-    runs-on: ${{ matrix.os }}
+        arch: [arm64, x64]
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
