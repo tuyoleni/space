@@ -1038,6 +1038,8 @@ export interface GithubPullRequestSummary {
 
 export interface GithubPullRequestListInput {
   readonly workspaceId: string;
+  /** Scopes which repo `gh` lists PRs from. Omit only when no project is in context (e.g. a workspace-level panel with nothing selected yet) — the result then reflects whatever repo the host process happens to be running in, which is rarely what the caller wants. */
+  readonly projectId?: string;
   readonly state?: 'open' | 'closed' | 'merged' | 'all';
   readonly limit?: number;
 }
@@ -1080,6 +1082,8 @@ export interface GithubIssueSummary {
 
 export interface GithubIssueListInput {
   readonly workspaceId: string;
+  /** Scopes which repo `gh` lists issues from — see `GithubPullRequestListInput.projectId`. */
+  readonly projectId?: string;
   readonly state?: 'open' | 'closed' | 'all';
   readonly search?: string;
 }

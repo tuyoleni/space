@@ -78,11 +78,11 @@ function toSummary(raw: RawIssueListItem): IssueSummary {
  * Same reasoning as `listPullRequests`: no remote means genuinely zero
  * issues, not a failure — `gh`'s "no git remotes found" is represented as
  * an empty list rather than propagated as an error. Any other failure
- * still throws.
+ * still throws. `cwd` scopes which repo `gh` reads — see `listPullRequests`.
  */
-export async function listIssues(executor: GhExecutor, filter: IssueListFilter = {}): Promise<IssueSummary[]> {
+export async function listIssues(executor: GhExecutor, filter: IssueListFilter = {}, cwd?: string): Promise<IssueSummary[]> {
   try {
-    const raw = await runGhJson<RawIssueListItem[]>(executor, issueListArgs(filter));
+    const raw = await runGhJson<RawIssueListItem[]>(executor, issueListArgs(filter), cwd !== undefined ? { cwd } : undefined);
     return raw.map(toSummary);
   } catch (error) {
     if (isNoRepoContextError(error)) {

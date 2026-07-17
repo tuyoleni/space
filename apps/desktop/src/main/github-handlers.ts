@@ -147,6 +147,17 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
     return project.repositoryRoot;
   }
 
+  /**
+   * Like `repoCwd`, but for read-only listing calls where "this project
+   * isn't a Git repo" is a legitimate empty-result case, not an error worth
+   * throwing over — the caller checks for `null` and returns `[]` rather
+   * than invoking `gh` at all.
+   */
+  async function resolveProjectCwd(projectId: string): Promise<string | null> {
+    const project = await requireProject(projectId);
+    return project.repositoryRoot ?? null;
+  }
+
   async function getConnection(workspaceId: string, host: string): Promise<ServiceConnectionRowLike | null> {
     return storage.call<ServiceConnectionRowLike | null>('githubConnection.get', { workspaceId, adapterId: 'github', host });
   }
@@ -431,9 +442,19 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
   // GH-004: Pull requests
   // ---------------------------------------------------------------------
 
-  async function prList(workspaceId: string, filter?: PullRequestListFilter, host = defaultHost) {
+  /**
+   * `projectId` scopes which repo `gh` reads (GH-002 spec 14.6 lists PRs
+   * "for the project's repository", not the workspace at large). Omitted
+   * only by the workspace-level GitHub panel, which has no project in
+   * context — that keeps the pre-existing ambient-cwd behavior.
+   */
+  async function prList(workspaceId: string, filter?: PullRequestListFilter, projectId?: string, host = defaultHost) {
+    const cwd = projectId ? await resolveProjectCwd(projectId) : undefined;
+    if (projectId && cwd === null) {
+      return [];
+    }
     const { gh } = await scopedExecutors(workspaceId, host);
-    return listPullRequests(gh, filter);
+    return listPullRequests(gh, filter, cwd ?? undefined);
   }
 
   async function prView(workspaceId: string, number: number, host = defaultHost) {
@@ -564,9 +585,14 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
   // GH-007: Issues
   // ---------------------------------------------------------------------
 
-  async function issuesList(workspaceId: string, filter: IssueListFilter | undefined, host = defaultHost) {
+  /** `projectId` scopes which repo `gh` reads — see `prList`. */
+  async function issuesList(workspaceId: string, filter: IssueListFilter | undefined, projectId?: string, host = defaultHost) {
+    const cwd = projectId ? await resolveProjectCwd(projectId) : undefined;
+    if (projectId && cwd === null) {
+      return [];
+    }
     const { gh } = await scopedExecutors(workspaceId, host);
-    return listIssues(gh, filter);
+    return listIssues(gh, filter, cwd ?? undefined);
   }
 
   async function issuesView(workspaceId: string, number: number, host = defaultHost) {

@@ -86,10 +86,14 @@ function toSummary(raw: RawPrListItem): PullRequestSummary {
  * found") since it needs a remote to infer `owner/name`, but callers should
  * see it as the empty list it is, not an error. Any other failure (bad
  * auth, rate limit, network) still throws.
+ *
+ * `cwd` scopes which repo `gh` infers `owner/name` from — omit it only when
+ * there's genuinely no project in context (`gh` then falls back to the
+ * process's own directory, which is what M6 originally shipped with).
  */
-export async function listPullRequests(executor: GhExecutor, filter: PullRequestListFilter = {}): Promise<PullRequestSummary[]> {
+export async function listPullRequests(executor: GhExecutor, filter: PullRequestListFilter = {}, cwd?: string): Promise<PullRequestSummary[]> {
   try {
-    const raw = await runGhJson<RawPrListItem[]>(executor, prListArgs(filter));
+    const raw = await runGhJson<RawPrListItem[]>(executor, prListArgs(filter), cwd !== undefined ? { cwd } : undefined);
     return raw.map(toSummary);
   } catch (error) {
     if (isNoRepoContextError(error)) {

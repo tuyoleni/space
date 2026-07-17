@@ -206,16 +206,20 @@ export function HomeView({
 
   // Real open PRs + issues, only when actually authenticated — never guessed.
   // Their counts feed the stat trio and the most-recent few feed the
-  // activity list below it.
+  // activity list below it. Scoped to the selected project so the list
+  // reflects its repo rather than whatever directory the host process
+  // happens to be running in; with no project selected there's nothing to
+  // scope to, so skip the call entirely rather than showing another repo's data.
   useEffect(() => {
     setPrs(null);
     setIssues(null);
-    if (!githubReport?.authenticated) {
+    if (!githubReport?.authenticated || !selectedProject) {
       return;
     }
-    void window.space.github.prList({ workspaceId: workspace.id, state: 'open' }).then(setPrs, () => setPrs(null));
-    void window.space.github.issueList({ workspaceId: workspace.id, state: 'open' }).then(setIssues, () => setIssues(null));
-  }, [workspace.id, githubReport?.authenticated]);
+    const projectId = selectedProject.id;
+    void window.space.github.prList({ workspaceId: workspace.id, projectId, state: 'open' }).then(setPrs, () => setPrs(null));
+    void window.space.github.issueList({ workspaceId: workspace.id, projectId, state: 'open' }).then(setIssues, () => setIssues(null));
+  }, [workspace.id, selectedProject, githubReport?.authenticated]);
 
   const prCount = prs?.length ?? null;
   const issueCount = issues?.length ?? null;

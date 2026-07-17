@@ -267,6 +267,7 @@ export const githubRepoPublishInputSchema = z.object({
 
 export const githubPullRequestListInputSchema = z.object({
   workspaceId: z.string().min(1),
+  projectId: z.string().min(1).optional(),
   state: z.enum(['open', 'closed', 'merged', 'all']).optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
@@ -294,6 +295,7 @@ export const githubPullRequestMergeInputSchema = z.object({
 
 export const githubIssueListInputSchema = z.object({
   workspaceId: z.string().min(1),
+  projectId: z.string().min(1).optional(),
   state: z.enum(['open', 'closed', 'all']).optional(),
   search: z.string().min(1).optional(),
 });

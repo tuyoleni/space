@@ -31,9 +31,11 @@ import { GithubAuthControls } from './GithubAuthControls';
  */
 interface GithubPanelProps {
   readonly workspaceId: string;
+  /** Scopes the PR/issue lists to this project's repo when given; omitted only where this panel is genuinely workspace-level (no project selected yet). */
+  readonly projectId?: string;
 }
 
-export function GithubPanel({ workspaceId }: GithubPanelProps) {
+export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
   const { report, loginSession, busy: authBusy, refreshReport, signIn, signOut } = useGithubAuth(workspaceId);
   const [prs, setPrs] = useState<GithubPullRequestSummary[]>([]);
   const [issues, setIssues] = useState<GithubIssueSummary[]>([]);
@@ -59,7 +61,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
 
   function handleListPrs(): void {
     void guarded(async () => {
-      setPrs(await window.space.github.prList({ workspaceId, state: 'open' }));
+      setPrs(await window.space.github.prList({ workspaceId, projectId, state: 'open' }));
     });
   }
 
@@ -76,7 +78,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
   }
 
   async function handleListPrsInternal(): Promise<void> {
-    setPrs(await window.space.github.prList({ workspaceId, state: 'open' }));
+    setPrs(await window.space.github.prList({ workspaceId, projectId, state: 'open' }));
   }
 
   /** `confirmed` is a structural gate (@space/domain) the handler enforces server-side — this dialog is what actually sets it true, not a UI-only nicety. */
@@ -93,7 +95,7 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
 
   function handleListIssues(): void {
     void guarded(async () => {
-      setIssues(await window.space.github.issueList({ workspaceId, state: 'open' }));
+      setIssues(await window.space.github.issueList({ workspaceId, projectId, state: 'open' }));
     });
   }
 

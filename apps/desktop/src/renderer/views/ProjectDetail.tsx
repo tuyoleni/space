@@ -116,7 +116,7 @@ export function ProjectDetail({ workspace, project, runtime, actions, busy }: Pr
           </TabsContent>
 
           <TabsContent value="github">
-            <GithubPanel workspaceId={workspace.id} />
+            <GithubPanel workspaceId={workspace.id} projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="agent">

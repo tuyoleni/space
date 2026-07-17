@@ -299,7 +299,9 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
         setPrs([]);
         return;
       }
-      const list = await window.space.github.prList({ workspaceId: workspace.id, state: 'open', limit: PR_LIMIT });
+      // Scoped to this screen's project so the list reflects its repo, not
+      // whatever directory the host process happens to be running in.
+      const list = await window.space.github.prList({ workspaceId: workspace.id, projectId: project?.id, state: 'open', limit: PR_LIMIT });
       setPrs(
         list.map((pr) => ({
           number: pr.number,
@@ -314,7 +316,7 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
     } catch {
       setPrs([]);
     }
-  }, [workspace.id]);
+  }, [workspace.id, project?.id]);
 
   // Fetch from the remote so what's shown reflects the server (real incoming
   // commits, remote branches, accurate ahead/behind) — not a stale local view.

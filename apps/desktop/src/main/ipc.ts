@@ -675,10 +675,14 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.githubPrList, async (event, input) => {
     assertIpcSender(event, trusted);
     const parsed = githubPullRequestListInputSchema.parse(input);
-    return githubHandlers.prList(parsed.workspaceId, {
-      ...(parsed.state !== undefined ? { state: parsed.state } : {}),
-      ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
-    });
+    return githubHandlers.prList(
+      parsed.workspaceId,
+      {
+        ...(parsed.state !== undefined ? { state: parsed.state } : {}),
+        ...(parsed.limit !== undefined ? { limit: parsed.limit } : {}),
+      },
+      parsed.projectId,
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.githubPrCreate, async (event, input) => {
@@ -705,10 +709,14 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.githubIssueList, async (event, input) => {
     assertIpcSender(event, trusted);
     const parsed = githubIssueListInputSchema.parse(input);
-    return githubHandlers.issuesList(parsed.workspaceId, {
-      ...(parsed.state !== undefined ? { state: parsed.state } : {}),
-      ...(parsed.search !== undefined ? { search: parsed.search } : {}),
-    });
+    return githubHandlers.issuesList(
+      parsed.workspaceId,
+      {
+        ...(parsed.state !== undefined ? { state: parsed.state } : {}),
+        ...(parsed.search !== undefined ? { search: parsed.search } : {}),
+      },
+      parsed.projectId,
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.githubIssueCreate, async (event, input) => {

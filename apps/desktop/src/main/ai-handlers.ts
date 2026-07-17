@@ -29,8 +29,13 @@ import type {
 } from '@space/contracts';
 import type { StorageCaller } from './project-handlers';
 
-/** Fast, cheap Gemini model — appropriate for a short per-comment review call, not a long reasoning task. */
-const MODEL = 'gemini-flash-latest';
+/**
+ * Fast, cheap Gemini model — appropriate for a short per-comment review call, not a long
+ * reasoning task. `gemini-flash-latest` is prone to real, repeated 503 "high demand"
+ * responses from Google's side; `gemini-flash-lite-latest` is the lighter-weight sibling
+ * in the same alias family and has proven reliable in practice.
+ */
+const MODEL = 'gemini-flash-lite-latest';
 const MAX_FINDINGS = 15;
 const MAX_FILES_SCANNED = 2000;
 const CONTEXT_LINES = 5;
@@ -140,7 +145,7 @@ async function proposeFix(client: GoogleGenAI, finding: RawFinding): Promise<str
     contents: `File: ${finding.file}\nLine ${finding.line}: ${finding.comment}\n\nContext:\n${finding.context}`,
     config: {
       maxOutputTokens: 300,
-      // gemini-flash-latest thinks by default, and thinking tokens count against
+      // This model line thinks by default, and thinking tokens count against
       // maxOutputTokens — left on, a short budget here gets consumed almost
       // entirely by thinking and the real answer comes back truncated
       // (verified empirically). This is a one-line lookup, not a reasoning task.

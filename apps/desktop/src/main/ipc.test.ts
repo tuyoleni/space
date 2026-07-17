@@ -634,7 +634,13 @@ describe('registerIpcHandlers', () => {
     it('githubPrList routes to prList with the parsed filter', async () => {
       const { githubHandlers } = setup();
       await handlerFor(IPC_CHANNELS.githubPrList)(validEvent, { workspaceId: 'ws-1', state: 'open' });
-      expect(githubHandlers.prList).toHaveBeenCalledWith('ws-1', { state: 'open' });
+      expect(githubHandlers.prList).toHaveBeenCalledWith('ws-1', { state: 'open' }, undefined);
+    });
+
+    it('githubPrList forwards projectId so the list is scoped to that project\'s repo', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubPrList)(validEvent, { workspaceId: 'ws-1', projectId: 'p-1', state: 'open' });
+      expect(githubHandlers.prList).toHaveBeenCalledWith('ws-1', { state: 'open' }, 'p-1');
     });
 
     it('githubPrCreate routes to prCreate with the parsed input', async () => {
@@ -683,9 +689,15 @@ describe('registerIpcHandlers', () => {
     it('githubIssueList / githubIssueCreate route to issuesList/issuesCreate', async () => {
       const { githubHandlers } = setup();
       await handlerFor(IPC_CHANNELS.githubIssueList)(validEvent, { workspaceId: 'ws-1' });
-      expect(githubHandlers.issuesList).toHaveBeenCalledWith('ws-1', {});
+      expect(githubHandlers.issuesList).toHaveBeenCalledWith('ws-1', {}, undefined);
       await handlerFor(IPC_CHANNELS.githubIssueCreate)(validEvent, { workspaceId: 'ws-1', title: 't', body: 'b' });
       expect(githubHandlers.issuesCreate).toHaveBeenCalledWith('ws-1', { title: 't', body: 'b' });
+    });
+
+    it('githubIssueList forwards projectId so the list is scoped to that project\'s repo', async () => {
+      const { githubHandlers } = setup();
+      await handlerFor(IPC_CHANNELS.githubIssueList)(validEvent, { workspaceId: 'ws-1', projectId: 'p-1' });
+      expect(githubHandlers.issuesList).toHaveBeenCalledWith('ws-1', {}, 'p-1');
     });
 
     it('githubIssueCreate forwards labels/assignees when present (spec 14.9)', async () => {
