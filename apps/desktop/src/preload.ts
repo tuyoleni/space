@@ -66,6 +66,7 @@ const spaceAPI: SpaceAPI = {
   },
   git: {
     status: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStatus, input),
+    initRepo: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitInit, input),
     stage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStage, input),
     unstage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitUnstage, input),
     commit: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitCommit, input),
@@ -148,6 +149,13 @@ const spaceAPI: SpaceAPI = {
     setApiKey: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiSetApiKey, input),
     reviewComments: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiReviewComments, input),
     applyFix: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiApplyFix, input),
+    generateCommitMessage: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiGenerateCommitMessage, input),
+  },
+  bootstrap: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapGetStatus),
+    buildPlan: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapBuildPlan),
+    runNextStep: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapRunNextStep),
+    cancel: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapCancel),
   },
   automation: {
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationCreate, input),

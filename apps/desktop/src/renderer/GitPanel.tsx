@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, GitBranch, Plus, RefreshCw } from 'lucide-react';
 import type { GitRefEntry, GitStatusSummary, Project } from '@space/contracts';
-import { Button, InlineBanner, Input, Select, Textarea } from '@space/ui';
+import { Button, InlineBanner, Input, Select, Textarea, useToast } from '@space/ui';
 import { toErrorMessage } from './errors';
 
 /**
@@ -44,7 +44,7 @@ export function GitPanel({ project }: GitPanelProps) {
   const [message, setMessage] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
   const [, forceTick] = useState(0);
 
@@ -94,11 +94,10 @@ export function GitPanel({ project }: GitPanelProps) {
 
   async function guarded(action: () => Promise<void>): Promise<void> {
     setBusy(true);
-    setError(null);
     try {
       await action();
     } catch (caught) {
-      setError(toErrorMessage(caught));
+      toast({ variant: 'error', message: toErrorMessage(caught) });
     } finally {
       setBusy(false);
     }
@@ -311,8 +310,6 @@ export function GitPanel({ project }: GitPanelProps) {
           <Plus size={13} /> Create branch
         </Button>
       </div>
-
-      {error && <InlineBanner variant="error">{error}</InlineBanner>}
     </div>
   );
 }

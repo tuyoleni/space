@@ -9,7 +9,7 @@
  * without an explicit, already-checked confirmation flag.
  */
 import { assertHighImpactGithubActionConfirmed } from '@space/domain';
-import { runGh, runGhJson } from './json';
+import { isNoRepoContextError, runGh, runGhJson } from './json';
 import type { GhExecutor } from './executor';
 
 export type PullRequestState = 'OPEN' | 'CLOSED' | 'MERGED';
@@ -80,9 +80,23 @@ function toSummary(raw: RawPrListItem): PullRequestSummary {
   };
 }
 
+/**
+ * A repo with no GitHub remote (or a call made outside any repo) genuinely
+ * has zero pull requests — `gh` reports that as a failure ("no git remotes
+ * found") since it needs a remote to infer `owner/name`, but callers should
+ * see it as the empty list it is, not an error. Any other failure (bad
+ * auth, rate limit, network) still throws.
+ */
 export async function listPullRequests(executor: GhExecutor, filter: PullRequestListFilter = {}): Promise<PullRequestSummary[]> {
-  const raw = await runGhJson<RawPrListItem[]>(executor, prListArgs(filter));
-  return raw.map(toSummary);
+  try {
+    const raw = await runGhJson<RawPrListItem[]>(executor, prListArgs(filter));
+    return raw.map(toSummary);
+  } catch (error) {
+    if (isNoRepoContextError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export interface PullRequestFile {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, Shield, Sparkles, Upload } from 'lucide-react';
 import type { AgentStandingPermissionSummary, AiReviewFinding, Project } from '@space/contracts';
-import { Badge, Button, InlineBanner, formatRelativeTime } from '@space/ui';
+import { Badge, Button, formatRelativeTime, useToast } from '@space/ui';
 import { PromptDialog } from './PromptDialog';
 import { toErrorMessage } from './errors';
 
@@ -28,7 +28,7 @@ interface AgentPanelProps {
 export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
   const [permissions, setPermissions] = useState<readonly AgentStandingPermissionSummary[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
   const [aiKeyConfigured, setAiKeyConfigured] = useState(false);
   const [apiKeyPromptOpen, setApiKeyPromptOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -37,11 +37,10 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
 
   async function guarded(action: () => Promise<void>): Promise<void> {
     setBusy(true);
-    setError(null);
     try {
       await action();
     } catch (caught) {
-      setError(toErrorMessage(caught));
+      toast({ variant: 'error', message: toErrorMessage(caught) });
     } finally {
       setBusy(false);
     }
@@ -64,11 +63,10 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
       return;
     }
     setReviewing(true);
-    setError(null);
     void window.space.ai
       .reviewComments({ projectId: project.id })
       .then((result) => setFindings(result.findings))
-      .catch((caught) => setError(toErrorMessage(caught)))
+      .catch((caught) => toast({ variant: 'error', message: toErrorMessage(caught) }))
       .finally(() => setReviewing(false));
   }
 
@@ -103,7 +101,6 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
       return;
     }
     setApplyingId(finding.id);
-    setError(null);
     void window.space.ai
       .applyFix({
         projectId: project.id,
@@ -114,8 +111,9 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
       })
       .then(() => {
         setFindings((current) => current?.filter((item) => item.id !== finding.id) ?? null);
+        toast({ variant: 'success', message: `Applied fix to ${finding.file}:${finding.line}.` });
       })
-      .catch((caught) => setError(toErrorMessage(caught)))
+      .catch((caught) => toast({ variant: 'error', message: toErrorMessage(caught) }))
       .finally(() => setApplyingId(null));
   }
 
@@ -228,8 +226,6 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
           )}
         </div>
       )}
-
-      {error && <InlineBanner variant="error">{error}</InlineBanner>}
 
       <PromptDialog
         open={apiKeyPromptOpen}

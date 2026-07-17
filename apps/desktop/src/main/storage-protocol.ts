@@ -15,6 +15,7 @@ export type StorageMethod =
   | 'project.detectPackageManager'
   | 'project.trustDecision'
   | 'project.get'
+  | 'project.setRepositoryRoot'
   | 'terminal.recordSession'
   | 'terminal.recordOutput'
   | 'terminal.markExited'
@@ -50,7 +51,14 @@ export type StorageMethod =
   | 'automationSettings.setAllEnabled'
   // M8: app-level settings (spec 29.2 telemetry opt-in)
   | 'appSettings.isTelemetryEnabled'
-  | 'appSettings.setTelemetryEnabled';
+  | 'appSettings.setTelemetryEnabled'
+  // First-run bootstrap/onboarding (spec section 8, ONB-001/006/008)
+  | 'bootstrap.getLatestRun'
+  | 'bootstrap.createRun'
+  | 'bootstrap.updateStatus'
+  | 'bootstrap.savePlan'
+  | 'bootstrap.listSteps'
+  | 'bootstrap.upsertStep';
 
 export interface StorageRequest {
   readonly id: string;

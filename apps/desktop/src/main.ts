@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, Notification, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import type { Logger } from '@space/logging';
@@ -13,6 +13,7 @@ import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
 import { createAutomationHandlers, type AutomationHandlers } from './main/automation-handlers';
 import { createAssetHandlers, type AssetHandlers } from './main/asset-handlers';
 import { createAiHandlers, type AiHandlers } from './main/ai-handlers';
+import { createBootstrapHandlers, type BootstrapHandlers } from './main/bootstrap-handlers';
 import { createConnectedServicesHandlers, type ConnectedServicesHandlers } from './main/connected-services-handlers';
 import { createDependencyHandlers, type DependencyHandlers } from './main/dependency-handlers';
 import { createEnvironmentHandlers, type EnvironmentHandlers } from './main/environment-handlers';
@@ -77,6 +78,7 @@ let automationHandlers: AutomationHandlers | null = null;
 let projectEnvironmentHandlers: ProjectEnvironmentHandlers | null = null;
 let connectedServicesHandlers: ConnectedServicesHandlers | null = null;
 let aiHandlers: AiHandlers | null = null;
+let bootstrapHandlers: BootstrapHandlers | null = null;
 // Holds no state of its own (a pure machine scan) — created once, unlike
 // the other handler modules above which are recreated per storage/terminal
 // worker lifecycle.
@@ -226,6 +228,22 @@ async function openExternalIfSafe(url: string): Promise<void> {
   }
 }
 
+/** Best-effort: a storage hiccup while looking up the project name must never crash the app over a notification. */
+async function notifyDevProcessCrashed(storage: StorageClient, projectId: string, exitCode: number | null): Promise<void> {
+  if (!Notification.isSupported()) {
+    return;
+  }
+  try {
+    const project = await storage.call<{ readonly name: string }>('project.get', { projectId });
+    new Notification({
+      title: 'Dev server crashed',
+      body: `${project.name} — exited with code ${exitCode ?? 'unknown'}.`,
+    }).show();
+  } catch {
+    // ignored — see comment above
+  }
+}
+
 /**
  * The packaged app always gets the fully strict policy (spec section 20.3).
  * The Vite dev server needs a relaxation of `script-src`/`connect-src` for
@@ -305,17 +323,20 @@ app.on('ready', () => {
   projectHandlers = createProjectHandlers(storage, {
     onDevProcessExited: (event) => fireDevProcessExitedTrigger?.(event),
   });
-  gitHandlers = createGitHandlers(storage, {
-    historyCacheDir: path.join(app.getPath('userData'), 'cache', 'git-history'),
-  });
   githubHandlers = createGithubHandlers(storage, {
     credentialStore: createRealCredentialStore(),
     terminal,
     ghConfigDirFor: (workspaceId) => path.join(app.getPath('userData'), 'workspaces', workspaceId, 'gh-config'),
   });
+  const github = githubHandlers;
+  gitHandlers = createGitHandlers(storage, {
+    historyCacheDir: path.join(app.getPath('userData'), 'cache', 'git-history'),
+    getFallbackIdentity: (workspaceId) => github.resolveFallbackIdentity(workspaceId),
+  });
   projectEnvironmentHandlers = createProjectEnvironmentHandlers(storage);
   connectedServicesHandlers = createConnectedServicesHandlers(storage, { terminal });
   aiHandlers = createAiHandlers(storage, { keyFilePath: path.join(app.getPath('userData'), 'ai-credentials.enc') });
+  bootstrapHandlers = createBootstrapHandlers(storage);
   // M7: no ModelProvider is passed — rule-based grouping is the real,
   // always-available default (spec 13.3, ADR-008); a remote/local model
   // provider is an architecturally-supported but not-yet-connected seam.
@@ -324,7 +345,7 @@ app.on('ready', () => {
   // gitHandlers/githubHandlers/projectHandlers this app already built for
   // M4-M6 — no parallel capability implementation (spec 18.3).
   automationHandlers = createAutomationHandlers(storage, { gitHandlers, githubHandlers, projectHandlers });
-  fireDevProcessExitedTrigger = (event) =>
+  fireDevProcessExitedTrigger = (event) => {
     fireAutomationTrigger(
       automationHandlers as AutomationHandlers,
       {
@@ -336,6 +357,14 @@ app.on('ready', () => {
       },
       logger,
     );
+    // A crash matters even when the user isn't looking at this project's
+    // terminal right now (or isn't focused on the app at all) — a real,
+    // native OS notification, not just an in-app signal nobody's there to
+    // see. A clean `stopped` exit was requested by the user; nothing to say.
+    if (event.state === 'crashed') {
+      void notifyDevProcessCrashed(storage, event.projectId, event.exitCode);
+    }
+  };
 
   // M8: the one clock driving the `scheduled` trigger (spec 18.2) — see
   // `SCHEDULED_AUTOMATION_TICK_MS`'s comment. Failures here must never
@@ -370,6 +399,7 @@ app.on('ready', () => {
       connectedServicesHandlers,
       packageManagerHandlers,
       aiHandlers,
+      bootstrapHandlers,
       logger,
     );
     handlersRegistered = true;
@@ -399,6 +429,7 @@ app.on('before-quit', () => {
   projectEnvironmentHandlers = null;
   connectedServicesHandlers = null;
   aiHandlers = null;
+  bootstrapHandlers = null;
   terminalHandlers = null;
   terminalClient = null;
   storageClient = null;

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
 import type { AgentHandlers } from './agent-handlers';
 import type { AiHandlers } from './ai-handlers';
+import type { BootstrapHandlers } from './bootstrap-handlers';
 import type { AutomationHandlers } from './automation-handlers';
 import type { AssetHandlers } from './asset-handlers';
 import type { ConnectedServicesHandlers } from './connected-services-handlers';
@@ -207,6 +208,12 @@ function setup() {
     reviewComments: vi.fn(),
     applyFix: vi.fn(),
   } as unknown as AiHandlers;
+  const bootstrapHandlers = {
+    getStatus: vi.fn(),
+    buildPlan: vi.fn(),
+    runNextStep: vi.fn(),
+    cancel: vi.fn(),
+  } as unknown as BootstrapHandlers;
   registerIpcHandlers(
     trusted,
     storage,
@@ -225,6 +232,7 @@ function setup() {
     connectedServicesHandlers,
     packageManagerHandlers,
     aiHandlers,
+    bootstrapHandlers,
   );
   return {
     storageCall,

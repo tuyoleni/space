@@ -135,4 +135,18 @@ export class ProjectRepository {
     }
     return updated;
   }
+
+  /** Set once a project transitions from "plain folder" to "real Git repository" — real `git init`, never guessed. */
+  updateRepositoryRoot(id: string, repositoryRoot: string, updatedAt: string): ProjectRow {
+    this.db.prepare('UPDATE projects SET repository_root = ?, updated_at = ? WHERE id = ?').run(
+      repositoryRoot,
+      updatedAt,
+      id,
+    );
+    const updated = this.findById(id);
+    if (!updated) {
+      throw new Error(`Project ${id} vanished while updating repository root`);
+    }
+    return updated;
+  }
 }

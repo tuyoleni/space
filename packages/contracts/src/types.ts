@@ -1512,6 +1512,71 @@ export interface AiApplyFixResult {
   readonly applied: boolean;
 }
 
+export interface AiGenerateCommitMessageInput {
+  readonly projectId: string;
+  /** Scopes the diff sent to the model to exactly the included change groups — never the whole repo's diff. */
+  readonly filePaths: readonly string[];
+}
+
+export interface AiGenerateCommitMessageResult {
+  readonly message: string;
+}
+
+// ---------------------------------------------------------------------------
+// First-run bootstrap/onboarding (spec section 8, ONB-001..008). Mirrors
+// @space/environment's BootstrapStatus/StepState/ReceiptOutcome and
+// @space/storage's BootstrapRepository row shapes at the IPC boundary —
+// neither package ever enters the renderer bundle directly (spec 32).
+// ---------------------------------------------------------------------------
+
+export type BootstrapStatus =
+  | 'not_started'
+  | 'scanning'
+  | 'plan_ready'
+  | 'installing'
+  | 'verification_required'
+  | 'partially_complete'
+  | 'complete'
+  | 'blocked';
+
+/** What the wizard should show/do next for the current status — mirrors @space/environment's resumeAction(). */
+export type BootstrapResumeAction =
+  | 'start_fresh'
+  | 'restart_scan'
+  | 'resume_plan'
+  | 'resume_installing'
+  | 'resume_verification'
+  | 'show_partially_complete'
+  | 'show_blocked'
+  | 'show_complete';
+
+export type BootstrapStepState = 'pending' | 'running' | 'successful' | 'skipped' | 'failed' | 'cancelled' | 'needs_restart';
+
+export type BootstrapReceiptOutcome =
+  | 'installed_by_space'
+  | 'already_present'
+  | 'updated_by_space'
+  | 'user_cancelled'
+  | 'partially_installed'
+  | 'needs_manual_remediation';
+
+export interface BootstrapStepSummary {
+  readonly toolId: string | null;
+  readonly displayName: string;
+  readonly state: BootstrapStepState;
+  readonly humanExplanation: string;
+  readonly outcome: BootstrapReceiptOutcome | null;
+}
+
+export interface BootstrapStatusResult {
+  readonly status: BootstrapStatus;
+  readonly resumeAction: BootstrapResumeAction;
+  readonly blockReason: string | null;
+  readonly steps: readonly BootstrapStepSummary[];
+  /** Index into `steps` the next `runNextStep()` call would execute — null when nothing is pending. */
+  readonly nextStepIndex: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // M8: automation (spec section 18). `trigger`/`conditions`/`actions` are
 // opaque `unknown` at this IPC boundary deliberately, the same reasoning

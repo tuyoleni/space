@@ -142,6 +142,44 @@ export async function listAvailableOrgs(executor: GhExecutor): Promise<readonly 
   return runGhJsonOptional<GhOrg[]>(executor, ['api', 'user/orgs', '--jq', '[.[] | {login: .login, id: .id}]']);
 }
 
+export interface GhUserIdentity {
+  readonly name: string;
+  readonly email: string;
+}
+
+interface GhApiUserResponse {
+  readonly login: string;
+  readonly name: string | null;
+  readonly email: string | null;
+}
+
+/**
+ * Derives a commit identity (name + email) from the authenticated GitHub
+ * account via `gh api user`, for the one-time fallback git-handlers.ts
+ * uses when the machine has no global `git config user.name`/`user.email`
+ * (spec 11.6's "workspace identity" is otherwise unavailable). `email` is
+ * frequently `null` from this endpoint (GitHub hides it by default), in
+ * which case `login`'s noreply address — the same address GitHub's own
+ * web-commit UI uses — stands in. Resolves to `null` rather than throwing
+ * so an unauthenticated or offline caller gets a clean "no fallback"
+ * signal instead of a crash.
+ */
+export async function resolveGithubIdentity(executor: GhExecutor): Promise<GhUserIdentity | null> {
+  const user = await runGhJsonOptional<GhApiUserResponse>(executor, [
+    'api',
+    'user',
+    '--jq',
+    '{login: .login, name: .name, email: .email}',
+  ]);
+  if (!user?.login) {
+    return null;
+  }
+  return {
+    name: user.name ?? user.login,
+    email: user.email ?? `${user.login}@users.noreply.github.com`,
+  };
+}
+
 export type GhGitProtocol = 'https' | 'ssh';
 
 /** `gh config get git_protocol` prints a single bare value, not JSON — there is no structured alternative for a single scalar config read. */

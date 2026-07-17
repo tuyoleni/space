@@ -12,6 +12,8 @@ import type {
   AgentStandingPermissionSummary,
   AiApplyFixInput,
   AiApplyFixResult,
+  AiGenerateCommitMessageInput,
+  AiGenerateCommitMessageResult,
   AiKeyStatus,
   AiReviewCommentsInput,
   AiReviewCommentsResult,
@@ -22,6 +24,7 @@ import type {
   AutomationSetEnabledInput,
   AutomationSettingsSetInput,
   AutomationSummary,
+  BootstrapStatusResult,
   CloneProjectInput,
   ConnectedServiceDeployInput,
   ConnectedServiceDeployResult,
@@ -227,6 +230,8 @@ export interface SpaceAPI {
   readonly git: {
     /** GIT-001: the authoritative status read (spec 11.4/11.12) — a watcher hint is never trusted on its own. */
     status(input: GitProjectInput): Promise<GitStatusSummary>;
+    /** Real `git init` + stage-everything + one initial commit for a plain-folder project. Idempotent — a no-op if the project already has a repository. */
+    initRepo(input: GitProjectInput): Promise<Project>;
     /** GIT-004 */
     stage(input: GitStageInput): Promise<void>;
     unstage(input: GitStageInput): Promise<void>;
@@ -357,6 +362,18 @@ export interface SpaceAPI {
     reviewComments(input: AiReviewCommentsInput): Promise<AiReviewCommentsResult>;
     /** Writes one proposed fix to disk — the renderer must have already confirmed with the user. */
     applyFix(input: AiApplyFixInput): Promise<AiApplyFixResult>;
+    /** Generates a commit message from the staged/unstaged diff of exactly the given file paths. */
+    generateCommitMessage(input: AiGenerateCommitMessageInput): Promise<AiGenerateCommitMessageResult>;
+  };
+  readonly bootstrap: {
+    /** Reads the latest persisted bootstrap run (if any) and what to do next — never mutates. */
+    getStatus(): Promise<BootstrapStatusResult>;
+    /** Real machine scan + platform plan (ONB-002/004/005), persisted as a new run. No-ops if a plan already exists. */
+    buildPlan(): Promise<BootstrapStatusResult>;
+    /** Executes exactly one pending planned step (install + verify, ONB-006/007) and persists the result. Call in a loop from the renderer for live per-step progress. */
+    runNextStep(): Promise<BootstrapStatusResult>;
+    /** Marks the run cancelled (ONB-001 user_cancelled) — steps already run stay recorded. */
+    cancel(): Promise<BootstrapStatusResult>;
   };
   readonly automation: {
     /** spec 18.1: validated (workspaceId/project scope/trigger/conditions/ordered actions) before it is ever persisted. */

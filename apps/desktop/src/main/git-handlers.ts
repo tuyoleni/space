@@ -35,6 +35,8 @@ import {
   forEachRefArgs,
   getFullRepositoryStatus,
   HistoryStore,
+  initRepository,
+  CommitFailedError,
   listRemotes as listRemotesEngine,
   listStashes as listStashesEngine,
   listTags as listTagsEngine,
@@ -97,6 +99,15 @@ export interface GitHandlersOptions {
   readonly gitExecutor?: GitExecutor;
   /** Directory HistoryStore's disk cache writes into; one JSON file per repository. */
   readonly historyCacheDir: string;
+  /**
+   * Fallback commit identity source (spec 11.6), tried only when the
+   * machine has no global `git config user.name`/`user.email`: derives an
+   * identity from the workspace's authenticated GitHub account rather than
+   * failing the commit outright. Wired to `GithubHandlers.resolveFallbackIdentity`
+   * in main.ts; optional so tests and any caller without GitHub wiring keep
+   * today's "throw when unconfigured" behaviour.
+   */
+  readonly getFallbackIdentity?: (workspaceId: string) => Promise<GitIdentity | null>;
 }
 
 function toGitOperationState(state: RepositoryOperationState): GitOperationState {
@@ -248,31 +259,70 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   /**
    * Resolves the commit identity from global `git config` (spec 11.6's
    * "workspace identity" — Space has no per-workspace identity settings UI
-   * yet, so the machine's global git identity is the only real, non-
-   * fabricated source available) with a repo-local override honored the
-   * same way plain `git commit` would (spec 11.6 requires override to be
-   * an explicit acknowledged action; there is no such UI step yet either,
-   * so a repo-local identity is surfaced via `mismatch` but never silently
-   * substituted).
+   * yet). When that's unset, falls back to the workspace's authenticated
+   * GitHub account (`options.getFallbackIdentity`) rather than fabricating
+   * one outright; only when neither source has an identity does this throw.
+   * A repo-local override is still honored the same way plain `git commit`
+   * would (spec 11.6 requires override to be an explicit acknowledged
+   * action; there is no such UI step yet either, so a repo-local identity
+   * is surfaced via `mismatch` but never silently substituted).
    */
-  async function resolveIdentity(cwd: string): Promise<GitIdentity> {
+  async function resolveIdentity(cwd: string, workspaceId: string): Promise<GitIdentity> {
     const [name, email] = await Promise.all([
       gitExecutor(configGetArgs('user.name', 'global'), { cwd }),
       gitExecutor(configGetArgs('user.email', 'global'), { cwd }),
     ]);
+    let workspaceIdentity: GitIdentity;
     if (name.exitCode !== 0 || !name.stdout.trim() || email.exitCode !== 0 || !email.stdout.trim()) {
-      throw new Error(
-        'No Git author identity is configured (run "git config --global user.name" / "user.email" first)',
-      );
+      const fallback = await options.getFallbackIdentity?.(workspaceId);
+      if (!fallback) {
+        throw new Error(
+          'No Git author identity is configured (run "git config --global user.name" / "user.email" first)',
+        );
+      }
+      workspaceIdentity = fallback;
+    } else {
+      workspaceIdentity = {
+        name: name.stdout.trim(),
+        email: email.stdout.trim(),
+        signingPolicy: 'none',
+        signingKeyId: null,
+      };
     }
-    const workspaceIdentity: GitIdentity = {
-      name: name.stdout.trim(),
-      email: email.stdout.trim(),
-      signingPolicy: 'none',
-      signingKeyId: null,
-    };
     const repoLocal = await readRepoLocalIdentity(cwd, gitExecutor);
     return resolveCommitIdentity({ workspaceIdentity, repoLocal, overrideAcknowledged: false }).identity;
+  }
+
+  /**
+   * Real `git init` + stage-everything + one initial commit for a project
+   * that was imported as a plain folder (spec: a project only counts as a
+   * "real Git repository" once this has actually run — never inferred from
+   * intent). Idempotent: a project that already has a repositoryRoot is
+   * returned as-is. An empty working tree (nothing to stage, or everything
+   * gitignored) is not an error — `git commit`'s "nothing to commit" exit
+   * is the one commit failure this treats as benign; every other commit
+   * failure (e.g. no Git author identity configured) still surfaces.
+   */
+  async function initRepo(input: GitProjectInput): Promise<Project> {
+    const project = await requireProject(input.projectId);
+    if (project.repositoryRoot) {
+      return project;
+    }
+    const cwd = project.canonicalPath;
+    return recordMutation(project, 'git.init', `Initialized Git for "${project.name}"`, async () => {
+      await initRepository(cwd, 'main', gitExecutor);
+      await stageFiles(cwd, ['.'], gitExecutor);
+      try {
+        const identity = await resolveIdentity(cwd, project.workspaceId);
+        await runCommit(cwd, { identity, message: 'Initial commit' }, gitExecutor);
+      } catch (error) {
+        const isNothingToCommit = error instanceof CommitFailedError && /nothing to commit/i.test(error.message);
+        if (!isNothingToCommit) {
+          throw error;
+        }
+      }
+      return storage.call<Project>('project.setRepositoryRoot', { projectId: project.id, repositoryRoot: cwd });
+    });
   }
 
   async function commit(input: GitCommitInput): Promise<GitCommitResult> {
@@ -285,7 +335,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
       'git.commit',
       `Commit "${firstLine}"`,
       async () => {
-        const identity = await resolveIdentity(cwd);
+        const identity = await resolveIdentity(cwd, project.workspaceId);
         const outcome: CommitOutcome = await queue.enqueueMutating(cwd, () =>
           runCommit(cwd, { identity, message: input.message }, gitExecutor),
         );
@@ -590,6 +640,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
 
   return {
     status,
+    initRepo,
     stage,
     unstage,
     commit,

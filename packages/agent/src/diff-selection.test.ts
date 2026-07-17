@@ -149,6 +149,41 @@ describe('composePatchFromSelections + real git apply round-trip', () => {
     expect(cachedShow).toBe('keep\nnew\n');
   });
 
+  it('excludes already-staged evidence from the composed patch, so a mixed staged+unstaged selection applies cleanly', () => {
+    // Reproduces a real bug: composing a patch from *staged* evidence and
+    // re-applying it via `git apply --cached` always fails, because
+    // `--cached` validates against the current index — which, for
+    // already-staged content, has by definition already moved past the
+    // "old" (HEAD) side the staged diff describes. Only unstaged evidence
+    // should ever reach the composed patch.
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'keep\nnew\n');
+    execFileSync('git', ['add', 'a.txt'], { cwd: dir }); // a.txt is now staged, not unstaged
+    fs.writeFileSync(path.join(dir, 'b.txt'), 'q\n'); // b.txt stays unstaged
+
+    const stagedRaw = execFileSync('git', ['diff', '--cached', '--no-ext-diff', '--binary'], { cwd: dir }).toString();
+    const stagedFiles = parseUnifiedDiff(stagedRaw);
+    const stagedSelections = buildSelectionsFromFileDiffs(stagedFiles, 'staged');
+
+    const unstagedFiles = currentUnstagedDiff();
+    const unstagedSelections = buildSelectionsFromFileDiffs(unstagedFiles, 'unstaged');
+
+    const patchText = composePatchFromSelections(
+      [...stagedSelections, ...unstagedSelections],
+      lookupFrom(unstagedFiles, stagedFiles),
+    );
+
+    // The composed patch must not mention a.txt at all — it's already staged.
+    expect(patchText).not.toContain('a.txt');
+    expect(patchText).toContain('b.txt');
+
+    fs.writeFileSync(path.join(dir, 'out.diff'), patchText);
+    // This is the exact command the real app runs (stagePatch); it must not throw.
+    execFileSync('git', ['apply', '--cached', path.join(dir, 'out.diff')], { cwd: dir });
+
+    const staged = execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: dir }).toString().trim().split('\n');
+    expect(staged.sort()).toEqual(['a.txt', 'b.txt']);
+  });
+
   it('throws StaleSelectionError rather than composing from evidence that no longer matches the real diff', () => {
     fs.writeFileSync(path.join(dir, 'a.txt'), 'keep\nnew\n');
     const files = currentUnstagedDiff();

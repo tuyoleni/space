@@ -57,6 +57,16 @@ export const projectTrustDecisionInputSchema = z.object({
   decision: trustDecisionSchema,
 });
 
+export const gitInitInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+/** Storage-worker-internal — called by git-handlers.ts only after a real `git init` has already succeeded, never directly by the renderer. */
+export const projectSetRepositoryRootInputSchema = z.object({
+  projectId: z.string().min(1),
+  repositoryRoot: z.string().min(1),
+});
+
 const projectTemplateOptionValueSchema = z.union([z.string(), z.boolean()]);
 
 export const createProjectFromTemplateInputSchema = z.object({
@@ -552,6 +562,11 @@ export const aiApplyFixInputSchema = z.object({
   line: z.number().int().min(1),
   originalLine: z.string(),
   newLine: z.string(),
+});
+
+export const aiGenerateCommitMessageInputSchema = z.object({
+  projectId: z.string().min(1),
+  filePaths: z.array(z.string().min(1)),
 });
 
 // ---------------------------------------------------------------------------

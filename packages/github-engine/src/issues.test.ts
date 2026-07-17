@@ -57,6 +57,17 @@ describe('issueListArgs / listIssues', () => {
       updatedAt: '2026-07-02T10:00:00Z',
     });
   });
+
+  it('resolves to an empty list when the repo has no remote, instead of throwing', async () => {
+    const executor: GhExecutor = async () => ({ exitCode: 1, stdout: '', stderr: 'no git remotes found\n' });
+    const result = await listIssues(executor);
+    expect(result).toEqual([]);
+  });
+
+  it('still throws for a real failure (e.g. auth)', async () => {
+    const executor: GhExecutor = async () => ({ exitCode: 1, stdout: '', stderr: 'HTTP 401: Bad credentials\n' });
+    await expect(listIssues(executor)).rejects.toThrow('Bad credentials');
+  });
 });
 
 describe('issueViewArgs / viewIssue', () => {

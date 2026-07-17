@@ -162,8 +162,21 @@ export function composePatchFromSelections(
     throw new StaleSelectionError(stale);
   }
 
+  // Only `unstaged` evidence needs a patch applied here. The caller
+  // applies the resulting text via `git apply --cached`, which validates
+  // hunks against the *current index* — an `unstaged` selection's "old"
+  // side is exactly the index content (that's what "unstaged diff" means:
+  // index vs. working tree), so it applies cleanly. A `staged` selection's
+  // "old" side is HEAD content instead (staged diff: HEAD vs. index), and
+  // the index has by definition already moved past that base — that's
+  // what "staged" means. Re-applying it would always fail with "patch
+  // does not apply", since the base content it expects no longer exists.
+  // Already-staged evidence needs no action here — it's already exactly
+  // where the eventual commit needs it.
+  const toApply = selections.filter((selection) => selection.staged === 'unstaged');
+
   const byFile = new Map<string, DiffSelection[]>();
-  for (const selection of selections) {
+  for (const selection of toApply) {
     const key = `${selection.staged}:${selection.filePath}`;
     const existing = byFile.get(key);
     if (existing) {

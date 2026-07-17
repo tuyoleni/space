@@ -12,7 +12,7 @@
  * mirroring git-handlers.ts's DB-vs-real-process split) executes each
  * step with `@space/git-engine` and `@space/storage`.
  */
-import { runGh, runGhJson } from './json';
+import { isNoRepoContextError, runGh, runGhJson } from './json';
 import type { GhExecutor } from './executor';
 
 export interface IssueSummary {
@@ -74,9 +74,22 @@ function toSummary(raw: RawIssueListItem): IssueSummary {
   };
 }
 
+/**
+ * Same reasoning as `listPullRequests`: no remote means genuinely zero
+ * issues, not a failure — `gh`'s "no git remotes found" is represented as
+ * an empty list rather than propagated as an error. Any other failure
+ * still throws.
+ */
 export async function listIssues(executor: GhExecutor, filter: IssueListFilter = {}): Promise<IssueSummary[]> {
-  const raw = await runGhJson<RawIssueListItem[]>(executor, issueListArgs(filter));
-  return raw.map(toSummary);
+  try {
+    const raw = await runGhJson<RawIssueListItem[]>(executor, issueListArgs(filter));
+    return raw.map(toSummary);
+  } catch (error) {
+    if (isNoRepoContextError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export interface IssueComment {

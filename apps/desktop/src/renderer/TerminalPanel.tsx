@@ -123,7 +123,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     termRef.current = term;
     searchAddonRef.current = searchAddon;
     term.open(container);
-    term.writeln(`-- ${session.shell} (pid ${session.pid}) --`);
+    // No synthetic "-- shell (pid) --" banner here: it isn't real shell
+    // output, and the same shell/pid is already shown in the tab strip and
+    // the Active Terminal card — this grid should show only what the real
+    // PTY actually produces.
 
     // Without this, xterm defaults to a fixed 80x24 grid regardless of the
     // container's real size — the terminal renders "capped" well short of

@@ -58,6 +58,7 @@ import {
   remoteActionAvailability,
   rerunRun,
   reopenIssue,
+  resolveGithubIdentity,
   setupAndVerifyGitCredentialHelper,
   suggestNextVersionTag,
   triggerWorkflowDispatch,
@@ -90,6 +91,7 @@ import {
   createNodeGitExecutor,
   getRemoteUrl,
   type GitExecutor,
+  type GitIdentity,
 } from '@space/git-engine';
 import type { CredentialStorePort } from '@space/security';
 import { RedactionRegistry } from '@space/workspace-runner';
@@ -229,6 +231,24 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
     const { gh } = await scopedExecutors(workspaceId, host);
     const tokenSourceStrategy: TokenSourceStrategy = connection?.secretRefId ? 'space-managed-os-keychain' : 'gh-default';
     return loadGithubAuthReport(gh, { tokenSourceStrategy, host });
+  }
+
+  /**
+   * Fallback commit identity (spec 11.6) for git-handlers.ts's
+   * `resolveIdentity`, used only when the machine has no global `git config
+   * user.name`/`user.email` — derives name/email from the workspace's
+   * authenticated GitHub account instead of failing the commit outright.
+   * Resolves to `null` (not authenticated, `gh` missing, or the API call
+   * failed) so the caller's existing "no identity configured" error still
+   * fires in that case, exactly as it did before this fallback existed.
+   */
+  async function resolveFallbackIdentity(workspaceId: string, host = defaultHost): Promise<GitIdentity | null> {
+    const { gh } = await scopedExecutors(workspaceId, host);
+    const identity = await resolveGithubIdentity(gh);
+    if (!identity) {
+      return null;
+    }
+    return { name: identity.name, email: identity.email, signingPolicy: 'none', signingKeyId: null };
   }
 
   /**
@@ -697,6 +717,7 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
 
   return {
     authReport,
+    resolveFallbackIdentity,
     startAuthLogin,
     logout,
     listOrgs,

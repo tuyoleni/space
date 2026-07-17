@@ -23,6 +23,7 @@ import {
   inspectFolderInputSchema,
   projectListInputSchema,
   projectTrustDecisionInputSchema,
+  projectSetRepositoryRootInputSchema,
   workspaceActivateInputSchema,
   type DevProcessInfo,
   type PackageManagerDetection,
@@ -41,6 +42,9 @@ import {
   type AgentStandingPermissionRow,
   type AutomationRow,
   type AutomationRunRow,
+  type BootstrapReceiptOutcome,
+  type BootstrapRunStatus,
+  type BootstrapStepState,
   type DevProcessRow,
   type OperationRisk,
   type OperationRow,
@@ -266,6 +270,24 @@ async function trustDecision(
       nextState === project.trustState
         ? project
         : storage.projects.updateTrustState(project.id, nextState, now),
+  );
+  return toProject(result);
+}
+
+/** Called once real `git init` on the project's folder has actually succeeded — never guessed ahead of the real command. */
+async function setRepositoryRoot(storage: Storage, input: { projectId: string; repositoryRoot: string }): Promise<Project> {
+  const project = requireProject(storage, input.projectId);
+  const now = new Date().toISOString();
+  const { result } = await withReceipt(
+    storage.operations,
+    {
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      type: 'project.setRepositoryRoot',
+      risk: 'local-reversible',
+      humanSummary: `Initialized Git for "${project.name}"`,
+    },
+    () => storage.projects.updateRepositoryRoot(project.id, input.repositoryRoot, now),
   );
   return toProject(result);
 }
@@ -538,6 +560,11 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
       return trustDecision(storage, input);
     }
 
+    case 'project.setRepositoryRoot': {
+      const input = projectSetRepositoryRootInputSchema.parse(request.payload);
+      return setRepositoryRoot(storage, input);
+    }
+
     case 'terminal.recordSession': {
       const input = recordSessionSchema.parse(request.payload);
       const row = storage.terminalSessions.create(input);
@@ -802,6 +829,70 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
       const input = appSettingsSetTelemetryEnabledSchema.parse(request.payload);
       storage.appSettings.setTelemetryEnabled(input.enabled, input.updatedAt);
       return undefined;
+    }
+
+    case 'bootstrap.getLatestRun': {
+      return storage.bootstrap.getLatestRun();
+    }
+
+    case 'bootstrap.createRun': {
+      const input = z
+        .object({
+          id: z.string().min(1),
+          status: z.string().min(1) as z.ZodType<BootstrapRunStatus>,
+          platform: z.string().min(1),
+          createdAt: z.string().min(1),
+          updatedAt: z.string().min(1),
+        })
+        .parse(request.payload);
+      return storage.bootstrap.createRun(input);
+    }
+
+    case 'bootstrap.updateStatus': {
+      const input = z
+        .object({
+          id: z.string().min(1),
+          status: z.string().min(1) as z.ZodType<BootstrapRunStatus>,
+          updatedAt: z.string().min(1),
+          blockReason: z.string().nullable().optional(),
+        })
+        .parse(request.payload);
+      return storage.bootstrap.updateStatus(input.id, input.status, input.updatedAt, input.blockReason ?? null);
+    }
+
+    case 'bootstrap.savePlan': {
+      const input = z
+        .object({ id: z.string().min(1), plan: z.unknown(), updatedAt: z.string().min(1) })
+        .parse(request.payload);
+      return storage.bootstrap.savePlan(input.id, input.plan, input.updatedAt);
+    }
+
+    case 'bootstrap.listSteps': {
+      const input = z.object({ runId: z.string().min(1) }).parse(request.payload);
+      return storage.bootstrap.listSteps(input.runId);
+    }
+
+    case 'bootstrap.upsertStep': {
+      const input = z
+        .object({
+          id: z.string().min(1),
+          runId: z.string().min(1),
+          sequence: z.number().int().min(0),
+          toolId: z.string().nullable(),
+          state: z.string().min(1) as z.ZodType<BootstrapStepState>,
+          humanExplanation: z.string(),
+          commandDisplayRedacted: z.string().nullable(),
+          startedAt: z.string().nullable(),
+          endedAt: z.string().nullable(),
+          exitCode: z.number().int().nullable(),
+          redactedOutput: z.string().nullable(),
+          retryEligible: z.boolean(),
+          changedMachineState: z.boolean(),
+          outcome: z.string().nullable() as z.ZodType<BootstrapReceiptOutcome | null>,
+          operationId: z.string().nullable(),
+        })
+        .parse(request.payload);
+      return storage.bootstrap.upsertStep(input);
     }
 
     default: {

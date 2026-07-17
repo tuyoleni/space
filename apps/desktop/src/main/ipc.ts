@@ -87,6 +87,7 @@ import {
   aiSetApiKeyInputSchema,
   aiReviewCommentsInputSchema,
   aiApplyFixInputSchema,
+  aiGenerateCommitMessageInputSchema,
   packageSearchInputSchema,
   packageActionInputSchema,
   IPC_CHANNELS,
@@ -103,6 +104,7 @@ import type { AgentHandlers } from './agent-handlers';
 import type { AiHandlers } from './ai-handlers';
 import type { AssetHandlers } from './asset-handlers';
 import type { AutomationHandlers } from './automation-handlers';
+import type { BootstrapHandlers } from './bootstrap-handlers';
 import type { ConnectedServicesHandlers } from './connected-services-handlers';
 import type { DependencyHandlers } from './dependency-handlers';
 import type { EnvironmentHandlers } from './environment-handlers';
@@ -199,8 +201,29 @@ export function registerIpcHandlers(
   connectedServicesHandlers: ConnectedServicesHandlers,
   packageManagerHandlers: PackageManagerHandlers,
   aiHandlers: AiHandlers,
+  bootstrapHandlers: BootstrapHandlers,
   logger: Logger = consoleLogger,
 ): void {
+  ipcMain.handle(IPC_CHANNELS.bootstrapGetStatus, async (event) => {
+    assertIpcSender(event, trusted);
+    return bootstrapHandlers.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.bootstrapBuildPlan, async (event) => {
+    assertIpcSender(event, trusted);
+    return bootstrapHandlers.buildPlan();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.bootstrapRunNextStep, async (event) => {
+    assertIpcSender(event, trusted);
+    return bootstrapHandlers.runNextStep();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.bootstrapCancel, async (event) => {
+    assertIpcSender(event, trusted);
+    return bootstrapHandlers.cancel();
+  });
+
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
     assertIpcSender(event, trusted);
     return storage.call('workspace.list', undefined);
@@ -416,6 +439,11 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.gitStatus, async (event, input) => {
     assertIpcSender(event, trusted);
     return gitHandlers.status(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitInit, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.initRepo(gitProjectInputSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.gitStage, async (event, input) => {
@@ -972,6 +1000,12 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = aiApplyFixInputSchema.parse(input);
     return aiHandlers.applyFix(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiGenerateCommitMessage, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiGenerateCommitMessageInputSchema.parse(input);
+    return aiHandlers.generateCommitMessage(parsed);
   });
 
   // ---------------------------------------------------------------------

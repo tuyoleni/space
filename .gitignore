@@ -35,3 +35,4 @@ coverage/
 SpaceData/
 *.sqlite
 *.sqlite3
+.vercel

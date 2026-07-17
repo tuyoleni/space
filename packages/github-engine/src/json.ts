@@ -58,3 +58,22 @@ export async function runGhJsonOptional<T>(
     return null;
   }
 }
+
+/**
+ * `gh`'s message when a command needs a repo (to infer `owner/name`) but is
+ * run somewhere that isn't one, or is a repo with no remote configured.
+ * Distinct from an auth failure, rate limit, or network error — those are
+ * real problems and must keep propagating; this one just means "there's
+ * nothing here to report," which repo-scoped listing calls represent as an
+ * empty result rather than a thrown error (see `listPullRequests`,
+ * `listIssues`).
+ */
+const NO_REPO_CONTEXT_PATTERNS = [/no git remotes found/i, /not a git repository/i, /could not determine (?:the )?(?:base|current) repository/i];
+
+export function isNoRepoContextError(error: unknown): boolean {
+  if (!(error instanceof GhCommandError)) {
+    return false;
+  }
+  const detail = `${error.stderr}\n${error.stdout}`;
+  return NO_REPO_CONTEXT_PATTERNS.some((pattern) => pattern.test(detail));
+}

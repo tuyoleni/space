@@ -45,6 +45,7 @@ export const IPC_CHANNELS = {
 
   // M5: Git (GIT-001..009)
   gitStatus: 'git:status',
+  gitInit: 'git:init',
   gitStage: 'git:stage',
   gitUnstage: 'git:unstage',
   gitCommit: 'git:commit',
@@ -127,6 +128,13 @@ export const IPC_CHANNELS = {
   aiSetApiKey: 'ai:key:set',
   aiReviewComments: 'ai:review:comments',
   aiApplyFix: 'ai:review:applyFix',
+  aiGenerateCommitMessage: 'ai:generateCommitMessage',
+
+  // First-run bootstrap/onboarding (spec section 8, ONB-001..008)
+  bootstrapGetStatus: 'bootstrap:status',
+  bootstrapBuildPlan: 'bootstrap:buildPlan',
+  bootstrapRunNextStep: 'bootstrap:runNextStep',
+  bootstrapCancel: 'bootstrap:cancel',
 
   // M8: automation (spec section 18)
   automationList: 'automation:list',
