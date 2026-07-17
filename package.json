@@ -7,9 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "predev": "npm run rebuild:electron --silent",
+    "predev": "npm run rebuild:electron --silent && node scripts/patch-dev-app-name.mjs",
     "dev": "npm run start --workspace=apps/desktop",
-    "prestart": "npm run rebuild:electron --silent",
+    "prestart": "npm run rebuild:electron --silent && node scripts/patch-dev-app-name.mjs",
     "start": "npm run start --workspace=apps/desktop",
     "package": "npm run package --workspace=apps/desktop",
     "make": "npm run make --workspace=apps/desktop",

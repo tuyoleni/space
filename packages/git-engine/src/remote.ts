@@ -7,13 +7,20 @@
  * from @space/domain's `assertDestructiveGitActionConfirmed`).
  */
 import { assertDestructiveGitActionConfirmed } from '@space/domain';
-import { fetchArgs, pullArgs, pushArgs, remoteAddArgs, remoteGetUrlArgs, type PullMode } from './commands';
+import { fetchArgs, pullArgs, pushArgs, remoteAddArgs, remoteGetUrlArgs, remoteVerboseArgs, type PullMode } from './commands';
 import type { GitIdentity } from './identity';
 import type { GitExecutor } from './clone';
 
 export interface RemoteCommandOutcome {
   readonly stdout: string;
   readonly stderr: string;
+}
+
+/** One configured remote with its fetch/push URLs; `pushUrl` equals `fetchUrl` unless a distinct push URL is configured. */
+export interface RemoteEntry {
+  readonly name: string;
+  readonly fetchUrl: string;
+  readonly pushUrl: string;
 }
 
 async function run(executor: GitExecutor, args: string[], cwd: string): Promise<RemoteCommandOutcome> {
@@ -37,6 +44,52 @@ export async function addRemote(cwd: string, remoteName: string, url: string, ex
 export async function getRemoteUrl(cwd: string, remoteName: string, executor: GitExecutor): Promise<string | null> {
   const result = await executor(remoteGetUrlArgs(remoteName), { cwd });
   return result.exitCode === 0 ? result.stdout.trim() : null;
+}
+
+/**
+ * Parses `git remote -v` output — two lines per remote, one tagged
+ * `(fetch)` and one `(push)` — into one entry per remote, preserving the
+ * order remotes first appear. Returns `[]` for a repository with no
+ * remotes.
+ */
+export function parseRemoteVerbose(stdout: string): RemoteEntry[] {
+  const fetchByName = new Map<string, string>();
+  const pushByName = new Map<string, string>();
+  const order: string[] = [];
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trimEnd();
+    if (line.length === 0) {
+      continue;
+    }
+    // "<name>\t<url> (fetch)" | "<name>\t<url> (push)"
+    const tab = line.indexOf('\t');
+    if (tab === -1) {
+      continue;
+    }
+    const name = line.slice(0, tab);
+    const match = /^(.*)\s+\((fetch|push)\)$/.exec(line.slice(tab + 1));
+    if (!match) {
+      continue;
+    }
+    const url = (match[1] ?? '').trim();
+    if (!order.includes(name)) {
+      order.push(name);
+    }
+    (match[2] === 'push' ? pushByName : fetchByName).set(name, url);
+  }
+  return order.map((name) => {
+    const fetchUrl = fetchByName.get(name) ?? pushByName.get(name) ?? '';
+    return { name, fetchUrl, pushUrl: pushByName.get(name) ?? fetchUrl };
+  });
+}
+
+/** Lists the repository's configured remotes and their URLs (`git remote -v`). */
+export async function listRemotes(cwd: string, executor: GitExecutor): Promise<RemoteEntry[]> {
+  const result = await executor(remoteVerboseArgs(), { cwd });
+  if (result.exitCode !== 0) {
+    throw new Error(`git remote failed: ${result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`}`);
+  }
+  return parseRemoteVerbose(result.stdout);
 }
 
 export async function pullRemote(

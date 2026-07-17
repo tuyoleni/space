@@ -10,6 +10,12 @@ import type {
   AgentPermissionRevokeInput,
   AgentPlanDispatchInput,
   AgentStandingPermissionSummary,
+  AiApplyFixInput,
+  AiApplyFixResult,
+  AiKeyStatus,
+  AiReviewCommentsInput,
+  AiReviewCommentsResult,
+  AiSetApiKeyInput,
   AutomationCreateInput,
   AutomationListRunsInput,
   AutomationRunSummary,
@@ -17,18 +23,40 @@ import type {
   AutomationSettingsSetInput,
   AutomationSummary,
   CloneProjectInput,
+  ConnectedServiceDeployInput,
+  ConnectedServiceDeployResult,
+  ConnectedServiceLoginInput,
+  ConnectedServiceLoginResult,
+  ConnectedServicesResult,
   CreateProjectFromTemplateInput,
   CreateTerminalInput,
   CreateWorkspaceInput,
+  DependencyScanInput,
+  DependencyScanResult,
   DetectPackageManagerInput,
   DetectProjectInput,
   DevProcessInfo,
+  EnvironmentExportReportInput,
+  EnvironmentExportReportResult,
+  EnvironmentScanInput,
+  EnvironmentScanResult,
+  EnvironmentToolActionInput,
+  EnvironmentToolActionResult,
+  PackageActionInput,
+  PackageActionResult,
+  PackageListInstalledResult,
+  PackageSearchInput,
+  PackageSearchResult,
   GitCommitInput,
   GitCommitResult,
+  GitConflictResolveInput,
   GitConflictState,
   GitCreateBranchInput,
   GitDeleteBranchInput,
+  GitDiffStats,
   GitFetchInput,
+  GitFileDiffInput,
+  GitFileDiffResult,
   GitHistoryLoadInput,
   GitHistoryPage,
   GitOperationOutcome,
@@ -36,10 +64,15 @@ import type {
   GitPullInput,
   GitPushInput,
   GitRefEntry,
+  GitRemoteEntry,
   GitRemoteResult,
   GitStageInput,
+  GitStashActionInput,
+  GitStashEntry,
   GitStatusSummary,
   GitSwitchBranchInput,
+  GitTagEntry,
+  GitWorktreeEntry,
   GithubActionsCancelInput,
   GithubActionsDownloadArtifactsInput,
   GithubActionsListRunsInput,
@@ -98,14 +131,23 @@ import type {
   InspectFolderInput,
   InstallDependenciesInput,
   InstallDependenciesResult,
+  MenuCommand,
   PackageManagerDetection,
   Project,
   ProjectDetectionReport,
+  ProjectEnvironmentInfo,
+  ProjectEnvironmentInfoInput,
+  ProjectIconInput,
+  ProjectIconResult,
   ProjectInspection,
   ProjectTemplateSummary,
   ProjectTrustDecisionInput,
+  ServiceInfo,
   StartDevServerInput,
   StopDevServerInput,
+  StopServiceInput,
+  SystemProcessInfo,
+  SystemStatsResult,
   TerminalDisposeInput,
   TerminalEvent,
   TerminalResizeInput,
@@ -149,10 +191,16 @@ export interface SpaceAPI {
     clone(input: CloneProjectInput): Promise<Project>;
     /** PRJ-005: gated by project trust unless `allowOnce` is set. */
     installDependencies(input: InstallDependenciesInput): Promise<InstallDependenciesResult>;
+    /** Runs the package manager's semver-respecting update; same trust gate as install. */
+    updateDependencies(input: InstallDependenciesInput): Promise<InstallDependenciesResult>;
+    /** Real per-project runtime/package-manager/lockfile/scripts/env-var summary for the Environment screen's Project Environment panel. */
+    environmentInfo(input: ProjectEnvironmentInfoInput): Promise<ProjectEnvironmentInfo>;
     /** Opens the native folder picker for a create/clone destination parent. */
     pickParentDirectory(): Promise<string | null>;
     /** M8: fires the `project-opened` automation trigger (spec 18.2) — call once when the user actually opens a project's working view, not on every list render. */
     opened(projectId: string): Promise<void>;
+    /** Read-only: the project's own icon asset (shipped favicon/app icon) as a data URL, or null when it has none. */
+    icon(input: ProjectIconInput): Promise<ProjectIconResult | null>;
   };
   readonly terminal: {
     /** TERM-002: permanently binds the session to workspaceId/projectId at creation. */
@@ -169,6 +217,12 @@ export interface SpaceAPI {
     start(input: StartDevServerInput): Promise<DevProcessInfo>;
     stop(input: StopDevServerInput): Promise<void>;
     list(projectId: string): Promise<DevProcessInfo[]>;
+  };
+  readonly services: {
+    /** Merges dev servers, matched Docker/Podman containers, and processes running inside the project's terminals. */
+    list(projectId: string): Promise<ServiceInfo[]>;
+    /** Stops by kind: SIGTERM/SIGKILL for devServer + process, `docker`/`podman stop` for container. */
+    stop(input: StopServiceInput): Promise<void>;
   };
   readonly git: {
     /** GIT-001: the authoritative status read (spec 11.4/11.12) — a watcher hint is never trusted on its own. */
@@ -195,6 +249,24 @@ export interface SpaceAPI {
     conflictState(input: GitProjectInput): Promise<GitConflictState>;
     continueConflict(input: GitProjectInput): Promise<GitOperationOutcome>;
     abortConflict(input: GitProjectInput): Promise<GitOperationOutcome>;
+    /** Real `git diff --numstat` for both halves (staged + unstaged) of the working tree. */
+    diffStats(input: GitProjectInput): Promise<GitDiffStats>;
+    /** Real unified patch text for one file on one side of the index. */
+    diffFile(input: GitFileDiffInput): Promise<GitFileDiffResult>;
+    /** Configured remotes with their fetch/push URLs (`git remote -v`). */
+    listRemotes(input: GitProjectInput): Promise<readonly GitRemoteEntry[]>;
+    /** Stash entries, newest first (`stash@{0}` at index 0); empty when the repo has no stashes. */
+    listStashes(input: GitProjectInput): Promise<readonly GitStashEntry[]>;
+    /** Non-destructive `git stash apply`: restores the entry but keeps it in the stash list. */
+    applyStash(input: GitStashActionInput): Promise<GitOperationOutcome>;
+    /** Destructive `git stash drop`; `confirmed` is a structural gate (@space/domain), not a UI-only check. */
+    dropStash(input: GitStashActionInput): Promise<void>;
+    /** Tags with their peeled target, subject, and tagged date (`git for-each-ref refs/tags`). */
+    listTags(input: GitProjectInput): Promise<readonly GitTagEntry[]>;
+    /** Linked working trees (`git worktree list`); `isCurrent` marks the one owning this project. */
+    listWorktrees(input: GitProjectInput): Promise<readonly GitWorktreeEntry[]>;
+    /** GIT-008: resolves one conflicted file by taking a whole side (`git checkout --ours|--theirs <path>`), then stages it. */
+    resolveConflict(input: GitConflictResolveInput): Promise<void>;
   };
   readonly activity: {
     /** ACT-002/003: raw events over a date range; the renderer aggregates into the grid/daily detail. */
@@ -276,6 +348,16 @@ export interface SpaceAPI {
     permissionRevoke(input: AgentPermissionRevokeInput): Promise<void>;
     permissionList(workspaceId: string): Promise<readonly AgentStandingPermissionSummary[]>;
   };
+  readonly ai: {
+    /** Whether an Anthropic API key is configured (OS-backed safeStorage) — never returns the key itself. */
+    keyStatus(): Promise<AiKeyStatus>;
+    /** Encrypts and stores the key via Electron's safeStorage; overwrites any existing key. */
+    setApiKey(input: AiSetApiKeyInput): Promise<void>;
+    /** Scans the project for TODO/FIXME comments and asks Claude to propose a fix for each — read-only, never writes. */
+    reviewComments(input: AiReviewCommentsInput): Promise<AiReviewCommentsResult>;
+    /** Writes one proposed fix to disk — the renderer must have already confirmed with the user. */
+    applyFix(input: AiApplyFixInput): Promise<AiApplyFixResult>;
+  };
   readonly automation: {
     /** spec 18.1: validated (workspaceId/project scope/trigger/conditions/ordered actions) before it is ever persisted. */
     create(input: AutomationCreateInput): Promise<AutomationSummary>;
@@ -293,5 +375,46 @@ export interface SpaceAPI {
     /** spec 29.2: opt-in beta telemetry, default OFF, app-level (not per-workspace). */
     getTelemetryEnabled(): Promise<boolean>;
     setTelemetryEnabled(enabled: boolean): Promise<void>;
+  };
+  readonly environment: {
+    /** Real, read-only machine scan (@space/environment's performScan) — toolchain versions, package manager (Homebrew/WinGet), disk space. Never installs or modifies anything. */
+    scan(input?: EnvironmentScanInput): Promise<EnvironmentScanResult>;
+    /** Runs the manifest's real install strategy for one tool — gated by `allowOnce` the same way project installs are. */
+    installTool(input: EnvironmentToolActionInput): Promise<EnvironmentToolActionResult>;
+    /** Runs the manifest's real update strategy for one tool. */
+    updateTool(input: EnvironmentToolActionInput): Promise<EnvironmentToolActionResult>;
+    /** Writes the renderer's current scan (as displayed) to a file the user picks via the native save dialog. */
+    exportReport(input: EnvironmentExportReportInput): Promise<EnvironmentExportReportResult>;
+  };
+  readonly connectedServices: {
+    /** Real, read-only Docker/Vercel/Supabase/gcloud CLI presence + auth status — never a fabricated OAuth flow. */
+    status(): Promise<ConnectedServicesResult>;
+    /** Opens a real login PTY (`docker login`/`vercel login`/`supabase login`/`gcloud auth login`) — same mechanism as `gh auth login`. */
+    startLogin(input: ConnectedServiceLoginInput): Promise<ConnectedServiceLoginResult>;
+    /** Runs a real, non-interactive deploy (`vercel deploy --prod --yes`) in the project's directory — no terminal required. Only Vercel supports this today. */
+    deploy(input: ConnectedServiceDeployInput): Promise<ConnectedServiceDeployResult>;
+  };
+  readonly packages: {
+    /** Real, full inventory of every Homebrew formula/cask and global npm package actually installed on this machine (WinGet on win32). */
+    listInstalled(): Promise<PackageListInstalledResult>;
+    /** Real search across Homebrew (formula + cask) and the public npm registry — merged, one result list, regardless of source. */
+    search(input: PackageSearchInput): Promise<PackageSearchResult>;
+    install(input: PackageActionInput): Promise<PackageActionResult>;
+    update(input: PackageActionInput): Promise<PackageActionResult>;
+    uninstall(input: PackageActionInput): Promise<PackageActionResult>;
+  };
+  readonly menu: {
+    /** Subscribe to native application-menu commands (main -> renderer). Mirrors terminal.subscribe's Unsubscribe shape. */
+    onCommand(listener: (command: MenuCommand) => void): Unsubscribe;
+  };
+  readonly system: {
+    /** Real, on-demand CPU/memory/load sample (Node's os module) — no background polling loop the renderer didn't ask for. */
+    stats(): Promise<SystemStatsResult>;
+    /** Real top-CPU process list from `ps` (macOS); empty on platforms without a wired parser rather than fabricated. */
+    processes(): Promise<readonly SystemProcessInfo[]>;
+  };
+  readonly dependencies: {
+    /** Real `npm|pnpm audit --json` + `outdated --json` for one project's real package manager — read-only, never `audit fix`. Yarn reports `supported: false` with a reason instead of a guessed parse. */
+    scan(input: DependencyScanInput): Promise<DependencyScanResult>;
   };
 }

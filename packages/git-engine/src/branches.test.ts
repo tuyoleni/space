@@ -9,6 +9,7 @@ import {
   renameBranch,
   setUpstream,
   switchBranch,
+  switchTargetFromRef,
 } from './branches';
 
 describe('createBranch / switchBranch / renameBranch', () => {
@@ -22,6 +23,21 @@ describe('createBranch / switchBranch / renameBranch', () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
     await switchBranch('/repo', 'main', executor);
     expect(executor).toHaveBeenCalledWith(['switch', '--', 'main'], { cwd: '/repo' });
+  });
+
+  it('normalizes a full refname to the switch target (never `git switch refs/heads/main`)', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+    await switchBranch('/repo', 'refs/heads/main', executor);
+    expect(executor).toHaveBeenCalledWith(['switch', '--', 'main'], { cwd: '/repo' });
+  });
+
+  it('switchTargetFromRef maps local, remote, and bare names', () => {
+    expect(switchTargetFromRef('refs/heads/main')).toBe('main');
+    expect(switchTargetFromRef('refs/heads/feature/foo')).toBe('feature/foo');
+    expect(switchTargetFromRef('refs/remotes/origin/main')).toBe('main');
+    expect(switchTargetFromRef('refs/remotes/origin/feature/foo')).toBe('feature/foo');
+    expect(switchTargetFromRef('main')).toBe('main');
+    expect(switchTargetFromRef('feature/foo')).toBe('feature/foo');
   });
 
   it('renames a branch', async () => {

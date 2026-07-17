@@ -36,8 +36,30 @@ export async function createBranch(
   await run(executor, createBranchArgs(name, fromCommit), cwd);
 }
 
+/**
+ * `git switch` expects a branch *shortname*, never a fully-qualified ref:
+ * `git switch refs/heads/main` fails with "a branch is expected, got
+ * 'refs/heads/main'". Callers (menus, graph ref badges) legitimately hold
+ * full refnames, so normalize here:
+ *  - `refs/heads/<branch>`            → `<branch>` (switch to the local branch)
+ *  - `refs/remotes/<remote>/<branch>` → `<branch>` (git DWIMs a tracking branch)
+ * A bare shortname (`main`, `feature/x`, or a brand-new branch name) is passed
+ * through untouched.
+ */
+export function switchTargetFromRef(name: string): string {
+  if (name.startsWith('refs/heads/')) {
+    return name.slice('refs/heads/'.length);
+  }
+  if (name.startsWith('refs/remotes/')) {
+    const rest = name.slice('refs/remotes/'.length);
+    const slash = rest.indexOf('/');
+    return slash >= 0 ? rest.slice(slash + 1) : rest;
+  }
+  return name;
+}
+
 export async function switchBranch(cwd: string, name: string, executor: GitExecutor): Promise<void> {
-  await run(executor, switchBranchArgs(name), cwd);
+  await run(executor, switchBranchArgs(switchTargetFromRef(name)), cwd);
 }
 
 export async function renameBranch(cwd: string, oldName: string, newName: string, executor: GitExecutor): Promise<void> {

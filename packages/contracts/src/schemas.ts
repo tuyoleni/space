@@ -132,6 +132,12 @@ export const gitStageInputSchema = z.object({
   paths: z.array(z.string().min(1)).min(1),
 });
 
+export const gitFileDiffInputSchema = z.object({
+  projectId: z.string().min(1),
+  path: z.string().min(1),
+  staged: z.boolean(),
+});
+
 export const gitCommitInputSchema = z.object({
   projectId: z.string().min(1),
   message: z.string().trim().min(1).max(10_000),
@@ -183,6 +189,18 @@ export const gitPushInputSchema = z.object({
   remoteName: z.string().trim().min(1).max(250).optional(),
   setUpstream: z.boolean().optional(),
   force: gitForceModeSchema.optional(),
+  confirmed: z.boolean().optional(),
+});
+
+export const gitConflictResolveInputSchema = z.object({
+  projectId: z.string().min(1),
+  path: z.string().min(1),
+  side: z.enum(['ours', 'theirs']),
+});
+
+export const gitStashActionInputSchema = z.object({
+  projectId: z.string().min(1),
+  index: z.number().int().min(0),
   confirmed: z.boolean().optional(),
 });
 
@@ -520,6 +538,22 @@ export const agentPermissionRevokeInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const aiSetApiKeyInputSchema = z.object({
+  apiKey: z.string().trim().min(1).max(500),
+});
+
+export const aiReviewCommentsInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export const aiApplyFixInputSchema = z.object({
+  projectId: z.string().min(1),
+  file: z.string().min(1),
+  line: z.number().int().min(1),
+  originalLine: z.string(),
+  newLine: z.string(),
+});
+
 // ---------------------------------------------------------------------------
 // M8: automation (spec section 18). `trigger`/`conditions`/`actions` are
 // validated for real by @space/automation's own schemas inside
@@ -563,3 +597,37 @@ export const projectOpenedInputSchema = z.object({ projectId: z.string().min(1) 
 
 /** M8: telemetry opt-in (spec 29.2) — app-level, not workspace-scoped. */
 export const appSettingsTelemetrySetInputSchema = z.object({ enabled: z.boolean() });
+
+export const environmentToolActionInputSchema = z.object({
+  toolId: z.string().min(1),
+  allowOnce: z.boolean().optional(),
+});
+
+/** `scan`/`connectedServices` are the renderer's own prior IPC-response shapes (not further constrained here) written back to a file as-is. */
+export const environmentExportReportInputSchema = z.object({
+  scan: z.unknown(),
+  connectedServices: z.unknown().nullable().optional(),
+});
+
+export const projectEnvironmentInfoInputSchema = z.object({ projectId: z.string().min(1) });
+
+const connectedServiceIdSchema = z.enum(['docker', 'vercel', 'supabase', 'gcloud']);
+
+export const connectedServiceLoginInputSchema = z.object({
+  workspaceId: z.string().min(1),
+  service: connectedServiceIdSchema,
+});
+
+export const connectedServiceDeployInputSchema = z.object({
+  projectId: z.string().min(1),
+  service: connectedServiceIdSchema,
+});
+
+const packageSourceSchema = z.enum(['homebrew-formula', 'homebrew-cask', 'npm-global', 'winget']);
+
+export const packageSearchInputSchema = z.object({ query: z.string().trim().min(1).max(200) });
+
+export const packageActionInputSchema = z.object({
+  source: packageSourceSchema,
+  name: z.string().trim().min(1).max(200),
+});

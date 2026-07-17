@@ -21,9 +21,12 @@ export const IPC_CHANNELS = {
   projectCreateFromTemplate: 'project:createFromTemplate',
   projectClone: 'project:clone',
   projectInstallDependencies: 'project:installDependencies',
+  projectUpdateDependencies: 'project:updateDependencies',
   projectPickParentDirectory: 'project:pickParentDirectory',
   /** M8: fires the `project-opened` automation trigger (spec 18.2) — no other side effect. */
   projectOpened: 'project:opened',
+  /** Read-only: resolves a project's real icon asset (favicon/app icon). */
+  projectIcon: 'project:icon',
 
   terminalCreate: 'terminal:create',
   terminalWrite: 'terminal:write',
@@ -36,6 +39,9 @@ export const IPC_CHANNELS = {
   devServerStart: 'project:devServer:start',
   devServerStop: 'project:devServer:stop',
   devServerList: 'project:devServer:list',
+
+  servicesList: 'project:services:list',
+  servicesStop: 'project:services:stop',
 
   // M5: Git (GIT-001..009)
   gitStatus: 'git:status',
@@ -53,6 +59,15 @@ export const IPC_CHANNELS = {
   gitConflictState: 'git:conflict:state',
   gitConflictContinue: 'git:conflict:continue',
   gitConflictAbort: 'git:conflict:abort',
+  gitDiffStats: 'git:diff:stats',
+  gitDiffFile: 'git:diff:file',
+  gitRemoteList: 'git:remote:list',
+  gitStashList: 'git:stash:list',
+  gitStashApply: 'git:stash:apply',
+  gitStashDrop: 'git:stash:drop',
+  gitTagList: 'git:tag:list',
+  gitWorktreeList: 'git:worktree:list',
+  gitConflictResolve: 'git:conflict:resolve',
 
   // M5: activity (spec section 17)
   activityListRange: 'activity:listRange',
@@ -107,6 +122,12 @@ export const IPC_CHANNELS = {
   agentPermissionRevoke: 'agent:permission:revoke',
   agentPermissionList: 'agent:permission:list',
 
+  // AI comment review — real Anthropic API calls, key stored via safeStorage
+  aiKeyStatus: 'ai:key:status',
+  aiSetApiKey: 'ai:key:set',
+  aiReviewComments: 'ai:review:comments',
+  aiApplyFix: 'ai:review:applyFix',
+
   // M8: automation (spec section 18)
   automationList: 'automation:list',
   automationCreate: 'automation:create',
@@ -119,6 +140,40 @@ export const IPC_CHANNELS = {
   // M8: app-level settings (spec 29.2 telemetry opt-in)
   appSettingsTelemetryGet: 'appSettings:telemetry:get',
   appSettingsTelemetrySet: 'appSettings:telemetry:set',
+
+  // Real machine toolchain/package-manager/disk scan (@space/environment, read-only)
+  environmentScan: 'environment:scan',
+  // Real tool install/update (a manifest install/update strategy, gated the same way project installs are)
+  environmentInstallTool: 'environment:installTool',
+  environmentUpdateTool: 'environment:updateTool',
+  // Writes the renderer's current scan (+ connected services) to a real file the user picks
+  environmentExportReport: 'environment:exportReport',
+
+  // Real per-project runtime/package-manager/lockfile/scripts/env-var summary
+  projectEnvironmentInfo: 'project:environmentInfo',
+
+  // Real, read-only Docker/Vercel/Supabase/gcloud presence+auth checks; startLogin opens a real login PTY
+  connectedServicesStatus: 'connectedServices:status',
+  connectedServicesStartLogin: 'connectedServices:startLogin',
+  // Real, non-interactive deploy (currently Vercel only) — runs in the project's directory
+  connectedServicesDeploy: 'connectedServices:deploy',
+
+  // Unified package manager: real Homebrew (formula+cask)/npm-global/WinGet inventory, search, install/update/uninstall
+  packagesListInstalled: 'packages:listInstalled',
+  packagesSearch: 'packages:search',
+  packagesInstall: 'packages:install',
+  packagesUpdate: 'packages:update',
+  packagesUninstall: 'packages:uninstall',
+
+  /** Push-only channel (main -> renderer): native menu item was clicked; payload is a MenuCommand string. */
+  menuCommand: 'menu:command',
+
+  // Real live system resource stats (CPU/memory/load), read-only
+  systemStats: 'system:stats',
+  systemProcesses: 'system:processes',
+
+  // Real dependency vulnerability/outdated scan (npm/pnpm audit+outdated), read-only
+  dependencyScan: 'dependency:scan',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

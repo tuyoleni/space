@@ -87,3 +87,23 @@ export function installCommandFor(packageManager: JsPackageManagerId): InstallCo
     }
   }
 }
+
+/**
+ * The non-interactive update command for a resolved package manager. Uses
+ * each tool's semver-respecting update (never a forced major jump or a
+ * package.json range rewrite) so it's safe to run without further prompts.
+ */
+export function updateCommandFor(packageManager: JsPackageManagerId): InstallCommand {
+  switch (packageManager) {
+    case 'npm':
+      return { executable: 'npm', args: ['update'] };
+    case 'yarn':
+      return { executable: 'yarn', args: ['upgrade'] };
+    case 'pnpm':
+      return { executable: 'pnpm', args: ['update'] };
+    default: {
+      const exhaustive: never = packageManager;
+      throw new Error(`Unknown package manager: ${String(exhaustive)}`);
+    }
+  }
+}

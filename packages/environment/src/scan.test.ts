@@ -89,10 +89,19 @@ describe('performScan (spec section 8.2, ONB-002)', () => {
     expect(calls.runCommand.some((c) => c.startsWith('git'))).toBe(false);
   });
 
-  it('scans all five manifest tools on darwin', async () => {
+  it('scans every manifest tool on darwin, including optional ones', async () => {
     const { deps } = makeDeps({});
     const result = await performScan(TOOL_MANIFEST, deps);
-    expect(result.tools.map((t) => t.toolId).sort()).toEqual(['gh', 'git', 'node', 'npm', 'volta']);
+    expect(result.tools.map((t) => t.toolId).sort()).toEqual([
+      'bun',
+      'gh',
+      'git',
+      'node',
+      'npm',
+      'pnpm',
+      'python',
+      'volta',
+    ]);
   });
 
   it('detects Homebrew at the Apple Silicon prefix before falling back to PATH', async () => {

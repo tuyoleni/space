@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DestructiveGitActionNotConfirmedError } from '@space/domain';
 import type { GitExecutor } from './clone';
 import type { GitIdentity } from './identity';
-import { addRemote, describePush, fetchRemote, getRemoteUrl, pullRemote, pushToRemote } from './remote';
+import { createNodeGitExecutor } from './node-git-executor';
+import { addRemote, describePush, fetchRemote, getRemoteUrl, listRemotes, parseRemoteVerbose, pullRemote, pushToRemote } from './remote';
 
 const identity: GitIdentity = { name: 'A', email: 'a@example.com', signingPolicy: 'none', signingKeyId: null };
 
@@ -45,6 +50,57 @@ describe('addRemote / getRemoteUrl', () => {
   it('returns null when the remote does not exist', async () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 2, stdout: '', stderr: 'error: No such remote' }));
     await expect(getRemoteUrl('/repo', 'origin', executor)).resolves.toBeNull();
+  });
+});
+
+describe('parseRemoteVerbose', () => {
+  it('pairs the fetch and push lines of each remote and preserves first-seen order', () => {
+    const stdout = [
+      'origin\thttps://github.com/acme/widgets.git (fetch)',
+      'origin\thttps://github.com/acme/widgets.git (push)',
+      'upstream\tgit@github.com:upstream/widgets.git (fetch)',
+      'upstream\tgit@github.com:upstream/widgets.git (push)',
+    ].join('\n');
+    expect(parseRemoteVerbose(stdout)).toEqual([
+      { name: 'origin', fetchUrl: 'https://github.com/acme/widgets.git', pushUrl: 'https://github.com/acme/widgets.git' },
+      { name: 'upstream', fetchUrl: 'git@github.com:upstream/widgets.git', pushUrl: 'git@github.com:upstream/widgets.git' },
+    ]);
+  });
+
+  it('keeps a distinct push URL when one is configured, and returns [] for no remotes', () => {
+    const stdout = [
+      'origin\thttps://github.com/acme/widgets.git (fetch)',
+      'origin\tssh://git@github.com/acme/widgets.git (push)',
+    ].join('\n');
+    expect(parseRemoteVerbose(stdout)[0]).toEqual({
+      name: 'origin',
+      fetchUrl: 'https://github.com/acme/widgets.git',
+      pushUrl: 'ssh://git@github.com/acme/widgets.git',
+    });
+    expect(parseRemoteVerbose('')).toEqual([]);
+  });
+});
+
+describe('listRemotes against a real repo', () => {
+  let dir: string;
+  let git: GitExecutor;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-remote-'));
+    git = createNodeGitExecutor();
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns [] with no remotes and reads a real remote after it is added', async () => {
+    await expect(listRemotes(dir, git)).resolves.toEqual([]);
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widgets.git'], { cwd: dir });
+    await expect(listRemotes(dir, git)).resolves.toEqual([
+      { name: 'origin', fetchUrl: 'https://github.com/acme/widgets.git', pushUrl: 'https://github.com/acme/widgets.git' },
+    ]);
   });
 });
 

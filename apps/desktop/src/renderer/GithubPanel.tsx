@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { GitPullRequest, LogIn, LogOut, RefreshCw } from 'lucide-react';
 import type { GithubAuthReport, GithubIssueSummary, GithubPullRequestSummary, TerminalSessionInfo } from '@space/contracts';
+import { Badge, Button, InlineBanner, Input, StatusDot } from '@space/ui';
 import { TerminalPanel } from './TerminalPanel';
 
 /**
@@ -180,97 +182,113 @@ export function GithubPanel({ workspaceId }: GithubPanelProps) {
   }
 
   return (
-    <section style={{ border: '1px dashed #666', borderRadius: 6, padding: '0.75rem', marginTop: '1rem' }}>
-      <h2>GitHub</h2>
-
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button type="button" disabled={busy} onClick={() => void guarded(refreshReport)}>
-          Refresh auth status
-        </button>
-        <button type="button" disabled={busy} onClick={handleSignIn}>
-          Sign in&hellip;
-        </button>
-        <button type="button" disabled={busy || !report?.authenticated} onClick={handleSignOut}>
-          Sign out
-        </button>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void guarded(refreshReport)}>
+          <RefreshCw size={13} /> Refresh auth status
+        </Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={handleSignIn}>
+          <LogIn size={13} /> Sign in&hellip;
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy || !report?.authenticated} onClick={handleSignOut}>
+          <LogOut size={13} /> Sign out
+        </Button>
       </div>
 
       {report && (
-        <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-          <div>CLI installed: {report.cliInstalled ? `yes (${report.cliVersion ?? 'unknown version'})` : 'no'}</div>
-          <div>
-            Authenticated: {report.authenticated ? 'yes' : 'no'}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+          <span className="text-fg-muted">CLI installed</span>
+          <span className="text-fg">{report.cliInstalled ? `Yes (${report.cliVersion ?? 'unknown version'})` : 'No'}</span>
+          <span className="text-fg-muted">Authenticated</span>
+          <span className="flex items-center gap-1.5 text-fg">
+            <StatusDot tone={report.authenticated ? 'success' : 'neutral'} />
+            {report.authenticated ? 'Yes' : 'No'}
             {report.activeAccount && ` as ${report.activeAccount.account} on ${report.activeAccount.host}`}
-          </div>
-          <div>Git protocol: {report.gitProtocol ?? 'unknown'}</div>
-          <div>Token source: {report.tokenSourceStrategy}</div>
+          </span>
+          <span className="text-fg-muted">Git protocol</span>
+          <span className="text-fg">{report.gitProtocol ?? 'unknown'}</span>
+          <span className="text-fg-muted">Token source</span>
+          <span className="text-fg">{report.tokenSourceStrategy}</span>
         </div>
       )}
 
       {loginSession && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <em>Follow the instructions below to finish signing in, then refresh auth status.</em>
-          <TerminalPanel session={loginSession} />
+        <div>
+          <p className="mb-1.5 text-xs text-fg-muted">Follow the instructions below to finish signing in, then refresh auth status.</p>
+          <div className="overflow-hidden rounded-md border border-border">
+            <TerminalPanel session={loginSession} />
+          </div>
         </div>
       )}
 
       {!authenticated && (
-        <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#a15c00' }}>
-          Sign in to GitHub above to use pull request and issue actions (spec GH-009: remote actions are
-          disabled with a clear reason while GitHub is unavailable).
-        </p>
+        <InlineBanner variant="info">
+          Sign in to GitHub above to use pull request and issue actions.
+        </InlineBanner>
       )}
 
-      <div style={{ marginTop: '1rem', display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+      <div className="grid grid-cols-2 gap-6">
         <div>
-          <h3>Pull requests</h3>
-          <button type="button" disabled={busy || !authenticated} onClick={handleListPrs}>
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg">
+            <GitPullRequest size={14} /> Pull requests
+          </h3>
+          <Button size="sm" variant="ghost" disabled={busy || !authenticated} onClick={handleListPrs}>
             List open PRs
-          </button>
-          <ul style={{ margin: '0.5rem 0', paddingLeft: '1rem', fontSize: '0.85rem' }}>
+          </Button>
+          <ul className="my-2 flex flex-col gap-1">
             {prs.map((pr) => (
-              <li key={pr.number}>
-                #{pr.number} {pr.title} ({pr.headRefName} &rarr; {pr.baseRefName}){' '}
-                <button type="button" disabled={busy || !authenticated} onClick={() => handleMergePr(pr)}>
+              <li key={pr.number} className="flex items-center justify-between gap-2 rounded px-1.5 py-1 text-sm hover:bg-surface-hover">
+                <span className="truncate text-fg">
+                  #{pr.number} {pr.title}{' '}
+                  <span className="text-fg-faint">
+                    ({pr.headRefName} → {pr.baseRefName})
+                  </span>
+                </span>
+                <Button size="sm" variant="ghost" disabled={busy || !authenticated} onClick={() => handleMergePr(pr)}>
                   Merge
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
-          <fieldset disabled={busy || !authenticated}>
-            <legend>Create PR from current branch</legend>
-            <input type="text" placeholder="Title" aria-label="Pull request title" value={prTitle} onChange={(event) => setPrTitle(event.target.value)} />
-            <input type="text" placeholder="Head branch" aria-label="Head branch" value={prHead} onChange={(event) => setPrHead(event.target.value)} />
-            <input type="text" placeholder="Base branch" aria-label="Base branch" value={prBase} onChange={(event) => setPrBase(event.target.value)} />
-            <button type="button" disabled={!authenticated || !prTitle.trim() || !prHead.trim()} onClick={handleCreatePr}>
-              Create PR
-            </button>
+          <fieldset disabled={busy || !authenticated} className="flex flex-col gap-2">
+            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-faint">Create PR from current branch</legend>
+            <Input placeholder="Title" aria-label="Pull request title" value={prTitle} onChange={(event) => setPrTitle(event.target.value)} />
+            <Input placeholder="Head branch" aria-label="Head branch" value={prHead} onChange={(event) => setPrHead(event.target.value)} />
+            <Input placeholder="Base branch" aria-label="Base branch" value={prBase} onChange={(event) => setPrBase(event.target.value)} />
+            <div>
+              <Button size="sm" variant="primary" disabled={!authenticated || !prTitle.trim() || !prHead.trim()} onClick={handleCreatePr}>
+                Create PR
+              </Button>
+            </div>
           </fieldset>
         </div>
 
         <div>
-          <h3>Issues</h3>
-          <button type="button" disabled={busy || !authenticated} onClick={handleListIssues}>
+          <h3 className="mb-2 text-sm font-semibold text-fg">Issues</h3>
+          <Button size="sm" variant="ghost" disabled={busy || !authenticated} onClick={handleListIssues}>
             List open issues
-          </button>
-          <ul style={{ margin: '0.5rem 0', paddingLeft: '1rem', fontSize: '0.85rem' }}>
+          </Button>
+          <ul className="my-2 flex flex-col gap-1">
             {issues.map((issue) => (
-              <li key={issue.number}>
-                #{issue.number} {issue.title}
+              <li key={issue.number} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm">
+                <Badge>#{issue.number}</Badge>
+                <span className="truncate text-fg">{issue.title}</span>
               </li>
             ))}
           </ul>
-          <fieldset disabled={busy || !authenticated}>
-            <legend>Create issue</legend>
-            <input type="text" placeholder="Title" aria-label="Issue title" value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} />
-            <button type="button" disabled={!authenticated || !issueTitle.trim()} onClick={handleCreateIssue}>
-              Create issue
-            </button>
+          <fieldset disabled={busy || !authenticated} className="flex flex-col gap-2">
+            <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-faint">Create issue</legend>
+            <Input placeholder="Title" aria-label="Issue title" value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} />
+            <div>
+              <Button size="sm" variant="primary" disabled={!authenticated || !issueTitle.trim()} onClick={handleCreateIssue}>
+                Create issue
+              </Button>
+            </div>
           </fieldset>
         </div>
       </div>
 
-      {error && <p role="alert">{error}</p>}
-    </section>
+      {error && <InlineBanner variant="error">{error}</InlineBanner>}
+    </div>
   );
 }

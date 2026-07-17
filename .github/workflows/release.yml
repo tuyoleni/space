@@ -1,0 +1,56 @@
+name: release
+
+# Builds unsigned macOS zips for both architectures and attaches them to a
+# GitHub Release whenever a version tag is pushed. No code signing yet —
+# add `osxSign`/`osxNotarize` to apps/desktop/forge.config.ts once there's
+# an Apple Developer ID cert, then this workflow needs no changes (electron-
+# forge picks it up automatically).
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon runner
+            arch: arm64
+          - os: macos-13 # Intel runner
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run make --workspace apps/desktop -- --arch=${{ matrix.arch }}
+
+      - name: Rename artifact with arch suffix
+        run: |
+          cd apps/desktop/out/make/zip/darwin/${{ matrix.arch }}
+          mv *.zip "space-darwin-${{ matrix.arch }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: space-darwin-${{ matrix.arch }}
+          path: apps/desktop/out/make/zip/darwin/${{ matrix.arch }}/space-darwin-${{ matrix.arch }}.zip
+
+  release:
+    needs: build-macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true

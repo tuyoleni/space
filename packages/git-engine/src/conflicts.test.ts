@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitExecutor } from './clone';
+import { createNodeGitExecutor } from './node-git-executor';
 import type { GitDirFsPort } from './repository-state';
-import { abortOperation, continueOperation, deriveConflictState } from './conflicts';
+import { abortOperation, continueOperation, deriveConflictState, resolveConflict } from './conflicts';
 import type { RepositoryStatus } from './status/types';
 
 function statusWithUnmerged(paths: readonly string[]): RepositoryStatus {
@@ -70,5 +75,71 @@ describe('abortOperation', () => {
     const outcome = await abortOperation('/repo', '/repo/.git', { kind: 'rebase', interactive: true }, executor, gitDirFs);
     expect(executor).toHaveBeenCalledWith(['rebase', '--abort'], { cwd: '/repo' });
     expect(outcome.completed).toBe(true);
+  });
+});
+
+describe('resolveConflict', () => {
+  it('checks out the chosen side then stages the path, in that order, with -- separators', async () => {
+    const calls: string[][] = [];
+    const executor: GitExecutor = vi.fn(async (args) => {
+      calls.push([...args]);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+    await resolveConflict('/repo', 'a.txt', 'theirs', executor);
+    expect(calls).toEqual([
+      ['checkout', '--theirs', '--', 'a.txt'],
+      ['add', '--', 'a.txt'],
+    ]);
+  });
+
+  it('throws (and does not stage) when the checkout fails', async () => {
+    const executor: GitExecutor = vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: "error: path 'a.txt' does not have our version" }));
+    await expect(resolveConflict('/repo', 'a.txt', 'ours', executor)).rejects.toThrow(/does not have our version/);
+    expect(executor).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveConflict against a real merge conflict', () => {
+  let dir: string;
+  let git: GitExecutor;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-conflict-'));
+    git = createNodeGitExecutor();
+    const run = (...args: string[]): void => {
+      execFileSync('git', args, { cwd: dir });
+    };
+    run('init', '-q', '-b', 'main');
+    run('config', 'user.email', 'fixture@space.test');
+    run('config', 'user.name', 'Fixture');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'base\n');
+    run('add', 'a.txt');
+    run('commit', '-q', '-m', 'base');
+    // ours: main
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'ours change\n');
+    run('commit', '-q', '-am', 'ours');
+    // theirs: feature branched from base
+    run('checkout', '-q', '-b', 'feature', 'HEAD~1');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'theirs change\n');
+    run('commit', '-q', '-am', 'theirs');
+    run('checkout', '-q', 'main');
+    // conflict
+    expect(() => run('merge', 'feature')).toThrow();
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('taking ours writes our version and clears the file from the unmerged set', async () => {
+    await resolveConflict(dir, 'a.txt', 'ours', git);
+    expect(fs.readFileSync(path.join(dir, 'a.txt'), 'utf-8')).toBe('ours change\n');
+    const unmerged = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: dir }).toString().trim();
+    expect(unmerged).toBe('');
+  });
+
+  it('taking theirs writes their version', async () => {
+    await resolveConflict(dir, 'a.txt', 'theirs', git);
+    expect(fs.readFileSync(path.join(dir, 'a.txt'), 'utf-8')).toBe('theirs change\n');
   });
 });

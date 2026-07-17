@@ -8,21 +8,36 @@ import { TOOL_MANIFEST, computeManifestFingerprint, verifyManifestFingerprint } 
  * guidance for any tool) changes this value — deliberately update the
  * constant below when that happens, so drift is never silent.
  */
-const PINNED_MANIFEST_FINGERPRINT = 'd7b358d72a209f3fcaa1733f43f3c0a3c97eb34dcfec2234f2fe7e7c79ba11df';
+const PINNED_MANIFEST_FINGERPRINT = 'ec0c4086bf952a5bdda0655f49bbb97c1b265d3fa94c48f905804a050f4dddfd';
 
 describe('TOOL_MANIFEST (spec section 8.3, ONB-003)', () => {
   it('declares exactly the default essential set (spec section 8.9)', () => {
-    expect(TOOL_MANIFEST.entries.map((entry) => entry.id)).toEqual(['git', 'gh', 'volta', 'node', 'npm']);
+    expect(TOOL_MANIFEST.entries.map((entry) => entry.id)).toEqual([
+      'git',
+      'gh',
+      'volta',
+      'node',
+      'npm',
+      'pnpm',
+      'bun',
+      'python',
+    ]);
   });
 
-  it('every entry supports both target platforms and required fields are present', () => {
+  it('every entry supports both target platforms and has its required fields present', () => {
     for (const entry of TOOL_MANIFEST.entries) {
       expect(entry.supportedPlatforms).toEqual(['darwin', 'win32']);
       expect(entry.detection.length).toBeGreaterThan(0);
       expect(entry.verify.length).toBeGreaterThan(0);
-      expect(entry.required).toBe(true);
       expect(['latest-supported', 'lts', 'pinned']).toContain(entry.recommendedVersionPolicy);
     }
+  });
+
+  it('git, gh, volta, node, and npm are the required essential tools; pnpm/Bun/Python are optional', () => {
+    const requiredIds = TOOL_MANIFEST.entries.filter((entry) => entry.required).map((entry) => entry.id);
+    const optionalIds = TOOL_MANIFEST.entries.filter((entry) => !entry.required).map((entry) => entry.id);
+    expect(requiredIds).toEqual(['git', 'gh', 'volta', 'node', 'npm']);
+    expect(optionalIds).toEqual(['pnpm', 'bun', 'python']);
   });
 
   it('every install strategy declares its official source, never a bare shell pipe', () => {

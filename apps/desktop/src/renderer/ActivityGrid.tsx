@@ -15,7 +15,7 @@ interface ActivityGridProps {
   readonly workspaceId: string;
 }
 
-const INTENSITY_COLOR = ['#2d2d2d', '#0e4429', '#006d32', '#26a641', '#39d353'];
+const INTENSITY_COLOR = ['#171b22', '#0e4429', '#006d32', '#26a641', '#39d353'];
 
 export function ActivityGrid({ workspaceId }: ActivityGridProps) {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
@@ -61,17 +61,16 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
   }
 
   return (
-    <section>
-      <h2>Activity</h2>
+    <div>
       {/* spec 28: "Full keyboard navigation for primary actions" — each day
           cell is its own focusable, keyboard-activatable control (role
           "button", Tab to reach it, Enter/Space to open its detail),
           rather than a mouse-only onClick div. The grid's own role stays
           "img" with a summary label since it reads as one visual whole;
           each cell overrides that with its own per-day label. */}
-      <div style={{ display: 'flex', overflowX: 'auto' }} role="img" aria-label="52-week activity grid">
+      <div className="flex overflow-x-auto" role="img" aria-label="52-week activity grid">
         {grid.weeks.map((week, weekIndex) => (
-          <div key={weekIndex} style={{ display: 'flex', flexDirection: 'column' }}>
+          <div key={weekIndex} className="flex flex-col">
             {week.days.map((cell) => (
               <div
                 key={cell.date}
@@ -79,6 +78,7 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
                 aria-label={dayCellAriaLabel(cell)}
                 role={cell.isFuture ? undefined : 'button'}
                 tabIndex={cell.isFuture ? undefined : 0}
+                className="focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-1"
                 style={cellStyle(cell)}
                 onClick={() => !cell.isFuture && setSelectedDate(cell.date)}
                 onKeyDown={(event) => handleCellKeyDown(event, cell)}
@@ -89,15 +89,15 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
       </div>
 
       {selectedDate && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <strong>{selectedDate}</strong>
+        <div className="mt-3">
+          <p className="text-sm font-medium text-fg">{selectedDate}</p>
           {detail.length === 0 ? (
-            <p>No activity.</p>
+            <p className="text-xs text-fg-faint">No activity.</p>
           ) : (
             detail.map((group) => (
-              <div key={`${group.workspaceId}::${group.projectId ?? ''}`} style={{ marginTop: '0.25rem' }}>
-                <em>{group.projectId ?? 'workspace-level'}</em>
-                <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.85rem' }}>
+              <div key={`${group.workspaceId}::${group.projectId ?? ''}`} className="mt-1.5">
+                <p className="text-xs font-medium italic text-fg-muted">{group.projectId ?? 'workspace-level'}</p>
+                <ul className="ml-4 list-disc text-xs text-fg-muted">
                   {group.events.map((event) => (
                     <li key={event.id}>
                       {event.summary}
@@ -110,6 +110,6 @@ export function ActivityGrid({ workspaceId }: ActivityGridProps) {
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }

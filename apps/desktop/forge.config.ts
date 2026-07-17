@@ -64,6 +64,10 @@ async function copyHoistedRuntimeDependencies(buildPath: string): Promise<void> 
 // desktop is a non-goal for the first production release).
 const config: ForgeConfig = {
   packagerConfig: {
+    // electron-packager appends the right extension per platform itself
+    // (.icns on darwin, .ico on win32) when given an extension-less path —
+    // both files live at assets/icons/icon.{icns,ico}.
+    icon: path.join(__dirname, 'assets', 'icons', 'icon'),
     // Unpack the native packages wholesale: node-pty needs its spawn-helper
     // executable (not a .node file) runnable from the real filesystem, which
     // the auto-unpack-natives plugin's *.node-only glob does not cover.
@@ -80,7 +84,10 @@ const config: ForgeConfig = {
     ],
   },
   rebuildConfig: {},
-  makers: [new MakerSquirrel({}), new MakerZIP({}, ['darwin'])],
+  makers: [
+    new MakerSquirrel({ setupIcon: path.join(__dirname, 'assets', 'icons', 'icon.ico') }),
+    new MakerZIP({}, ['darwin']),
+  ],
   plugins: [
     new VitePlugin({
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.

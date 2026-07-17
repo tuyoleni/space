@@ -38,6 +38,8 @@ export * from './commit';
 export * from './branches';
 export * from './remote';
 export * from './tag';
+export * from './stash';
+export * from './worktree';
 export * from './conflicts';
 export * from './queue';
 export * from './watcher';

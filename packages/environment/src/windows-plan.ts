@@ -119,7 +119,11 @@ export async function buildWindowsBootstrapPlan(scan: ScanResult, manifest: Tool
     deferredImplementation: false,
   });
 
-  const win32Entries = manifest.entries.filter((entry) => entry.supportedPlatforms.includes('win32'));
+  // Only the required essential set is ever planned for install during
+  // onboarding (spec section 39: "install every optional tool during
+  // onboarding" is a prohibited shortcut) — optional entries like pnpm/Bun/
+  // Python are detected by performScan for display but never planned here.
+  const win32Entries = manifest.entries.filter((entry) => entry.required && entry.supportedPlatforms.includes('win32'));
   const missing = win32Entries.filter((entry) => !isSatisfied(entry, scan));
 
   for (const entry of missing) {

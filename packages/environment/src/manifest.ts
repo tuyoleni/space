@@ -3,10 +3,13 @@ import type { ToolManifest, ToolManifestEntry } from './types';
 
 /**
  * Bootstrap manifest (spec section 8.3, ONB-003; default essential set,
- * spec section 8.9). Deliberately five entries — pnpm, Yarn, Python,
- * Docker, WSL, Java, Android tooling, and cloud CLIs stay project-triggered
- * or optional, per spec section 39 ("install every optional tool during
- * onboarding" is a prohibited shortcut).
+ * spec section 8.9). Five required entries (git, gh, volta, node, npm) plus
+ * pnpm, Bun, and Python as optional/project-triggered entries — detected and
+ * offered for install on the Environment screen, but never installed
+ * automatically during onboarding. Yarn, Docker, WSL, Java, Android tooling,
+ * and cloud CLIs remain out of the manifest entirely for now, per spec
+ * section 39 ("install every optional tool during onboarding" is a
+ * prohibited shortcut).
  *
  * "The manifest MUST be signed or packaged with the application release"
  * (spec 8.3). This manifest ships as a TypeScript module compiled into the
@@ -265,9 +268,155 @@ const NPM: ToolManifestEntry = {
   uninstallGuidance: 'npm is removed alongside its Volta-managed Node install.',
 };
 
+const PNPM: ToolManifestEntry = {
+  id: 'pnpm',
+  displayName: 'pnpm',
+  required: false,
+  supportedPlatforms: ['darwin', 'win32'],
+  architectures: ['arm64', 'x64'],
+  detection: [
+    { kind: 'command-on-path', executable: 'pnpm' },
+    { kind: 'version-command', executable: 'pnpm', versionArgs: ['--version'], versionPattern: '(\\d+\\.\\d+\\.\\d+)' },
+  ],
+  installStrategies: [
+    {
+      id: 'pnpm-homebrew',
+      platform: 'darwin',
+      kind: 'package-manager',
+      packageManagerId: 'homebrew',
+      packageId: 'pnpm',
+      executable: 'brew',
+      args: ['install', 'pnpm'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'Homebrew (https://brew.sh)',
+      officialSourceUrl: 'https://brew.sh',
+    },
+    {
+      id: 'pnpm-winget',
+      platform: 'win32',
+      kind: 'package-manager',
+      packageManagerId: 'winget',
+      packageId: 'pnpm.pnpm',
+      executable: 'winget',
+      args: ['install', '--id', 'pnpm.pnpm', '-e', '--accept-package-agreements', '--accept-source-agreements'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'WinGet (pnpm.pnpm)',
+      officialSourceUrl: 'https://pnpm.io/installation',
+    },
+  ],
+  verify: [
+    { kind: 'version-output', executable: 'pnpm', args: ['--version'], expectedPattern: '\\d+\\.\\d+\\.\\d+' },
+  ],
+  minimumVersion: '8.0.0',
+  recommendedVersionPolicy: 'latest-supported',
+  uninstallGuidance:
+    'macOS: `brew uninstall pnpm`. Windows: `winget uninstall pnpm.pnpm`. Space does not automatically remove tools it did not install.',
+};
+
+const BUN: ToolManifestEntry = {
+  id: 'bun',
+  displayName: 'Bun',
+  required: false,
+  supportedPlatforms: ['darwin', 'win32'],
+  architectures: ['arm64', 'x64'],
+  detection: [
+    { kind: 'command-on-path', executable: 'bun' },
+    { kind: 'version-command', executable: 'bun', versionArgs: ['--version'], versionPattern: '(\\d+\\.\\d+\\.\\d+)' },
+  ],
+  installStrategies: [
+    {
+      id: 'bun-homebrew',
+      platform: 'darwin',
+      kind: 'package-manager',
+      packageManagerId: 'homebrew',
+      packageId: 'oven-sh/bun/bun',
+      executable: 'brew',
+      args: ['install', 'oven-sh/bun/bun'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'Homebrew (https://brew.sh)',
+      officialSourceUrl: 'https://brew.sh',
+    },
+    {
+      id: 'bun-winget',
+      platform: 'win32',
+      kind: 'package-manager',
+      packageManagerId: 'winget',
+      packageId: 'Oven-sh.Bun',
+      executable: 'winget',
+      args: ['install', '--id', 'Oven-sh.Bun', '-e', '--accept-package-agreements', '--accept-source-agreements'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'WinGet (Oven-sh.Bun)',
+      officialSourceUrl: 'https://bun.sh',
+    },
+  ],
+  verify: [
+    { kind: 'version-output', executable: 'bun', args: ['--version'], expectedPattern: '\\d+\\.\\d+\\.\\d+' },
+  ],
+  minimumVersion: '1.0.0',
+  recommendedVersionPolicy: 'latest-supported',
+  uninstallGuidance:
+    'macOS: `brew uninstall bun`. Windows: `winget uninstall Oven-sh.Bun`. Space does not automatically remove tools it did not install.',
+};
+
+const PYTHON: ToolManifestEntry = {
+  id: 'python',
+  displayName: 'Python',
+  required: false,
+  supportedPlatforms: ['darwin', 'win32'],
+  architectures: ['arm64', 'x64'],
+  // Detection intentionally targets `python3`, which is the correct binary
+  // name on darwin (our primary target). `DetectionRule` has no per-platform
+  // scoping (see types.ts) so this cannot branch to plain `python` on win32
+  // without detecting `python3` on both — tracked as a known win32 gap
+  // rather than guessed at.
+  detection: [
+    { kind: 'command-on-path', executable: 'python3' },
+    { kind: 'version-command', executable: 'python3', versionArgs: ['--version'], versionPattern: 'Python (\\d+\\.\\d+(?:\\.\\d+)?)' },
+  ],
+  installStrategies: [
+    {
+      id: 'python-homebrew',
+      platform: 'darwin',
+      kind: 'package-manager',
+      packageManagerId: 'homebrew',
+      packageId: 'python3',
+      executable: 'brew',
+      args: ['install', 'python3'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'Homebrew (https://brew.sh)',
+      officialSourceUrl: 'https://brew.sh',
+    },
+    {
+      id: 'python-winget',
+      platform: 'win32',
+      kind: 'package-manager',
+      packageManagerId: 'winget',
+      packageId: 'Python.Python.3.12',
+      executable: 'winget',
+      args: ['install', '--id', 'Python.Python.3.12', '-e', '--accept-package-agreements', '--accept-source-agreements'],
+      requiresElevation: false,
+      interactive: false,
+      sourceDescription: 'WinGet (Python.Python.3.12)',
+      officialSourceUrl: 'https://www.python.org/downloads/',
+    },
+  ],
+  verify: [
+    { kind: 'version-output', executable: 'python3', args: ['--version'], expectedPattern: 'Python \\d+\\.\\d+' },
+  ],
+  minimumVersion: '3.9.0',
+  recommendedVersionPolicy: 'latest-supported',
+  uninstallGuidance:
+    'macOS: `brew uninstall python3`. Windows: uninstall "Python" from Settings > Apps. Space does not automatically remove tools it did not install.',
+};
+
 export const TOOL_MANIFEST: ToolManifest = {
   manifestVersion: '1.0.0',
-  entries: [GIT, GH, VOLTA, NODE, NPM],
+  entries: [GIT, GH, VOLTA, NODE, NPM, PNPM, BUN, PYTHON],
 };
 
 /** Stable content hash of the manifest — see module doc for its role. */

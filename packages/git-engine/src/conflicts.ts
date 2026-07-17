@@ -7,6 +7,8 @@
  * exit code alone (spec 39).
  */
 import {
+  addPathsArgs,
+  checkoutSideArgs,
   cherryPickAbortArgs,
   cherryPickContinueArgs,
   mergeAbortArgs,
@@ -103,4 +105,30 @@ export async function abortOperation(
     throw new Error(`No abortable Git operation is in progress (state: "${operation.kind}")`);
   }
   return runAndVerify(cwd, gitDir, ABORT_ARGS[operation.kind](), executor, gitDirFs);
+}
+
+/**
+ * Resolves one conflicted file by taking a whole side (spec 11.11's
+ * per-file resolution): `git checkout --ours|--theirs -- <path>` picks the
+ * chosen version into the worktree, then `git add -- <path>` stages it so
+ * the file drops out of the unmerged set. Both steps run for real; a
+ * non-zero checkout (e.g. the path is not conflicted) throws rather than
+ * silently staging a stale file (spec 39).
+ */
+export async function resolveConflict(
+  cwd: string,
+  path: string,
+  side: 'ours' | 'theirs',
+  executor: GitExecutor,
+): Promise<void> {
+  const checkout = await executor(checkoutSideArgs(side, path), { cwd });
+  if (checkout.exitCode !== 0) {
+    throw new Error(
+      `git checkout --${side} failed: ${checkout.stderr.trim() || checkout.stdout.trim() || `exit code ${checkout.exitCode}`}`,
+    );
+  }
+  const stage = await executor(addPathsArgs([path]), { cwd });
+  if (stage.exitCode !== 0) {
+    throw new Error(`git add failed: ${stage.stderr.trim() || stage.stdout.trim() || `exit code ${stage.exitCode}`}`);
+  }
 }

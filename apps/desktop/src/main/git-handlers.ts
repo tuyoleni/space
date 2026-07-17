@@ -18,6 +18,7 @@
  */
 import {
   abortOperation,
+  applyStash as applyStashEngine,
   configGetArgs,
   continueOperation,
   createBranch,
@@ -26,15 +27,24 @@ import {
   createNodeGitExecutor,
   deleteBranch,
   deriveConflictState,
+  diffNumstatArgs,
+  diffPatchArgs,
+  dropStash as dropStashEngine,
   fetchRemote,
+  parseDiffNumstatOutput,
   forEachRefArgs,
   getFullRepositoryStatus,
   HistoryStore,
+  listRemotes as listRemotesEngine,
+  listStashes as listStashesEngine,
+  listTags as listTagsEngine,
+  listWorktrees as listWorktreesEngine,
   parseForEachRefOutput,
   pullRemote,
   pushToRemote,
   readRepoLocalIdentity,
   resolveCommitIdentity,
+  resolveConflict as resolveConflictEngine,
   RepositoryOperationQueue,
   runCommit,
   stageFiles,
@@ -53,10 +63,15 @@ import {
 import type {
   GitCommitInput,
   GitCommitResult,
+  GitConflictResolveInput,
   GitConflictState,
   GitCreateBranchInput,
   GitDeleteBranchInput,
+  GitDiffStats,
   GitFetchInput,
+  GitFileDiffInput,
+  GitFileDiffResult,
+  GitFileDiffStat,
   GitHistoryLoadInput,
   GitHistoryPage,
   GitOperationOutcome,
@@ -65,10 +80,15 @@ import type {
   GitPullInput,
   GitPushInput,
   GitRefEntry,
+  GitRemoteEntry,
   GitRemoteResult,
   GitStageInput,
+  GitStashActionInput,
+  GitStashEntry,
   GitStatusSummary,
   GitSwitchBranchInput,
+  GitTagEntry,
+  GitWorktreeEntry,
   Project,
 } from '@space/contracts';
 import { recordOperation, type StorageCaller } from './project-handlers';
@@ -463,6 +483,111 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     });
   }
 
+  /** Read-only: both halves of `git diff --numstat`, so the UI can show real per-file added/removed counts. */
+  async function diffStats(input: GitProjectInput): Promise<GitDiffStats> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    const [unstagedResult, stagedResult] = await Promise.all([
+      gitExecutor(diffNumstatArgs(), { cwd }),
+      gitExecutor(diffNumstatArgs({ cached: true }), { cwd }),
+    ]);
+    const toStats = (stdout: string, staged: boolean): GitFileDiffStat[] =>
+      parseDiffNumstatOutput(stdout).map((entry) => ({ path: entry.path, added: entry.added, removed: entry.removed, staged }));
+    return { files: [...toStats(unstagedResult.stdout, false), ...toStats(stagedResult.stdout, true)] };
+  }
+
+  /** Read-only: one file's real unified patch text on one side of the index. */
+  async function diffFile(input: GitFileDiffInput): Promise<GitFileDiffResult> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    const result = await gitExecutor(diffPatchArgs({ cached: input.staged, paths: [input.path] }), { cwd });
+    return { patchText: result.stdout };
+  }
+
+  /** Read-only: the repository's configured remotes and their fetch/push URLs (`git remote -v`). */
+  async function listRemotes(input: GitProjectInput): Promise<readonly GitRemoteEntry[]> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    return listRemotesEngine(cwd, gitExecutor);
+  }
+
+  /** Read-only: the repository's stashes, newest first (`git stash list`). */
+  async function listStashes(input: GitProjectInput): Promise<readonly GitStashEntry[]> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    return listStashesEngine(cwd, gitExecutor);
+  }
+
+  /** Read-only: the repository's tags with their peeled target, subject, and tagged date. */
+  async function listTags(input: GitProjectInput): Promise<readonly GitTagEntry[]> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    return listTagsEngine(cwd, gitExecutor);
+  }
+
+  /**
+   * Read-only: the repository's linked working trees. The repo toplevel is
+   * `project.repositoryRoot` (what `repoCwd` returns), so it doubles as the
+   * `currentRoot` the engine uses to flag exactly one entry `isCurrent`.
+   */
+  async function listWorktrees(input: GitProjectInput): Promise<readonly GitWorktreeEntry[]> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    return listWorktreesEngine(cwd, cwd, gitExecutor);
+  }
+
+  /**
+   * `git stash apply` — a mutation of the worktree/index, so it runs through
+   * the per-repository mutating lock and leaves a receipt. The engine's
+   * `applyStash` does not throw when the apply leaves conflicts (it returns
+   * `completed: false`); that is preserved here. A stash apply never resumes
+   * a merge/rebase sequence, so `remaining` is always `{ kind: 'none' }` —
+   * the wrapper only adapts `StashApplyOutcome` to `GitOperationOutcome`.
+   */
+  async function applyStash(input: GitStashActionInput): Promise<GitOperationOutcome> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    return recordMutation(project, 'git.stash.apply', `Apply stash@{${input.index}}`, async () => {
+      const outcome = await queue.enqueueMutating(cwd, () => applyStashEngine(cwd, input.index, gitExecutor));
+      const result: GitOperationOutcome = {
+        completed: outcome.completed,
+        remaining: { kind: 'none' },
+        stdout: outcome.stdout,
+        stderr: outcome.stderr,
+      };
+      return result;
+    });
+  }
+
+  /**
+   * `git stash drop` — destructive. The engine's `dropStash` does not enforce
+   * the confirmation gate, so this handler rejects an unconfirmed drop before
+   * touching the repository, mirroring deleteBranch's structural gate.
+   */
+  async function dropStash(input: GitStashActionInput): Promise<void> {
+    if (input.confirmed !== true) {
+      throw new Error('Dropping a stash is destructive and must be explicitly confirmed');
+    }
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    await recordMutation(project, 'git.stash.drop', `Drop stash@{${input.index}}`, () =>
+      queue.enqueueMutating(cwd, () => dropStashEngine(cwd, input.index, gitExecutor)),
+    );
+  }
+
+  /**
+   * Resolves one conflicted file by taking a whole side (`git checkout
+   * --ours|--theirs` then `git add`) — a mutation of the worktree/index, so
+   * it runs through the per-repository mutating lock and leaves a receipt.
+   */
+  async function resolveConflict(input: GitConflictResolveInput): Promise<void> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    await recordMutation(project, 'git.conflict.resolve', `Resolve "${input.path}" using ${input.side}`, () =>
+      queue.enqueueMutating(cwd, () => resolveConflictEngine(cwd, input.path, input.side, gitExecutor)),
+    );
+  }
+
   return {
     status,
     stage,
@@ -480,6 +605,15 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     conflictState,
     continueConflict,
     abortConflict,
+    diffStats,
+    diffFile,
+    listRemotes,
+    listStashes,
+    listTags,
+    listWorktrees,
+    applyStash,
+    dropStash,
+    resolveConflict,
   };
 }
 

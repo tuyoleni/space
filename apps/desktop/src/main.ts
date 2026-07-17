@@ -1,17 +1,30 @@
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, session, shell } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import type { Logger } from '@space/logging';
+import { buildAppMenu } from './main/app-menu';
+
+// The productName ("Space") only applies to the packaged app; set it in dev
+// too so the macOS app menu reads "Space", not "Electron".
+app.setName('Space');
 import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
 import { createAutomationHandlers, type AutomationHandlers } from './main/automation-handlers';
+import { createAssetHandlers, type AssetHandlers } from './main/asset-handlers';
+import { createAiHandlers, type AiHandlers } from './main/ai-handlers';
+import { createConnectedServicesHandlers, type ConnectedServicesHandlers } from './main/connected-services-handlers';
+import { createDependencyHandlers, type DependencyHandlers } from './main/dependency-handlers';
+import { createEnvironmentHandlers, type EnvironmentHandlers } from './main/environment-handlers';
 import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
 import { fireAutomationTrigger, registerIpcHandlers } from './main/ipc';
 import { createAppLogger } from './main/logging';
+import { createPackageManagerHandlers, type PackageManagerHandlers } from './main/package-manager-handlers';
+import { createProjectEnvironmentHandlers, type ProjectEnvironmentHandlers } from './main/project-environment-handlers';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
 import { StorageClient } from './main/storage-client';
+import { createSystemHandlers, type SystemHandlers } from './main/system-handlers';
 import { TerminalClient } from './main/terminal-client';
 import { createTerminalHandlers, type TerminalHandlers } from './main/terminal-handlers';
 
@@ -61,6 +74,17 @@ let gitHandlers: GitHandlers | null = null;
 let githubHandlers: GithubHandlers | null = null;
 let agentHandlers: AgentHandlers | null = null;
 let automationHandlers: AutomationHandlers | null = null;
+let projectEnvironmentHandlers: ProjectEnvironmentHandlers | null = null;
+let connectedServicesHandlers: ConnectedServicesHandlers | null = null;
+let aiHandlers: AiHandlers | null = null;
+// Holds no state of its own (a pure machine scan) — created once, unlike
+// the other handler modules above which are recreated per storage/terminal
+// worker lifecycle.
+const environmentHandlers: EnvironmentHandlers = createEnvironmentHandlers();
+const systemHandlers: SystemHandlers = createSystemHandlers();
+const dependencyHandlers: DependencyHandlers = createDependencyHandlers();
+const assetHandlers: AssetHandlers = createAssetHandlers();
+const packageManagerHandlers: PackageManagerHandlers = createPackageManagerHandlers();
 let handlersRegistered = false;
 let scheduledAutomationTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -115,6 +139,32 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 860,
+    minHeight: 560,
+    // Packaged builds get their icon from forge.config.ts's packagerConfig.icon;
+    // this only matters for `npm start`'s Windows/Linux taskbar icon in dev
+    // (macOS dev Dock icon is set separately via app.dock.setIcon above).
+    ...(!app.isPackaged ? { icon: path.join(__dirname, '../../assets/icons/icon.png') } : {}),
+    // The native title bar is hidden and replaced by the app's own topbar
+    // (a `.space-titlebar-drag` region in index.css) so window chrome reads
+    // as part of the UI rather than a separate opaque strip on top of it,
+    // and the shell is translucent: macOS vibrancy / Windows Mica behind
+    // alpha surface tokens (index.css). Window-chrome-only — no change to
+    // the security-relevant options below.
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 16, y: 15 },
+          vibrancy: 'under-window' as const,
+          visualEffectState: 'followWindow' as const,
+          backgroundColor: '#00000000',
+        }
+      : {
+          titleBarStyle: 'hidden' as const,
+          frame: false,
+          backgroundMaterial: 'mica' as const,
+          backgroundColor: '#00000000',
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -161,9 +211,8 @@ const createWindow = () => {
     );
   }
 
-  if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools();
-  }
+  // DevTools no longer auto-opens in dev — the docked panel hides half the
+  // translucent shell on every launch; open it manually (View menu / ⌥⌘I).
 };
 
 async function openExternalIfSafe(url: string): Promise<void> {
@@ -231,6 +280,15 @@ app.on('ready', () => {
   }
   applyContentSecurityPolicy();
 
+  // The packaged app gets its icon from forge.config.ts's packagerConfig.icon
+  // (baked into the .app/.exe bundle); in dev there's no bundle, so `npm
+  // start` otherwise shows Electron's default icon in the Dock. Dock icon
+  // has no window to attach to (unlike the BrowserWindow `icon` option
+  // below, which covers Windows/Linux taskbar in dev), so it's set here.
+  if (!app.isPackaged && process.platform === 'darwin') {
+    app.dock?.setIcon(path.join(__dirname, '../../assets/icons/icon.png'));
+  }
+
   // spec 29.3: real, local-only, rotating/redacted logging — replaces the
   // ad hoc console.error this file and ipc.ts used before M8.
   const logger: Logger = createAppLogger(path.join(app.getPath('userData'), 'logs'), app.isPackaged);
@@ -255,6 +313,9 @@ app.on('ready', () => {
     terminal,
     ghConfigDirFor: (workspaceId) => path.join(app.getPath('userData'), 'workspaces', workspaceId, 'gh-config'),
   });
+  projectEnvironmentHandlers = createProjectEnvironmentHandlers(storage);
+  connectedServicesHandlers = createConnectedServicesHandlers(storage, { terminal });
+  aiHandlers = createAiHandlers(storage, { keyFilePath: path.join(app.getPath('userData'), 'ai-credentials.enc') });
   // M7: no ModelProvider is passed — rule-based grouping is the real,
   // always-available default (spec 13.3, ADR-008); a remote/local model
   // provider is an architecturally-supported but not-yet-connected seam.
@@ -301,10 +362,22 @@ app.on('ready', () => {
       githubHandlers,
       agentHandlers,
       automationHandlers,
+      environmentHandlers,
+      systemHandlers,
+      dependencyHandlers,
+      assetHandlers,
+      projectEnvironmentHandlers,
+      connectedServicesHandlers,
+      packageManagerHandlers,
+      aiHandlers,
       logger,
     );
     handlersRegistered = true;
   }
+
+  Menu.setApplicationMenu(
+    buildAppMenu(() => BrowserWindow.getAllWindows().find((w) => w.webContents.id === trustedSender.webContentsId) ?? null, app.isPackaged),
+  );
 
   createWindow();
 });
@@ -323,6 +396,9 @@ app.on('before-quit', () => {
   githubHandlers = null;
   agentHandlers = null;
   automationHandlers = null;
+  projectEnvironmentHandlers = null;
+  connectedServicesHandlers = null;
+  aiHandlers = null;
   terminalHandlers = null;
   terminalClient = null;
   storageClient = null;

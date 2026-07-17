@@ -9,6 +9,7 @@
  * renderer's push-only `terminal:event` channel, since a terminal session
  * is a stream, not a single request/response (spec 22.1).
  */
+import fs from 'node:fs/promises';
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import {
   activityListRangeInputSchema,
@@ -27,14 +28,17 @@ import {
   automationSettingsGetInputSchema,
   automationSettingsSetInputSchema,
   gitCommitInputSchema,
+  gitConflictResolveInputSchema,
   gitCreateBranchInputSchema,
   gitDeleteBranchInputSchema,
   gitFetchInputSchema,
+  gitFileDiffInputSchema,
   gitHistoryLoadInputSchema,
   gitProjectInputSchema,
   gitPullInputSchema,
   gitPushInputSchema,
   gitStageInputSchema,
+  gitStashActionInputSchema,
   gitSwitchBranchInputSchema,
   githubActionsCancelInputSchema,
   githubActionsDownloadArtifactsInputSchema,
@@ -75,18 +79,41 @@ import {
   githubRepoPublishInputSchema,
   githubSetupGitInputSchema,
   projectOpenedInputSchema,
+  environmentToolActionInputSchema,
+  environmentExportReportInputSchema,
+  projectEnvironmentInfoInputSchema,
+  connectedServiceLoginInputSchema,
+  connectedServiceDeployInputSchema,
+  aiSetApiKeyInputSchema,
+  aiReviewCommentsInputSchema,
+  aiApplyFixInputSchema,
+  packageSearchInputSchema,
+  packageActionInputSchema,
   IPC_CHANNELS,
   type CreateTerminalInput,
+  type DependencyScanInput,
+  type EnvironmentScanInput,
+  type EnvironmentScanResult,
+  type ConnectedServicesResult,
   type TerminalEvent,
 } from '@space/contracts';
 import { createLogger, type Logger } from '@space/logging';
 import { assertIpcSender, type TrustedSender } from '@space/security';
 import type { AgentHandlers } from './agent-handlers';
+import type { AiHandlers } from './ai-handlers';
+import type { AssetHandlers } from './asset-handlers';
 import type { AutomationHandlers } from './automation-handlers';
+import type { ConnectedServicesHandlers } from './connected-services-handlers';
+import type { DependencyHandlers } from './dependency-handlers';
+import type { EnvironmentHandlers } from './environment-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
+import type { PackageManagerHandlers } from './package-manager-handlers';
+import type { ProjectEnvironmentHandlers } from './project-environment-handlers';
 import type { ProjectHandlers } from './project-handlers';
+import { createServiceHandlers } from './service-handlers';
 import type { StorageClient } from './storage-client';
+import type { SystemHandlers } from './system-handlers';
 import type { TerminalClient } from './terminal-client';
 import type { TerminalHandlers } from './terminal-handlers';
 
@@ -144,6 +171,16 @@ async function pickFiles(event: IpcMainInvokeEvent): Promise<readonly string[] |
   return result.canceled || result.filePaths.length === 0 ? null : result.filePaths;
 }
 
+/** Environment screen's "Export report" — a real native save dialog, writing exactly what the renderer already has on screen. */
+async function pickSaveFile(event: IpcMainInvokeEvent, defaultPath: string): Promise<string | null> {
+  const window = windowForEvent(event);
+  const result = await dialog.showSaveDialog(window, {
+    defaultPath,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  return result.canceled || !result.filePath ? null : result.filePath;
+}
+
 export function registerIpcHandlers(
   trusted: TrustedSender,
   storage: StorageClient,
@@ -154,6 +191,14 @@ export function registerIpcHandlers(
   githubHandlers: GithubHandlers,
   agentHandlers: AgentHandlers,
   automationHandlers: AutomationHandlers,
+  environmentHandlers: EnvironmentHandlers,
+  systemHandlers: SystemHandlers,
+  dependencyHandlers: DependencyHandlers,
+  assetHandlers: AssetHandlers,
+  projectEnvironmentHandlers: ProjectEnvironmentHandlers,
+  connectedServicesHandlers: ConnectedServicesHandlers,
+  packageManagerHandlers: PackageManagerHandlers,
+  aiHandlers: AiHandlers,
   logger: Logger = consoleLogger,
 ): void {
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
@@ -228,6 +273,17 @@ export function registerIpcHandlers(
     return projectHandlers.installDependencies(input);
   });
 
+  ipcMain.handle(IPC_CHANNELS.projectUpdateDependencies, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return projectHandlers.updateDependencies(input);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectEnvironmentInfo, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = projectEnvironmentInfoInputSchema.parse(input);
+    return projectEnvironmentHandlers.environmentInfo(parsed);
+  });
+
   ipcMain.handle(IPC_CHANNELS.projectPickParentDirectory, async (event) => {
     assertIpcSender(event, trusted);
     return pickDirectory(event);
@@ -251,6 +307,15 @@ export function registerIpcHandlers(
         logger,
       );
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectIcon, async (event, input: { canonicalPath?: unknown }) => {
+    assertIpcSender(event, trusted);
+    const canonicalPath = typeof input?.canonicalPath === 'string' ? input.canonicalPath : '';
+    if (!canonicalPath) {
+      return null;
+    }
+    return assetHandlers.projectIcon({ canonicalPath });
   });
 
   // M4: terminal (TERM-001..006).
@@ -327,6 +392,23 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.devServerList, async (event, projectId) => {
     assertIpcSender(event, trusted);
     return projectHandlers.listDevServers(projectId);
+  });
+
+  // Home dashboard: unified running services (dev servers, containers,
+  // terminal-spawned processes) — see service-handlers.ts.
+  const serviceHandlers = createServiceHandlers({
+    storage,
+    devServers: { list: projectHandlers.listDevServers, stop: projectHandlers.stopDevServer },
+  });
+
+  ipcMain.handle(IPC_CHANNELS.servicesList, async (event, projectId) => {
+    assertIpcSender(event, trusted);
+    return serviceHandlers.list(projectId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.servicesStop, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return serviceHandlers.stop(input);
   });
 
   // M5: Git (GIT-001..009).
@@ -436,6 +518,61 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.gitConflictAbort, async (event, input) => {
     assertIpcSender(event, trusted);
     return gitHandlers.abortConflict(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitDiffStats, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.diffStats(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitDiffFile, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.diffFile(gitFileDiffInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitRemoteList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.listRemotes(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitStashList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.listStashes(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitStashApply, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = gitStashActionInputSchema.parse(input);
+    return gitHandlers.applyStash({
+      projectId: parsed.projectId,
+      index: parsed.index,
+      ...(parsed.confirmed !== undefined ? { confirmed: parsed.confirmed } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitStashDrop, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = gitStashActionInputSchema.parse(input);
+    return gitHandlers.dropStash({
+      projectId: parsed.projectId,
+      index: parsed.index,
+      ...(parsed.confirmed !== undefined ? { confirmed: parsed.confirmed } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitTagList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.listTags(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitWorktreeList, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.listWorktrees(gitProjectInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitConflictResolve, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.resolveConflict(gitConflictResolveInputSchema.parse(input));
   });
 
   // M5: activity (spec section 17).
@@ -814,6 +951,29 @@ export function registerIpcHandlers(
     return agentHandlers.listPermissions(workspaceId as string);
   });
 
+  ipcMain.handle(IPC_CHANNELS.aiKeyStatus, async (event) => {
+    assertIpcSender(event, trusted);
+    return aiHandlers.keyStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiSetApiKey, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiSetApiKeyInputSchema.parse(input);
+    return aiHandlers.setApiKey(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiReviewComments, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiReviewCommentsInputSchema.parse(input);
+    return aiHandlers.reviewComments(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiApplyFix, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiApplyFixInputSchema.parse(input);
+    return aiHandlers.applyFix(parsed);
+  });
+
   // ---------------------------------------------------------------------
   // M8: automation (spec section 18)
   // ---------------------------------------------------------------------
@@ -873,5 +1033,105 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = appSettingsTelemetrySetInputSchema.parse(input);
     return storage.call('appSettings.setTelemetryEnabled', { enabled: parsed.enabled, updatedAt: new Date().toISOString() });
+  });
+
+  // ---------------------------------------------------------------------
+  // Real machine toolchain/package-manager/disk scan (read-only)
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.environmentScan, async (event, input: EnvironmentScanInput | undefined) => {
+    assertIpcSender(event, trusted);
+    return environmentHandlers.scan(input ?? {});
+  });
+
+  ipcMain.handle(IPC_CHANNELS.environmentInstallTool, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = environmentToolActionInputSchema.parse(input);
+    return environmentHandlers.installTool({ toolId: parsed.toolId, ...(parsed.allowOnce !== undefined ? { allowOnce: parsed.allowOnce } : {}) });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.environmentUpdateTool, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = environmentToolActionInputSchema.parse(input);
+    return environmentHandlers.updateTool({ toolId: parsed.toolId, ...(parsed.allowOnce !== undefined ? { allowOnce: parsed.allowOnce } : {}) });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.environmentExportReport, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = environmentExportReportInputSchema.parse(input);
+    const scan = parsed.scan as EnvironmentScanResult;
+    const filePath = await pickSaveFile(event, `space-environment-report-${scan.scannedAt.slice(0, 10)}.json`);
+    if (!filePath) {
+      return { saved: false, filePath: null };
+    }
+    const connectedServices = (parsed.connectedServices ?? null) as ConnectedServicesResult | null;
+    await fs.writeFile(filePath, JSON.stringify({ scan, connectedServices }, null, 2), 'utf-8');
+    return { saved: true, filePath };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.connectedServicesStatus, async (event) => {
+    assertIpcSender(event, trusted);
+    return connectedServicesHandlers.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.connectedServicesStartLogin, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = connectedServiceLoginInputSchema.parse(input);
+    return connectedServicesHandlers.startLogin(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.connectedServicesDeploy, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = connectedServiceDeployInputSchema.parse(input);
+    return connectedServicesHandlers.deploy(parsed);
+  });
+
+  // ---------------------------------------------------------------------
+  // Unified package manager: real Homebrew (formula+cask)/npm-global/WinGet
+  // inventory, search, install/update/uninstall.
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.packagesListInstalled, async (event) => {
+    assertIpcSender(event, trusted);
+    return packageManagerHandlers.listInstalled();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.packagesSearch, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = packageSearchInputSchema.parse(input);
+    return packageManagerHandlers.search(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.packagesInstall, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = packageActionInputSchema.parse(input);
+    return packageManagerHandlers.install(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.packagesUpdate, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = packageActionInputSchema.parse(input);
+    return packageManagerHandlers.update(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.packagesUninstall, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = packageActionInputSchema.parse(input);
+    return packageManagerHandlers.uninstall(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.systemStats, async (event) => {
+    assertIpcSender(event, trusted);
+    return systemHandlers.stats();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.systemProcesses, async (event) => {
+    assertIpcSender(event, trusted);
+    return systemHandlers.processes();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.dependencyScan, async (event, input: DependencyScanInput) => {
+    assertIpcSender(event, trusted);
+    return dependencyHandlers.scan(input);
   });
 }

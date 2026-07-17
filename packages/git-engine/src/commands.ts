@@ -258,3 +258,75 @@ export function revertContinueArgs(): string[] {
 export function revertAbortArgs(): string[] {
   return ['revert', '--abort'];
 }
+
+/**
+ * Resolve one conflicted file by taking a whole side (spec 11.11): `git
+ * checkout --ours|--theirs -- <path>`. `--` keeps a path that starts with
+ * `-` from being read as a flag; the caller stages the result afterwards.
+ */
+export function checkoutSideArgs(side: 'ours' | 'theirs', path: string): string[] {
+  return ['checkout', side === 'ours' ? '--ours' : '--theirs', '--', path];
+}
+
+// ---------------------------------------------------------------------------
+// Changes screen: remotes, stashes, tags, worktrees
+// ---------------------------------------------------------------------------
+
+export function remoteVerboseArgs(): string[] {
+  return ['remote', '-v'];
+}
+
+/**
+ * One stash per record. `%gd` yields the `stash@{N}` selector (index
+ * source of truth), `%ct` the committer date in unix seconds, `%gs` the
+ * reflog subject (e.g. `WIP on main: <sha> <subject>`) — the branch is
+ * parsed back out of it. `%gs` cannot contain a newline, so records are
+ * newline-separated and fields use the same control-char separator as refs.
+ */
+export const STASH_FORMAT = ['%gd', '%ct', '%gs'].join(REF_FIELD_SEPARATOR);
+
+export function stashListArgs(): string[] {
+  return ['stash', 'list', `--format=${STASH_FORMAT}`];
+}
+
+function stashRef(index: number): string {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(`Stash index ${index} is not valid`);
+  }
+  return `stash@{${index}}`;
+}
+
+/** Non-destructive: restores the stash but leaves the entry in the list. */
+export function stashApplyArgs(index: number): string[] {
+  return ['stash', 'apply', stashRef(index)];
+}
+
+/** Destructive: removes the entry (guarded by a `confirmed` gate at the caller). */
+export function stashDropArgs(index: number): string[] {
+  return ['stash', 'drop', stashRef(index)];
+}
+
+/**
+ * Tag records. `%(objectname)` is the tag object (annotated) or commit
+ * (lightweight); `%(*objectname)` is the peeled commit for annotated tags
+ * and empty for lightweight — so the real target is `*objectname` when set,
+ * else `objectname`. `%(creatordate:unix)` gives the tagger date for
+ * annotated tags and the commit date for lightweight ones.
+ */
+const TAG_FORMAT_FIELDS = [
+  '%(refname:short)',
+  '%(objectname)',
+  '%(*objectname)',
+  '%(subject)',
+  '%(creatordate:unix)',
+] as const;
+
+export const TAG_FORMAT = TAG_FORMAT_FIELDS.join(REF_FIELD_SEPARATOR) + REF_RECORD_SEPARATOR;
+
+export function tagListArgs(): string[] {
+  return ['for-each-ref', `--format=${TAG_FORMAT}`, 'refs/tags'];
+}
+
+export function worktreeListArgs(): string[] {
+  return ['worktree', 'list', '--porcelain'];
+}

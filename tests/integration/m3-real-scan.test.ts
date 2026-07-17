@@ -24,7 +24,7 @@ describe('M3: real non-mutating scan against this machine (spec section 8.2)', (
     expect(result.platform).toBe(process.platform);
     expect(result.architecture).toBe(os.arch());
     expect(result.osVersion.length).toBeGreaterThan(0);
-    expect(result.tools).toHaveLength(5);
+    expect(result.tools).toHaveLength(TOOL_MANIFEST.entries.length);
 
     // Git is a hard prerequisite of this repository (it's a git repo under test).
     const git = result.tools.find((t) => t.toolId === 'git');

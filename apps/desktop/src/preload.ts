@@ -33,8 +33,11 @@ const spaceAPI: SpaceAPI = {
     createFromTemplate: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectCreateFromTemplate, input),
     clone: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectClone, input),
     installDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInstallDependencies, input),
+    updateDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectUpdateDependencies, input),
+    environmentInfo: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentInfo, input),
     pickParentDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickParentDirectory),
     opened: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.projectOpened, projectId),
+    icon: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectIcon, input),
   },
   terminal: {
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalCreate, input),
@@ -57,6 +60,10 @@ const spaceAPI: SpaceAPI = {
     stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.devServerStop, input),
     list: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.devServerList, projectId),
   },
+  services: {
+    list: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.servicesList, projectId),
+    stop: (input) => ipcRenderer.invoke(IPC_CHANNELS.servicesStop, input),
+  },
   git: {
     status: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStatus, input),
     stage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStage, input),
@@ -73,6 +80,15 @@ const spaceAPI: SpaceAPI = {
     conflictState: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictState, input),
     continueConflict: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictContinue, input),
     abortConflict: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictAbort, input),
+    diffStats: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitDiffStats, input),
+    diffFile: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitDiffFile, input),
+    listRemotes: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitRemoteList, input),
+    listStashes: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStashList, input),
+    applyStash: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStashApply, input),
+    dropStash: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStashDrop, input),
+    listTags: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitTagList, input),
+    listWorktrees: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitWorktreeList, input),
+    resolveConflict: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitConflictResolve, input),
   },
   activity: {
     listRange: (input) => ipcRenderer.invoke(IPC_CHANNELS.activityListRange, input),
@@ -127,6 +143,12 @@ const spaceAPI: SpaceAPI = {
     permissionRevoke: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionRevoke, input),
     permissionList: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.agentPermissionList, workspaceId),
   },
+  ai: {
+    keyStatus: () => ipcRenderer.invoke(IPC_CHANNELS.aiKeyStatus),
+    setApiKey: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiSetApiKey, input),
+    reviewComments: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiReviewComments, input),
+    applyFix: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiApplyFix, input),
+  },
   automation: {
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationCreate, input),
     list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.automationList, workspaceId),
@@ -139,6 +161,38 @@ const spaceAPI: SpaceAPI = {
   appSettings: {
     getTelemetryEnabled: () => ipcRenderer.invoke(IPC_CHANNELS.appSettingsTelemetryGet),
     setTelemetryEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.appSettingsTelemetrySet, { enabled }),
+  },
+  environment: {
+    scan: (input) => ipcRenderer.invoke(IPC_CHANNELS.environmentScan, input),
+    installTool: (input) => ipcRenderer.invoke(IPC_CHANNELS.environmentInstallTool, input),
+    updateTool: (input) => ipcRenderer.invoke(IPC_CHANNELS.environmentUpdateTool, input),
+    exportReport: (input) => ipcRenderer.invoke(IPC_CHANNELS.environmentExportReport, input),
+  },
+  connectedServices: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesStatus),
+    startLogin: (input) => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesStartLogin, input),
+    deploy: (input) => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesDeploy, input),
+  },
+  packages: {
+    listInstalled: () => ipcRenderer.invoke(IPC_CHANNELS.packagesListInstalled),
+    search: (input) => ipcRenderer.invoke(IPC_CHANNELS.packagesSearch, input),
+    install: (input) => ipcRenderer.invoke(IPC_CHANNELS.packagesInstall, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.packagesUpdate, input),
+    uninstall: (input) => ipcRenderer.invoke(IPC_CHANNELS.packagesUninstall, input),
+  },
+  menu: {
+    onCommand: (listener) => {
+      const handler = (_event: IpcRendererEvent, command: Parameters<typeof listener>[0]) => listener(command);
+      ipcRenderer.on(IPC_CHANNELS.menuCommand, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.menuCommand, handler);
+    },
+  },
+  system: {
+    stats: () => ipcRenderer.invoke(IPC_CHANNELS.systemStats),
+    processes: () => ipcRenderer.invoke(IPC_CHANNELS.systemProcesses),
+  },
+  dependencies: {
+    scan: (input) => ipcRenderer.invoke(IPC_CHANNELS.dependencyScan, input),
   },
 };
 

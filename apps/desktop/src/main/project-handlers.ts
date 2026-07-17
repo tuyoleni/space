@@ -34,7 +34,7 @@ import type {
   StopDevServerInput,
 } from '@space/contracts';
 import { RESOURCE_LIMITS, TrustGateError, assertTrusted } from '@space/domain';
-import { BUILT_IN_PROJECT_TEMPLATES, detectDevScript, findProjectTemplate, installCommandFor } from '@space/environment';
+import { BUILT_IN_PROJECT_TEMPLATES, detectDevScript, findProjectTemplate, installCommandFor, updateCommandFor } from '@space/environment';
 import { cloneRepository, createNodeGitExecutor, type GitExecutor } from '@space/git-engine';
 import {
   detectListeningUrl,
@@ -317,6 +317,58 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
     return { packageManager, succeeded: receipt.state === 'succeeded', exitCode: receipt.exitCode };
   }
 
+  /** Runs the package manager's semver-respecting update — same trust gate and receipt as install, just the `update`/`upgrade` subcommand. */
+  async function updateDependencies(input: InstallDependenciesInput): Promise<InstallDependenciesResult> {
+    const project = await storage.call<Project>('project.get', { projectId: input.projectId });
+    assertTrusted({
+      trustState: project.trustState,
+      operation: 'package-install',
+      ...(input.allowOnce !== undefined ? { allowOnce: input.allowOnce } : {}),
+    });
+
+    let packageManager = input.packageManager;
+    if (!packageManager) {
+      const detection = await detectPackageManager({ canonicalPath: project.canonicalPath });
+      if (detection.resolution !== 'single' || !detection.packageManager) {
+        throw new Error(
+          detection.resolution === 'conflict'
+            ? 'Multiple incompatible lockfiles were found; choose a package manager explicitly.'
+            : 'No lockfile was found; choose a package manager explicitly.',
+        );
+      }
+      packageManager = detection.packageManager;
+    }
+
+    const command = updateCommandFor(packageManager);
+    const startedAt = new Date().toISOString();
+    const receipt = await runProcess(
+      {
+        operationId: randomUUID(),
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        executableId: command.executable,
+        args: [...command.args],
+        cwd: project.canonicalPath,
+        env: buildSpaceEnvironment(),
+        timeoutMs: 10 * 60_000,
+      },
+      { resolveExecutable },
+    );
+
+    await recordOperation(storage, {
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      type: 'project.updateDependencies',
+      humanSummary: `Update dependencies for "${project.name}" via ${packageManager}`,
+      startedAt,
+      state: receipt.state === 'succeeded' ? 'succeeded' : 'failed',
+      exitCode: receipt.exitCode,
+      partialState: receipt.state === 'succeeded' ? undefined : { stderr: receipt.stderr },
+    });
+
+    return { packageManager, succeeded: receipt.state === 'succeeded', exitCode: receipt.exitCode };
+  }
+
   function readPackageScripts(canonicalPath: string): Record<string, string> | undefined {
     try {
       const raw = fs.readFileSync(path.join(canonicalPath, 'package.json'), 'utf-8');
@@ -491,6 +543,7 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
     createFromTemplate,
     clone,
     installDependencies,
+    updateDependencies,
     startDevServer,
     stopDevServer,
     listDevServers,

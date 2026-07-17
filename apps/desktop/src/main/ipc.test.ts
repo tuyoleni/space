@@ -11,11 +11,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IPC_CHANNELS } from '@space/contracts';
 import type { AgentHandlers } from './agent-handlers';
+import type { AiHandlers } from './ai-handlers';
 import type { AutomationHandlers } from './automation-handlers';
+import type { AssetHandlers } from './asset-handlers';
+import type { ConnectedServicesHandlers } from './connected-services-handlers';
+import type { DependencyHandlers } from './dependency-handlers';
+import type { EnvironmentHandlers } from './environment-handlers';
 import type { GitHandlers } from './git-handlers';
 import type { GithubHandlers } from './github-handlers';
+import type { PackageManagerHandlers } from './package-manager-handlers';
+import type { ProjectEnvironmentHandlers } from './project-environment-handlers';
 import type { ProjectHandlers } from './project-handlers';
 import type { StorageClient } from './storage-client';
+import type { SystemHandlers } from './system-handlers';
 import type { TerminalClient } from './terminal-client';
 import type { TerminalHandlers } from './terminal-handlers';
 import type { TrustedSender } from '@space/security';
@@ -46,9 +54,11 @@ const validEvent = { sender: { id: 1 }, senderFrame: { url: 'file:///index.html'
 const invalidEvent = { sender: { id: 999 }, senderFrame: { url: 'file:///index.html' } };
 
 // Every channel this module is expected to register with ipcMain.handle.
-// terminal:event is deliberately excluded — it's a push-only main -> renderer
-// channel with no handle() counterpart.
-const HANDLED_CHANNELS = Object.values(IPC_CHANNELS).filter((channel) => channel !== IPC_CHANNELS.terminalEvent);
+// terminal:event and menu:command are deliberately excluded — they're
+// push-only main -> renderer channels with no handle() counterpart.
+const HANDLED_CHANNELS = Object.values(IPC_CHANNELS).filter(
+  (channel) => channel !== IPC_CHANNELS.terminalEvent && channel !== IPC_CHANNELS.menuCommand,
+);
 
 function setup() {
   handlers.clear();
@@ -70,6 +80,7 @@ function setup() {
     createFromTemplate: vi.fn(),
     clone: vi.fn(),
     installDependencies: vi.fn(),
+    updateDependencies: vi.fn(),
     startDevServer: vi.fn(),
     stopDevServer: vi.fn(),
     listDevServers: vi.fn(),
@@ -90,6 +101,15 @@ function setup() {
     conflictState: vi.fn(),
     continueConflict: vi.fn(),
     abortConflict: vi.fn(),
+    diffStats: vi.fn(),
+    diffFile: vi.fn(),
+    listRemotes: vi.fn(),
+    listStashes: vi.fn(),
+    listTags: vi.fn(),
+    listWorktrees: vi.fn(),
+    applyStash: vi.fn(),
+    dropStash: vi.fn(),
+    resolveConflict: vi.fn(),
   } as unknown as GitHandlers;
   const githubHandlers = {
     authReport: vi.fn(),
@@ -152,8 +172,74 @@ function setup() {
     listRuns: vi.fn(),
     handleTriggerEvent: vi.fn().mockResolvedValue([]),
   } as unknown as AutomationHandlers;
-  registerIpcHandlers(trusted, storage, terminal, terminalHandlers, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers);
-  return { storageCall, terminalCall, terminalSubscribe, createTerminal, projectHandlers, gitHandlers, githubHandlers, agentHandlers, automationHandlers };
+  const environmentHandlers = {
+    scan: vi.fn(),
+    installTool: vi.fn(),
+    updateTool: vi.fn(),
+  } as unknown as EnvironmentHandlers;
+  const systemHandlers = {
+    stats: vi.fn(),
+    processes: vi.fn(),
+  } as unknown as SystemHandlers;
+  const dependencyHandlers = {
+    scan: vi.fn(),
+  } as unknown as DependencyHandlers;
+  const assetHandlers = {
+    projectIcon: vi.fn(),
+  } as unknown as AssetHandlers;
+  const projectEnvironmentHandlers = {
+    environmentInfo: vi.fn(),
+  } as unknown as ProjectEnvironmentHandlers;
+  const connectedServicesHandlers = {
+    status: vi.fn(),
+    startLogin: vi.fn(),
+  } as unknown as ConnectedServicesHandlers;
+  const packageManagerHandlers = {
+    listInstalled: vi.fn(),
+    search: vi.fn(),
+    install: vi.fn(),
+    update: vi.fn(),
+    uninstall: vi.fn(),
+  } as unknown as PackageManagerHandlers;
+  const aiHandlers = {
+    keyStatus: vi.fn(),
+    setApiKey: vi.fn(),
+    reviewComments: vi.fn(),
+    applyFix: vi.fn(),
+  } as unknown as AiHandlers;
+  registerIpcHandlers(
+    trusted,
+    storage,
+    terminal,
+    terminalHandlers,
+    projectHandlers,
+    gitHandlers,
+    githubHandlers,
+    agentHandlers,
+    automationHandlers,
+    environmentHandlers,
+    systemHandlers,
+    dependencyHandlers,
+    assetHandlers,
+    projectEnvironmentHandlers,
+    connectedServicesHandlers,
+    packageManagerHandlers,
+    aiHandlers,
+  );
+  return {
+    storageCall,
+    terminalCall,
+    terminalSubscribe,
+    createTerminal,
+    projectHandlers,
+    gitHandlers,
+    githubHandlers,
+    agentHandlers,
+    automationHandlers,
+    environmentHandlers,
+    systemHandlers,
+    dependencyHandlers,
+  };
 }
 
 function handlerFor(channel: string): Handler {
@@ -191,7 +277,7 @@ describe('registerIpcHandlers', () => {
     expect(result).toBe('ok');
   });
 
-  it.each(Object.values(IPC_CHANNELS).filter((c) => c !== IPC_CHANNELS.terminalEvent))(
+  it.each(Object.values(IPC_CHANNELS).filter((c) => c !== IPC_CHANNELS.terminalEvent && c !== IPC_CHANNELS.menuCommand))(
     'rejects %s for an untrusted sender before touching storage/terminal/project handlers',
     async (channel) => {
       const { storageCall, terminalCall, projectHandlers } = setup();
@@ -425,6 +511,28 @@ describe('registerIpcHandlers', () => {
       [IPC_CHANNELS.gitConflictState, 'conflictState', { projectId: 'p-1' }, { projectId: 'p-1' }],
       [IPC_CHANNELS.gitConflictContinue, 'continueConflict', { projectId: 'p-1' }, { projectId: 'p-1' }],
       [IPC_CHANNELS.gitConflictAbort, 'abortConflict', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitRemoteList, 'listRemotes', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitStashList, 'listStashes', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitTagList, 'listTags', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [IPC_CHANNELS.gitWorktreeList, 'listWorktrees', { projectId: 'p-1' }, { projectId: 'p-1' }],
+      [
+        IPC_CHANNELS.gitStashApply,
+        'applyStash',
+        { projectId: 'p-1', index: 0 },
+        { projectId: 'p-1', index: 0 },
+      ],
+      [
+        IPC_CHANNELS.gitStashDrop,
+        'dropStash',
+        { projectId: 'p-1', index: 0, confirmed: true },
+        { projectId: 'p-1', index: 0, confirmed: true },
+      ],
+      [
+        IPC_CHANNELS.gitConflictResolve,
+        'resolveConflict',
+        { projectId: 'p-1', path: 'a.txt', side: 'ours' },
+        { projectId: 'p-1', path: 'a.txt', side: 'ours' },
+      ],
     ] as const)('routes %s to gitHandlers.%s with the parsed input', async (channel, method, input, expected) => {
       const { gitHandlers } = setup();
       (gitHandlers[method] as ReturnType<typeof vi.fn>).mockResolvedValue('ok');
@@ -437,6 +545,14 @@ describe('registerIpcHandlers', () => {
       const { gitHandlers } = setup();
       await expect(handlerFor(IPC_CHANNELS.gitCommit)(validEvent, { projectId: 'p-1', message: '' })).rejects.toThrow();
       expect(gitHandlers.commit).not.toHaveBeenCalled();
+    });
+
+    it('rejects a git:conflict:resolve input with an invalid side before reaching gitHandlers', async () => {
+      const { gitHandlers } = setup();
+      await expect(
+        handlerFor(IPC_CHANNELS.gitConflictResolve)(validEvent, { projectId: 'p-1', path: 'a.txt', side: 'mine' }),
+      ).rejects.toThrow();
+      expect(gitHandlers.resolveConflict).not.toHaveBeenCalled();
     });
   });
 

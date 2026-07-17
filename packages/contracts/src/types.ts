@@ -46,6 +46,15 @@ export interface AddProjectInput {
   readonly name?: string;
 }
 
+export interface ProjectIconInput {
+  readonly canonicalPath: string;
+}
+
+export interface ProjectIconResult {
+  /** The project's real icon asset (favicon/app icon) as a data URL. */
+  readonly dataUrl: string;
+}
+
 export interface InspectFolderInput {
   readonly path: string;
 }
@@ -129,6 +138,298 @@ export interface InstallDependenciesResult {
   readonly packageManager: JsPackageManagerId;
   readonly succeeded: boolean;
   readonly exitCode: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Environment scan — real machine toolchain/package-manager/disk report
+// (@space/environment's performScan, read-only, spec section 8.2). Mirrors
+// that package's ScanResult/ScanToolResult/PackageManagerScanResult shapes
+// independently (same reason ProjectDetectionReport above does) rather than
+// importing @space/environment, which touches node:child_process/fs and
+// must never enter the renderer bundle (spec section 32).
+// ---------------------------------------------------------------------------
+
+export interface EnvironmentScanToolResult {
+  readonly toolId: string;
+  readonly displayName: string;
+  readonly found: boolean;
+  readonly path: string | null;
+  readonly version: string | null;
+  readonly meetsMinimumVersion: boolean | null;
+  /** Human-readable install origin ("Homebrew", "Volta", "Bundled with Node", "System"), resolved from `path`/manifest — null when unresolved. */
+  readonly source: string | null;
+  /** Newest version this tool's install strategy can see (e.g. `brew info --json`, npm registry) — null when not looked up or the tool isn't found. */
+  readonly latestVersion: string | null;
+  /** True when `latestVersion` is newer than `version` — null when either side is unknown. */
+  readonly updateAvailable: boolean | null;
+}
+
+export type EnvironmentPackageManagerId = 'homebrew' | 'winget';
+
+export interface EnvironmentPackageManagerResult {
+  readonly id: EnvironmentPackageManagerId;
+  readonly found: boolean;
+  readonly path: string | null;
+  readonly version: string | null;
+}
+
+export interface EnvironmentScanResult {
+  readonly scannedAt: string;
+  readonly platform: 'darwin' | 'win32';
+  readonly architecture: string;
+  readonly osVersion: string;
+  readonly diskFreeBytes: number | null;
+  readonly shellAvailable: boolean;
+  readonly shellPath: string | null;
+  /** Basename of `shellPath` ("zsh", "bash") — null when the shell couldn't be resolved. */
+  readonly shellName: string | null;
+  /** Real `<shell> --version`/`--version` output, parsed — null when unavailable. */
+  readonly shellVersion: string | null;
+  readonly packageManager: EnvironmentPackageManagerResult | null;
+  readonly tools: readonly EnvironmentScanToolResult[];
+  readonly defaultProjectLocation: string;
+  /** The real `git config --global user.name`, when set — used for the greeting, never guessed. */
+  readonly gitUserName: string | null;
+}
+
+export interface EnvironmentScanInput {
+  readonly defaultProjectLocation?: string;
+}
+
+export interface EnvironmentToolActionInput {
+  readonly toolId: string;
+  /** A one-time trust bypass for this single install/update action (mirrors PRJ-003 allow-once). */
+  readonly allowOnce?: boolean;
+}
+
+export interface EnvironmentToolActionResult {
+  readonly toolId: string;
+  readonly succeeded: boolean;
+  readonly exitCode: number | null;
+  /** Real stderr/stdout tail on failure, or a short human summary on success — never fabricated. */
+  readonly message: string | null;
+}
+
+export interface EnvironmentExportReportInput {
+  /** The scan already held by the renderer — exported as-is, not re-fetched, so the file matches what's on screen. */
+  readonly scan: EnvironmentScanResult;
+  readonly connectedServices?: ConnectedServicesResult | null;
+}
+
+export interface EnvironmentExportReportResult {
+  readonly saved: boolean;
+  readonly filePath: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Project environment — real per-project runtime/package-manager/lockfile/
+// scripts/env-var summary shown on the Environment screen's "Project
+// Environment" panel. Env var values are never read here, only names/count
+// (spec 25.1 protected-asset discipline extends to display, not just exec).
+// ---------------------------------------------------------------------------
+
+export interface ProjectEnvironmentInfo {
+  readonly projectId: string;
+  readonly runtimeToolId: string;
+  readonly runtimeVersion: string | null;
+  /** "via Volta", "system", etc — null when the runtime itself wasn't found. */
+  readonly runtimeSource: string | null;
+  readonly packageManager: JsPackageManagerId | null;
+  readonly lockfileDetected: boolean;
+  readonly lockfileName: string | null;
+  readonly scriptNames: readonly string[];
+  /** Variable names only (from a real `.env`/`.env.local` file's keys) — values are never read. */
+  readonly envVariableNames: readonly string[];
+  readonly envFileName: string | null;
+}
+
+export interface ProjectEnvironmentInfoInput {
+  readonly projectId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Connected services — real, read-only presence/auth checks for CLIs that
+// are project-triggered rather than part of the bootstrap toolchain manifest
+// (Docker, Vercel, Supabase, Google Cloud; GitHub is already covered by
+// githubHandlers). "Connect" opens a real login PTY (same mechanism as
+// `gh auth login`) — never a fabricated OAuth flow.
+// ---------------------------------------------------------------------------
+
+export type ConnectedServiceId = 'docker' | 'vercel' | 'supabase' | 'gcloud';
+
+export interface ConnectedServiceStatus {
+  readonly id: ConnectedServiceId;
+  readonly displayName: string;
+  readonly installed: boolean;
+  readonly version: string | null;
+  readonly connected: boolean;
+  /** Account/org/context string when the CLI reports one (e.g. `vercel whoami`, `supabase projects list`) — null when not connected or unknown. */
+  readonly account: string | null;
+  /** Short status detail ("Docker Desktop", "Not running") — null when nothing more to say. */
+  readonly detail: string | null;
+  /** True when this service has a real, non-interactive `deploy()` (currently just Vercel) — drives whether the panel shows a Deploy button. */
+  readonly deployable: boolean;
+}
+
+export interface ConnectedServicesResult {
+  readonly scannedAt: string;
+  readonly services: readonly ConnectedServiceStatus[];
+}
+
+export interface ConnectedServiceLoginInput {
+  readonly workspaceId: string;
+  readonly service: ConnectedServiceId;
+}
+
+export interface ConnectedServiceLoginResult {
+  readonly sessionId: string;
+}
+
+export interface ConnectedServiceDeployInput {
+  readonly projectId: string;
+  readonly service: ConnectedServiceId;
+}
+
+export interface ConnectedServiceDeployResult {
+  readonly success: boolean;
+  /** The deployed URL, parsed from the CLI's own stdout — null when the deploy failed or none was printed. */
+  readonly url: string | null;
+  readonly output: string;
+}
+
+// ---------------------------------------------------------------------------
+// Unified package manager — one real search/install/update/remove surface
+// over every package source the machine actually has, instead of a fixed
+// tool list: Homebrew formulae, Homebrew casks (real macOS apps), and
+// global npm packages (WinGet on win32). Every entry here is either a real
+// installed package (from `brew info --json=v2 --installed` / `npm list -g`)
+// or a real search hit (from `brew search` / the public npm registry search
+// API) — nothing in this list is invented, and `iconDataUrl` is either the
+// real installed app's own icon or a real fetched favicon, never a stand-in.
+// ---------------------------------------------------------------------------
+
+export type PackageSource = 'homebrew-formula' | 'homebrew-cask' | 'npm-global' | 'winget';
+
+export interface PackageEntry {
+  /** `${source}:${name}` — stable across an install/search list refresh. */
+  readonly id: string;
+  readonly source: PackageSource;
+  /** The real identifier used for install/update/uninstall commands (formula name, cask token, npm package name, winget id) — never a display-only label. */
+  readonly name: string;
+  readonly displayName: string;
+  readonly description: string | null;
+  readonly homepage: string | null;
+  /** null when not installed. */
+  readonly installedVersion: string | null;
+  /** Newest version this source's own real listing reports — null when unknown. */
+  readonly latestVersion: string | null;
+  readonly updateAvailable: boolean | null;
+  /** A real `data:` URL — the installed app's own icon, or a fetched favicon — never a placeholder. */
+  readonly iconDataUrl: string | null;
+}
+
+export interface PackageListInstalledResult {
+  readonly scannedAt: string;
+  readonly packages: readonly PackageEntry[];
+}
+
+export interface PackageSearchInput {
+  readonly query: string;
+}
+
+export interface PackageSearchResult {
+  readonly query: string;
+  readonly packages: readonly PackageEntry[];
+}
+
+export interface PackageActionInput {
+  readonly source: PackageSource;
+  readonly name: string;
+}
+
+export interface PackageActionResult {
+  readonly source: PackageSource;
+  readonly name: string;
+  readonly succeeded: boolean;
+  readonly exitCode: number | null;
+  readonly message: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Dependency vulnerability/outdated scan — real `npm audit`/`pnpm audit`
+// and `npm outdated`/`pnpm outdated` output, parsed as-is. Yarn is
+// reported as unsupported (with a reason) rather than guessed at.
+// ---------------------------------------------------------------------------
+
+export interface VulnerabilitySeverityCounts {
+  readonly info: number;
+  readonly low: number;
+  readonly moderate: number;
+  readonly high: number;
+  readonly critical: number;
+  readonly total: number;
+}
+
+/** One entry of the real `npm|pnpm outdated --json` output. */
+export interface OutdatedPackageInfo {
+  readonly name: string;
+  readonly current: string | null;
+  readonly wanted: string | null;
+  readonly latest: string | null;
+}
+
+export interface DependencyScanResult {
+  readonly scannedAt: string;
+  readonly packageManager: JsPackageManagerId;
+  readonly supported: boolean;
+  readonly reason: string | null;
+  readonly vulnerabilities: VulnerabilitySeverityCounts | null;
+  readonly outdatedCount: number | null;
+  readonly outdatedPackages: readonly OutdatedPackageInfo[] | null;
+}
+
+export interface DependencyScanInput {
+  readonly canonicalPath: string;
+  readonly packageManager: JsPackageManagerId;
+}
+
+// ---------------------------------------------------------------------------
+// Live system resource stats (CPU/memory/load), read-only, sampled on demand
+// from Node's os module — no fabricated data, no fixed refresh loop.
+// ---------------------------------------------------------------------------
+
+/** Native menu items that push a command to the renderer (see app-menu.ts). */
+export type MenuCommand =
+  | 'new-project'
+  | 'add-folder'
+  | 'clone'
+  | 'new-terminal'
+  | 'go-home'
+  | 'go-changes'
+  | 'go-history'
+  | 'go-terminal'
+  | 'go-environment'
+  | 'git-fetch'
+  | 'git-push';
+
+export interface SystemStatsResult {
+  readonly sampledAt: string;
+  readonly cpuPercent: number;
+  readonly cpuCount: number;
+  readonly memoryTotalBytes: number;
+  readonly memoryFreeBytes: number;
+  readonly loadAverage: readonly [number, number, number];
+  readonly processCount: number | null;
+}
+
+/** One row of the real `ps` output (top CPU consumers) — see system-handlers.ts. */
+export interface SystemProcessInfo {
+  readonly pid: number;
+  readonly name: string;
+  readonly cpuPercent: number;
+  readonly memoryPercent: number;
+  /** The process's real OS icon (its .app bundle icon on macOS) as a PNG data URL, or null for daemons/paths with no resolvable icon. */
+  readonly iconDataUrl: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,6 +578,30 @@ export interface StopDevServerInput {
 }
 
 // ---------------------------------------------------------------------------
+// Home dashboard: unified running services (dev servers, containers,
+// terminal-spawned processes) for a project.
+// ---------------------------------------------------------------------------
+
+export type ServiceKind = 'devServer' | 'container' | 'process';
+
+export interface ServiceInfo {
+  /** DevProcessInfo.id for devServer, container id for container, pid (stringified) for process. */
+  readonly id: string;
+  readonly projectId: string;
+  readonly kind: ServiceKind;
+  readonly label: string;
+  readonly detail: string | null;
+  readonly pid: number | null;
+  readonly state: DevProcessState;
+  readonly startedAt: string | null;
+}
+
+export interface StopServiceInput {
+  readonly id: string;
+  readonly kind: ServiceKind;
+}
+
+// ---------------------------------------------------------------------------
 // M5: Git status, staging, commit, branches, history, remote, conflicts
 // (GIT-001..009, spec sections 11-12). Shapes mirror @space/git-engine's
 // status/refs/history/repository-state types field-for-field, but are
@@ -372,6 +697,29 @@ export interface GitProjectInput {
 export interface GitStageInput {
   readonly projectId: string;
   readonly paths: readonly string[];
+}
+
+/** One file's real `git diff --numstat` counts; added/removed are null for binary files (git reports "-"). */
+export interface GitFileDiffStat {
+  readonly path: string;
+  readonly added: number | null;
+  readonly removed: number | null;
+  readonly staged: boolean;
+}
+
+export interface GitDiffStats {
+  readonly files: readonly GitFileDiffStat[];
+}
+
+export interface GitFileDiffInput {
+  readonly projectId: string;
+  readonly path: string;
+  readonly staged: boolean;
+}
+
+export interface GitFileDiffResult {
+  /** Raw unified patch text straight from `git diff` — empty when the file has no diff on that side. */
+  readonly patchText: string;
 }
 
 export interface GitCommitInput {
@@ -488,6 +836,52 @@ export interface GitOperationOutcome {
   readonly remaining: GitOperationState;
   readonly stdout: string;
   readonly stderr: string;
+}
+
+/** One configured remote and its fetch/push URLs (`git remote -v`). `pushUrl` equals `fetchUrl` unless a separate push URL is configured. */
+export interface GitRemoteEntry {
+  readonly name: string;
+  readonly fetchUrl: string;
+  readonly pushUrl: string;
+}
+
+/** One stash entry. `index` 0 is the most recent (`stash@{0}`); `branch` is the branch the stash was created on when known; `createdAt` is unix epoch milliseconds. */
+export interface GitStashEntry {
+  readonly index: number;
+  readonly message: string;
+  readonly branch: string | null;
+  readonly createdAt: number;
+}
+
+/** One tag ref. `targetSha` is the peeled commit (annotated tags are dereferenced); `subject`/`taggedAt` come from the tag object (annotated) or the target commit (lightweight); `taggedAt` is unix epoch milliseconds, null when unavailable. */
+export interface GitTagEntry {
+  readonly name: string;
+  readonly targetSha: string;
+  readonly subject: string | null;
+  readonly taggedAt: number | null;
+}
+
+/** One linked working tree (`git worktree list`). `isMain` marks the primary worktree; `isCurrent` marks the one that owns the repo the request came from. */
+export interface GitWorktreeEntry {
+  readonly path: string;
+  readonly branch: string | null;
+  readonly headSha: string;
+  readonly isMain: boolean;
+  readonly isCurrent: boolean;
+}
+
+/** Resolve one conflicted file by taking a whole side: `git checkout --ours|--theirs <path>` then stage it. */
+export interface GitConflictResolveInput {
+  readonly projectId: string;
+  readonly path: string;
+  readonly side: 'ours' | 'theirs';
+}
+
+/** Apply/drop targets the stash at `index` (`stash@{index}`). Destructive drops require `confirmed === true` (structural gate, @space/domain), like branch delete. */
+export interface GitStashActionInput {
+  readonly projectId: string;
+  readonly index: number;
+  readonly confirmed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1463,53 @@ export interface AgentStandingPermissionSummary {
   readonly actionType: string;
   readonly grantedAt: string;
   readonly revokedAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// AI comment review — real, on-demand Anthropic API calls (never a fabricated
+// "AI" surface). The key is stored via Electron's OS-backed `safeStorage`,
+// never in plain text; `reviewComments` only reads and proposes, it never
+// writes — `applyFix` is a separate, explicitly confirmed step so the model
+// never edits files on its own initiative.
+// ---------------------------------------------------------------------------
+
+export interface AiKeyStatus {
+  readonly configured: boolean;
+}
+
+export interface AiSetApiKeyInput {
+  readonly apiKey: string;
+}
+
+export interface AiReviewCommentsInput {
+  readonly projectId: string;
+}
+
+export interface AiReviewFinding {
+  readonly id: string;
+  readonly file: string;
+  readonly line: number;
+  readonly comment: string;
+  /** The exact, untrimmed line as read from disk — passed back to `applyFix` so it can detect the file changed since the review ran. */
+  readonly originalLine: string;
+  readonly proposedFix: string | null;
+}
+
+export interface AiReviewCommentsResult {
+  readonly findings: readonly AiReviewFinding[];
+  readonly scannedFileCount: number;
+}
+
+export interface AiApplyFixInput {
+  readonly projectId: string;
+  readonly file: string;
+  readonly line: number;
+  readonly originalLine: string;
+  readonly newLine: string;
+}
+
+export interface AiApplyFixResult {
+  readonly applied: boolean;
 }
 
 // ---------------------------------------------------------------------------

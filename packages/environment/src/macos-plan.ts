@@ -104,7 +104,11 @@ export async function buildMacOsBootstrapPlan(
     deferredImplementation: false,
   });
 
-  const darwinEntries = manifest.entries.filter((entry) => entry.supportedPlatforms.includes('darwin'));
+  // Only the required essential set is ever planned for install during
+  // onboarding (spec section 39: "install every optional tool during
+  // onboarding" is a prohibited shortcut) — optional entries like pnpm/Bun/
+  // Python are detected by performScan for display but never planned here.
+  const darwinEntries = manifest.entries.filter((entry) => entry.required && entry.supportedPlatforms.includes('darwin'));
   const missing = darwinEntries.filter((entry) => !isSatisfied(entry, scan));
 
   const homebrewStrategiesNeeded = missing
