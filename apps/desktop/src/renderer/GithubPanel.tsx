@@ -61,7 +61,7 @@ export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
 
   function handleListPrs(): void {
     void guarded(async () => {
-      setPrs(await window.space.github.prList({ workspaceId, projectId, state: 'open' }));
+      setPrs(await window.space.github.prList({ workspaceId, state: 'open', ...(projectId ? { projectId } : {}) }));
     });
   }
 
@@ -78,7 +78,7 @@ export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
   }
 
   async function handleListPrsInternal(): Promise<void> {
-    setPrs(await window.space.github.prList({ workspaceId, projectId, state: 'open' }));
+    setPrs(await window.space.github.prList({ workspaceId, state: 'open', ...(projectId ? { projectId } : {}) }));
   }
 
   /** `confirmed` is a structural gate (@space/domain) the handler enforces server-side — this dialog is what actually sets it true, not a UI-only nicety. */
@@ -95,7 +95,7 @@ export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
 
   function handleListIssues(): void {
     void guarded(async () => {
-      setIssues(await window.space.github.issueList({ workspaceId, projectId, state: 'open' }));
+      setIssues(await window.space.github.issueList({ workspaceId, state: 'open', ...(projectId ? { projectId } : {}) }));
     });
   }
 

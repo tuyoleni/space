@@ -301,7 +301,7 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
       }
       // Scoped to this screen's project so the list reflects its repo, not
       // whatever directory the host process happens to be running in.
-      const list = await window.space.github.prList({ workspaceId: workspace.id, projectId: project?.id, state: 'open', limit: PR_LIMIT });
+      const list = await window.space.github.prList({ workspaceId: workspace.id, state: 'open', limit: PR_LIMIT, ...(project?.id ? { projectId: project.id } : {}) });
       setPrs(
         list.map((pr) => ({
           number: pr.number,
