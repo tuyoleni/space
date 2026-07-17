@@ -99,6 +99,7 @@ const GIT_ACTIVITY_TYPES: ReadonlySet<ActivityEventType> = new Set<ActivityEvent
   'commit',
   'branch-created',
   'branch-deleted',
+  'branch-merged',
   'fetch',
   'pull',
   'push',
@@ -115,6 +116,7 @@ const ACTIVITY_KIND: Partial<Record<ActivityEventType, ActivityKind>> = {
   fetch: 'pull',
   'branch-created': 'branch',
   'branch-deleted': 'branch',
+  'branch-merged': 'branch',
   'pull-request': 'other',
 };
 

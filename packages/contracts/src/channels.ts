@@ -53,6 +53,7 @@ export const IPC_CHANNELS = {
   gitBranchCreate: 'git:branch:create',
   gitBranchSwitch: 'git:branch:switch',
   gitBranchDelete: 'git:branch:delete',
+  gitBranchMerge: 'git:branch:merge',
   gitHistoryLoad: 'git:history:load',
   gitFetch: 'git:fetch',
   gitPull: 'git:pull',

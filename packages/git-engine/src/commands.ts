@@ -240,6 +240,11 @@ export function mergeContinueArgs(): string[] {
 export function mergeAbortArgs(): string[] {
   return ['merge', '--abort'];
 }
+
+/** Starts a new merge of `branch` into the current branch. `--no-edit` accepts Git's default merge message rather than opening an editor. */
+export function mergeStartArgs(branch: string, options: { readonly noFf?: boolean } = {}): string[] {
+  return ['merge', '--no-edit', ...(options.noFf ? ['--no-ff'] : []), '--', branch];
+}
 export function rebaseContinueArgs(): string[] {
   return ['rebase', '--continue'];
 }

@@ -766,6 +766,15 @@ export interface GitDeleteBranchInput {
   readonly confirmed: boolean;
 }
 
+export interface GitMergeBranchInput {
+  readonly projectId: string;
+  /** The branch to merge into the current branch — a shortname or a full `refs/heads/…`/`refs/remotes/…` ref. */
+  readonly branch: string;
+  /** `git merge --no-ff`: always create a merge commit, even when a fast-forward is possible. */
+  readonly noFf?: boolean | undefined;
+  readonly confirmed: boolean;
+}
+
 export interface GitHistoryLoadInput {
   readonly projectId: string;
   readonly offset: number;
@@ -905,6 +914,7 @@ export type ActivityEventType =
   | 'branch-created'
   | 'branch-switched'
   | 'branch-deleted'
+  | 'branch-merged'
   | 'fetch'
   | 'pull'
   | 'push'

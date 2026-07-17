@@ -171,6 +171,13 @@ export const gitDeleteBranchInputSchema = z.object({
   confirmed: z.boolean(),
 });
 
+export const gitMergeBranchInputSchema = z.object({
+  projectId: z.string().min(1),
+  branch: z.string().trim().min(1).max(250),
+  noFf: z.boolean().optional(),
+  confirmed: z.boolean(),
+});
+
 export const gitHistoryLoadInputSchema = z.object({
   projectId: z.string().min(1),
   offset: z.number().int().min(0),

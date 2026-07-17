@@ -74,6 +74,7 @@ const spaceAPI: SpaceAPI = {
     createBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchCreate, input),
     switchBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchSwitch, input),
     deleteBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchDelete, input),
+    mergeBranch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitBranchMerge, input),
     loadHistory: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitHistoryLoad, input),
     fetch: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitFetch, input),
     pull: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitPull, input),

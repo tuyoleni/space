@@ -50,6 +50,7 @@ const OPERATION_TYPE_TO_ACTIVITY: Readonly<Record<string, Mapping>> = {
   'git.branch.create': { eventType: 'branch-created', weight: 1 },
   'git.branch.switch': { eventType: 'branch-switched', weight: 1 },
   'git.branch.delete': { eventType: 'branch-deleted', weight: 1 },
+  'git.branch.merge': { eventType: 'branch-merged', weight: 2 },
   'git.fetch': { eventType: 'fetch', weight: 1 },
   'git.pull': { eventType: 'pull', weight: 2 },
   'git.push': { eventType: 'push', weight: 2 },

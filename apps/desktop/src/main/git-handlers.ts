@@ -26,6 +26,7 @@ import {
   createNodeGitDirFs,
   createNodeGitExecutor,
   deleteBranch,
+  mergeBranch as mergeBranchEngine,
   deriveConflictState,
   diffNumstatArgs,
   diffPatchArgs,
@@ -69,6 +70,7 @@ import type {
   GitConflictState,
   GitCreateBranchInput,
   GitDeleteBranchInput,
+  GitMergeBranchInput,
   GitDiffStats,
   GitFetchInput,
   GitFileDiffInput,
@@ -330,19 +332,21 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     const cwd = repoCwd(project);
     const firstLine = input.message.split('\n')[0];
 
-    return recordMutation(
+    const outcome = await recordMutation(
       project,
       'git.commit',
       `Commit "${firstLine}"`,
       async () => {
         const identity = await resolveIdentity(cwd, project.workspaceId);
-        const outcome: CommitOutcome = await queue.enqueueMutating(cwd, () =>
+        const result: CommitOutcome = await queue.enqueueMutating(cwd, () =>
           runCommit(cwd, { identity, message: input.message }, gitExecutor),
         );
-        return outcome;
+        return result;
       },
-      (outcome) => outcome.sha,
+      (result) => result.sha,
     );
+    invalidateHistory(project.id);
+    return outcome;
   }
 
   async function listBranches(input: GitProjectInput): Promise<GitRefEntry[]> {
@@ -365,6 +369,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
       () => queue.enqueueMutating(cwd, () => createBranch(cwd, input.name, input.fromCommit, gitExecutor)),
       () => input.name,
     );
+    invalidateHistory(project.id);
   }
 
   async function switchBranchHandler(input: GitSwitchBranchInput): Promise<void> {
@@ -377,6 +382,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
       () => queue.enqueueMutating(cwd, () => switchBranchEngine(cwd, input.name, gitExecutor)),
       () => input.name,
     );
+    invalidateHistory(project.id);
   }
 
   async function deleteBranchHandler(input: GitDeleteBranchInput): Promise<void> {
@@ -392,6 +398,37 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
         ),
       () => input.name,
     );
+    invalidateHistory(project.id);
+  }
+
+  async function mergeBranchHandler(input: GitMergeBranchInput): Promise<GitOperationOutcome> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    const outcome = await recordMutation(
+      project,
+      'git.branch.merge',
+      `Merge "${input.branch}" into the current branch`,
+      async () => {
+        const full = await readFullStatus(cwd);
+        const result = await queue.enqueueMutating(cwd, () =>
+          mergeBranchEngine(
+            cwd,
+            full.gitDir,
+            input.branch,
+            { confirmed: input.confirmed, ...(input.noFf ? { noFf: true } : {}) },
+            gitExecutor,
+            gitDirFs,
+          ),
+        );
+        return toGitOperationOutcome(result);
+      },
+      () => input.branch,
+    );
+    // Invalidate even on a conflicted (not-yet-completed) merge: HEAD hasn't
+    // moved yet, but a stale cached page showing the wrong operation state
+    // is worse than a harmless extra re-index once it does complete.
+    invalidateHistory(project.id);
+    return outcome;
   }
 
   function historyStoreFor(project: Project, cwd: string): HistoryStore {
@@ -512,25 +549,29 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   async function continueConflict(input: GitProjectInput): Promise<GitOperationOutcome> {
     const project = await requireProject(input.projectId);
     const cwd = repoCwd(project);
-    return recordMutation(project, 'git.conflict.continue', `Continue "${project.name}"'s in-progress operation`, async () => {
+    const outcome = await recordMutation(project, 'git.conflict.continue', `Continue "${project.name}"'s in-progress operation`, async () => {
       const full = await readFullStatus(cwd);
-      const outcome = await queue.enqueueMutating(cwd, () =>
+      const result = await queue.enqueueMutating(cwd, () =>
         continueOperation(cwd, full.gitDir, full.operationState, gitExecutor, gitDirFs),
       );
-      return toGitOperationOutcome(outcome);
+      return toGitOperationOutcome(result);
     });
+    invalidateHistory(project.id);
+    return outcome;
   }
 
   async function abortConflict(input: GitProjectInput): Promise<GitOperationOutcome> {
     const project = await requireProject(input.projectId);
     const cwd = repoCwd(project);
-    return recordMutation(project, 'git.conflict.abort', `Abort "${project.name}"'s in-progress operation`, async () => {
+    const outcome = await recordMutation(project, 'git.conflict.abort', `Abort "${project.name}"'s in-progress operation`, async () => {
       const full = await readFullStatus(cwd);
-      const outcome = await queue.enqueueMutating(cwd, () =>
+      const result = await queue.enqueueMutating(cwd, () =>
         abortOperation(cwd, full.gitDir, full.operationState, gitExecutor, gitDirFs),
       );
-      return toGitOperationOutcome(outcome);
+      return toGitOperationOutcome(result);
     });
+    invalidateHistory(project.id);
+    return outcome;
   }
 
   /** Read-only: both halves of `git diff --numstat`, so the UI can show real per-file added/removed counts. */
@@ -648,6 +689,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     createBranch: createBranchHandler,
     switchBranch: switchBranchHandler,
     deleteBranch: deleteBranchHandler,
+    mergeBranch: mergeBranchHandler,
     loadHistory,
     invalidateHistory,
     fetch,

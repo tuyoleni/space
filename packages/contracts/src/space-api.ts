@@ -56,6 +56,7 @@ import type {
   GitConflictState,
   GitCreateBranchInput,
   GitDeleteBranchInput,
+  GitMergeBranchInput,
   GitDiffStats,
   GitFetchInput,
   GitFileDiffInput,
@@ -243,6 +244,8 @@ export interface SpaceAPI {
     switchBranch(input: GitSwitchBranchInput): Promise<void>;
     /** Destructive; `confirmed` is a structural gate (@space/domain), not a UI-only check. */
     deleteBranch(input: GitDeleteBranchInput): Promise<void>;
+    /** Merges `branch` into the current branch; `confirmed` is a structural gate (@space/domain). A resulting conflict surfaces the same way as any other in-progress operation — via `conflictState`/`continueConflict`/`abortConflict`. */
+    mergeBranch(input: GitMergeBranchInput): Promise<GitOperationOutcome>;
     /** GIT-002/12.5: paginated, cached history via HistoryStore. */
     loadHistory(input: GitHistoryLoadInput): Promise<GitHistoryPage>;
     /** GIT-007 */

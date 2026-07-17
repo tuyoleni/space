@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, GitBranch, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, GitMerge, Plus, RefreshCw } from 'lucide-react';
 import type { GitRefEntry, GitStatusSummary, Project } from '@space/contracts';
 import { Button, InlineBanner, Input, Select, Textarea, useToast } from '@space/ui';
 import { toErrorMessage } from './errors';
@@ -139,6 +139,21 @@ export function GitPanel({ project }: GitPanelProps) {
   function handleSwitchBranch(name: string): void {
     void guarded(async () => {
       await window.space.git.switchBranch({ projectId: project.id, name });
+      await Promise.all([refreshStatus(), refreshBranches()]);
+    });
+  }
+
+  function handleMergeBranch(name: string): void {
+    const shortName = branches.find((branch) => branch.refname === name)?.shortName ?? name;
+    const confirmed = window.confirm(`Merge "${shortName}" into ${status?.branch.branchName ?? 'the current branch'}?`);
+    if (!confirmed) {
+      return;
+    }
+    void guarded(async () => {
+      const outcome = await window.space.git.mergeBranch({ projectId: project.id, branch: name, confirmed: true });
+      if (!outcome.completed) {
+        toast({ variant: 'error', message: `Merge stopped with conflicts (${outcome.remaining.kind}) — resolve them below.` });
+      }
       await Promise.all([refreshStatus(), refreshBranches()]);
     });
   }
@@ -297,6 +312,17 @@ export function GitPanel({ project }: GitPanelProps) {
           options={branches
             .filter((branch) => branch.kind === 'local-branch')
             .map((branch) => ({ value: branch.refname, label: branch.isHead ? `${branch.shortName} (current)` : branch.shortName }))}
+        />
+        <GitMerge size={13} className="text-fg-faint" aria-hidden />
+        <Select
+          ariaLabel="Merge branch into current"
+          value={undefined}
+          placeholder="Merge branch…"
+          onValueChange={handleMergeBranch}
+          disabled={busy || !status.branch.branchName}
+          options={branches
+            .filter((branch) => (branch.kind === 'local-branch' || branch.kind === 'remote-branch') && !branch.isHead)
+            .map((branch) => ({ value: branch.refname, label: branch.kind === 'remote-branch' ? `${branch.shortName} (remote)` : branch.shortName }))}
         />
         <Input
           placeholder="New branch name"

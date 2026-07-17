@@ -14,7 +14,8 @@ export type DestructiveGitAction =
   | 'discard-changes'
   | 'hard-reset'
   | 'force-push-with-lease'
-  | 'force-push-raw';
+  | 'force-push-raw'
+  | 'merge-branch';
 
 export interface DestructiveGitActionInput {
   readonly action: DestructiveGitAction;
@@ -28,6 +29,7 @@ const DESTRUCTIVE_ACTION_EXPLANATION: Record<DestructiveGitAction, string> = {
   'force-push-with-lease': 'a force push rewrites remote history; --force-with-lease still requires confirmation',
   'force-push-raw':
     'a raw --force push rewrites remote history without checking for other people\'s work and can destroy it',
+  'merge-branch': 'merging can leave the repository in a conflicted state that blocks other work until resolved',
 };
 
 export class DestructiveGitActionNotConfirmedError extends Error {

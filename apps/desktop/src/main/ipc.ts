@@ -31,6 +31,7 @@ import {
   gitConflictResolveInputSchema,
   gitCreateBranchInputSchema,
   gitDeleteBranchInputSchema,
+  gitMergeBranchInputSchema,
   gitFetchInputSchema,
   gitFileDiffInputSchema,
   gitHistoryLoadInputSchema,
@@ -495,6 +496,11 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.gitBranchDelete, async (event, input) => {
     assertIpcSender(event, trusted);
     return gitHandlers.deleteBranch(gitDeleteBranchInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.gitBranchMerge, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return gitHandlers.mergeBranch(gitMergeBranchInputSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.gitHistoryLoad, async (event, input) => {

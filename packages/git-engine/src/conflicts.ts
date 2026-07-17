@@ -6,6 +6,7 @@
  * re-checks operation state afterward rather than trusting the command's
  * exit code alone (spec 39).
  */
+import { assertDestructiveGitActionConfirmed } from '@space/domain';
 import {
   addPathsArgs,
   checkoutSideArgs,
@@ -13,6 +14,7 @@ import {
   cherryPickContinueArgs,
   mergeAbortArgs,
   mergeContinueArgs,
+  mergeStartArgs,
   rebaseAbortArgs,
   rebaseContinueArgs,
   revertAbortArgs,
@@ -105,6 +107,40 @@ export async function abortOperation(
     throw new Error(`No abortable Git operation is in progress (state: "${operation.kind}")`);
   }
   return runAndVerify(cwd, gitDir, ABORT_ARGS[operation.kind](), executor, gitDirFs);
+}
+
+export interface MergeBranchOptions {
+  readonly noFf?: boolean;
+  /** Structural confirmation — see @space/domain's assertDestructiveGitActionConfirmed. */
+  readonly confirmed: boolean;
+}
+
+/**
+ * Starts a merge of `branch` into the current branch. Unlike
+ * `continueOperation`/`abortOperation` (resuming an operation Git already
+ * confirmed is in progress, where a non-zero exit only ever means
+ * "conflicts remain"), a *fresh* merge attempt can fail for reasons that
+ * never start an operation at all — an unknown branch name, a dirty
+ * working tree, an unrelated-histories error — and those must surface as
+ * real errors rather than a silent `completed: true`, since `remaining.
+ * kind` would read `none` in both the "merge succeeded" and the "merge
+ * never started" cases.
+ */
+export async function mergeBranch(
+  cwd: string,
+  gitDir: string,
+  branch: string,
+  options: MergeBranchOptions,
+  executor: GitExecutor,
+  gitDirFs: GitDirFsPort,
+): Promise<OperationOutcome> {
+  assertDestructiveGitActionConfirmed({ action: 'merge-branch', confirmed: options.confirmed });
+  const result = await executor(mergeStartArgs(branch, options.noFf ? { noFf: true } : {}), { cwd });
+  const remaining = await detectRepositoryOperationState(gitDir, gitDirFs);
+  if (result.exitCode !== 0 && remaining.kind === 'none') {
+    throw new Error(`git merge failed: ${result.stderr.trim() || result.stdout.trim() || `exit code ${result.exitCode}`}`);
+  }
+  return { completed: remaining.kind === 'none', remaining, stdout: result.stdout, stderr: result.stderr };
 }
 
 /**

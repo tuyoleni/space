@@ -32,4 +32,14 @@ describe('assertDestructiveGitActionConfirmed', () => {
       assertDestructiveGitActionConfirmed({ action: 'force-push-raw', confirmed: false }, true),
     ).toThrow(DestructiveGitActionNotConfirmedError);
   });
+
+  it('throws when a branch merge was not confirmed', () => {
+    expect(() => assertDestructiveGitActionConfirmed({ action: 'merge-branch', confirmed: false })).toThrow(
+      DestructiveGitActionNotConfirmedError,
+    );
+  });
+
+  it('passes a branch merge when confirmed', () => {
+    expect(() => assertDestructiveGitActionConfirmed({ action: 'merge-branch', confirmed: true })).not.toThrow();
+  });
 });

@@ -28,6 +28,7 @@ export type ActivityEventType =
   | 'branch-created'
   | 'branch-switched'
   | 'branch-deleted'
+  | 'branch-merged'
   | 'fetch'
   | 'pull'
   | 'push'

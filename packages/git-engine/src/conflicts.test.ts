@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GitExecutor } from './clone';
 import { createNodeGitExecutor } from './node-git-executor';
 import type { GitDirFsPort } from './repository-state';
-import { abortOperation, continueOperation, deriveConflictState, resolveConflict } from './conflicts';
+import { abortOperation, continueOperation, deriveConflictState, mergeBranch, resolveConflict } from './conflicts';
+import { createNodeGitDirFs } from './node-git-dir-fs';
 import type { RepositoryStatus } from './status/types';
 
 function statusWithUnmerged(paths: readonly string[]): RepositoryStatus {
@@ -141,5 +142,72 @@ describe('resolveConflict against a real merge conflict', () => {
   it('taking theirs writes their version', async () => {
     await resolveConflict(dir, 'a.txt', 'theirs', git);
     expect(fs.readFileSync(path.join(dir, 'a.txt'), 'utf-8')).toBe('theirs change\n');
+  });
+});
+
+describe('mergeBranch against a real repository', () => {
+  let dir: string;
+  let git: GitExecutor;
+  let gitDirFs: GitDirFsPort;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'space-merge-'));
+    git = createNodeGitExecutor();
+    gitDirFs = createNodeGitDirFs();
+    const run = (...args: string[]): void => {
+      execFileSync('git', args, { cwd: dir });
+    };
+    run('init', '-q', '-b', 'main');
+    run('config', 'user.email', 'fixture@space.test');
+    run('config', 'user.name', 'Fixture');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'base\n');
+    run('add', 'a.txt');
+    run('commit', '-q', '-m', 'base');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throws without running git when not confirmed', async () => {
+    const spy = vi.fn(git);
+    await expect(
+      mergeBranch(dir, path.join(dir, '.git'), 'anything', { confirmed: false }, spy, gitDirFs),
+    ).rejects.toThrow(/not confirmed/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('cleanly merges a non-conflicting branch and reports completed', async () => {
+    execFileSync('git', ['checkout', '-q', '-b', 'feature'], { cwd: dir });
+    fs.writeFileSync(path.join(dir, 'b.txt'), 'new file\n');
+    execFileSync('git', ['add', 'b.txt'], { cwd: dir });
+    execFileSync('git', ['commit', '-q', '-m', 'add b.txt'], { cwd: dir });
+    execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
+
+    const outcome = await mergeBranch(dir, path.join(dir, '.git'), 'feature', { confirmed: true }, git, gitDirFs);
+    expect(outcome.completed).toBe(true);
+    expect(outcome.remaining.kind).toBe('none');
+    expect(fs.existsSync(path.join(dir, 'b.txt'))).toBe(true);
+  });
+
+  it('stops with real conflicts rather than throwing, leaving a merge genuinely in progress', async () => {
+    execFileSync('git', ['checkout', '-q', '-b', 'feature'], { cwd: dir });
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'feature change\n');
+    execFileSync('git', ['commit', '-q', '-am', 'change on feature'], { cwd: dir });
+    execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir });
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'main change\n');
+    execFileSync('git', ['commit', '-q', '-am', 'change on main'], { cwd: dir });
+
+    const outcome = await mergeBranch(dir, path.join(dir, '.git'), 'feature', { confirmed: true }, git, gitDirFs);
+    expect(outcome.completed).toBe(false);
+    expect(outcome.remaining.kind).toBe('merge');
+    const unmerged = execFileSync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: dir }).toString().trim();
+    expect(unmerged).toBe('a.txt');
+  });
+
+  it('throws a real error, rather than silently reporting completed, when the branch does not exist', async () => {
+    await expect(
+      mergeBranch(dir, path.join(dir, '.git'), 'does-not-exist', { confirmed: true }, git, gitDirFs),
+    ).rejects.toThrow(/git merge failed/);
   });
 });
