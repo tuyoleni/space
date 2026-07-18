@@ -68,6 +68,8 @@ export function AppShell() {
   const [envScan, setEnvScan] = useState<EnvironmentScanResult | null>(null);
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
   const [branches, setBranches] = useState<readonly GitRefEntry[]>([]);
+  /** Local branch refnames checked out by another linked worktree — `git switch` refuses these, so the branch menu disables them instead of letting the user hit a raw error. */
+  const [branchesInUseElsewhere, setBranchesInUseElsewhere] = useState<ReadonlySet<string>>(new Set());
   const [terminalCount, setTerminalCount] = useState(0);
 
   const [runtime, setRuntime] = useState<ProjectRuntimeState>({ detections: {}, devServers: {}, services: {}, openTerminal: {} });
@@ -156,18 +158,24 @@ export function AppShell() {
     if (!selectedProject?.repositoryRoot) {
       setGitStatus(null);
       setBranches([]);
+      setBranchesInUseElsewhere(new Set());
       return;
     }
     try {
-      const [status, refs] = await Promise.all([
+      const [status, refs, worktrees] = await Promise.all([
         window.space.git.status({ projectId: selectedProject.id }),
         window.space.git.listBranches({ projectId: selectedProject.id }),
+        window.space.git.listWorktrees({ projectId: selectedProject.id }),
       ]);
       setGitStatus(status);
       setBranches(refs);
+      setBranchesInUseElsewhere(
+        new Set(worktrees.filter((wt) => !wt.isCurrent && wt.branch).map((wt) => wt.branch as string)),
+      );
     } catch {
       setGitStatus(null);
       setBranches([]);
+      setBranchesInUseElsewhere(new Set());
     }
   }, [selectedProject?.id, selectedProject?.repositoryRoot]);
 
@@ -560,6 +568,7 @@ export function AppShell() {
             onFetch={handleFetch}
             onPush={handlePush}
             branches={branches}
+            branchesInUseElsewhere={branchesInUseElsewhere}
           />
           <div className="min-h-0 flex-1 overflow-auto">
             {storageDegraded && (

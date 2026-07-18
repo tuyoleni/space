@@ -41,6 +41,8 @@ function formatLastFetched(lastFetchedAt: number | null): string {
 export function GitPanel({ project }: GitPanelProps) {
   const [status, setStatus] = useState<GitStatusSummary | null>(null);
   const [branches, setBranches] = useState<GitRefEntry[]>([]);
+  /** Local branch refnames checked out by another linked worktree — `git switch` refuses these. */
+  const [branchesInUseElsewhere, setBranchesInUseElsewhere] = useState<ReadonlySet<string>>(new Set());
   const [message, setMessage] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -53,7 +55,12 @@ export function GitPanel({ project }: GitPanelProps) {
   }, [project.id]);
 
   const refreshBranches = useCallback(async () => {
-    setBranches(await window.space.git.listBranches({ projectId: project.id }));
+    const [refs, worktrees] = await Promise.all([
+      window.space.git.listBranches({ projectId: project.id }),
+      window.space.git.listWorktrees({ projectId: project.id }),
+    ]);
+    setBranches(refs);
+    setBranchesInUseElsewhere(new Set(worktrees.filter((wt) => !wt.isCurrent && wt.branch).map((wt) => wt.branch as string)));
   }, [project.id]);
 
   // Best-effort: no upstream configured, no network, or auth failure should
@@ -311,7 +318,18 @@ export function GitPanel({ project }: GitPanelProps) {
           disabled={busy}
           options={branches
             .filter((branch) => branch.kind === 'local-branch')
-            .map((branch) => ({ value: branch.refname, label: branch.isHead ? `${branch.shortName} (current)` : branch.shortName }))}
+            .map((branch) => {
+              const inUseElsewhere = !branch.isHead && branchesInUseElsewhere.has(branch.refname);
+              return {
+                value: branch.refname,
+                disabled: inUseElsewhere,
+                label: branch.isHead
+                  ? `${branch.shortName} (current)`
+                  : inUseElsewhere
+                    ? `${branch.shortName} (in use elsewhere)`
+                    : branch.shortName,
+              };
+            })}
         />
         <GitMerge size={13} className="text-fg-faint" aria-hidden />
         <Select
