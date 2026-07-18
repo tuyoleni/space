@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import * as RadixDropdownMenu from '@radix-ui/react-dropdown-menu';
-import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, Cloud, GitBranch, Plus } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Check, ChevronDown, Cloud, FolderClock, GitBranch, Plus } from 'lucide-react';
 import type { GitRefEntry } from '@space/contracts';
 import { Dialog, Button, Input, cn } from '@space/ui';
 
@@ -12,6 +12,8 @@ interface BranchMenuProps {
   readonly onCreate: (name: string) => void;
   readonly onFetch: () => void;
   readonly onPush: () => void;
+  /** Local branch refnames checked out by another linked worktree — `git switch` refuses these, so they render disabled instead of erroring on click. */
+  readonly branchesInUseElsewhere: ReadonlySet<string>;
 }
 
 const chipClasses = cn(
@@ -31,12 +33,23 @@ const itemClasses = cn(
  * switch/checkout, create-and-switch, fetch, and push. Remote branches are
  * grouped separately; switching to one creates the local tracking branch.
  */
-export function BranchMenu({ branches, currentBranch, disabled, onSwitch, onCreate, onFetch, onPush }: BranchMenuProps) {
+export function BranchMenu({
+  branches,
+  currentBranch,
+  disabled,
+  onSwitch,
+  onCreate,
+  onFetch,
+  onPush,
+  branchesInUseElsewhere,
+}: BranchMenuProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
 
   const local = branches.filter((branch) => branch.kind === 'local-branch');
-  const remote = branches.filter((branch) => branch.kind === 'remote-branch');
+  // `<remote>/HEAD` is a symbolic pointer at whatever the remote's default branch is,
+  // not a real checkout target — `git switch HEAD` fails, so it's never worth listing.
+  const remote = branches.filter((branch) => branch.kind === 'remote-branch' && branch.shortName.split('/').pop() !== 'HEAD');
 
   function submitCreate(): void {
     if (!name.trim()) {
@@ -80,17 +93,30 @@ export function BranchMenu({ branches, currentBranch, disabled, onSwitch, onCrea
             <RadixDropdownMenu.Label className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-fg-faint">
               Local ({local.length})
             </RadixDropdownMenu.Label>
-            {local.map((branch) => (
-              <RadixDropdownMenu.Item key={branch.refname} onSelect={() => onSwitch(branch.refname)} className={itemClasses}>
-                <span className="w-3.5 shrink-0">{branch.isHead && <Check size={13} className="text-accent" />}</span>
-                <span className="truncate">{branch.shortName}</span>
-                {branch.upstream && (branch.ahead || branch.behind) ? (
-                  <span className="ml-auto shrink-0 text-[11px] text-fg-faint">
-                    {branch.ahead ?? 0}↑ {branch.behind ?? 0}↓
-                  </span>
-                ) : null}
-              </RadixDropdownMenu.Item>
-            ))}
+            {local.map((branch) => {
+              const inUseElsewhere = !branch.isHead && branchesInUseElsewhere.has(branch.refname);
+              return (
+                <RadixDropdownMenu.Item
+                  key={branch.refname}
+                  disabled={inUseElsewhere}
+                  onSelect={() => !inUseElsewhere && onSwitch(branch.refname)}
+                  className={itemClasses}
+                  title={inUseElsewhere ? 'Already checked out in another worktree' : undefined}
+                >
+                  <span className="w-3.5 shrink-0">{branch.isHead && <Check size={13} className="text-accent" />}</span>
+                  <span className="truncate">{branch.shortName}</span>
+                  {inUseElsewhere ? (
+                    <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-fg-faint">
+                      <FolderClock size={12} /> in use
+                    </span>
+                  ) : branch.upstream && (branch.ahead || branch.behind) ? (
+                    <span className="ml-auto shrink-0 text-[11px] text-fg-faint">
+                      {branch.ahead ?? 0}↑ {branch.behind ?? 0}↓
+                    </span>
+                  ) : null}
+                </RadixDropdownMenu.Item>
+              );
+            })}
 
             {remote.length > 0 && (
               <>

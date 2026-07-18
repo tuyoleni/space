@@ -22,6 +22,7 @@ interface AppTopbarProps {
   readonly onFetch: () => void;
   readonly onPush: () => void;
   readonly branches: readonly GitRefEntry[];
+  readonly branchesInUseElsewhere: ReadonlySet<string>;
 }
 
 const GITHUB_SIGN_IN_OPTION = { value: 'sign-in', label: 'Sign in…' };
@@ -46,6 +47,7 @@ export function AppTopbar({
   onFetch,
   onPush,
   branches,
+  branchesInUseElsewhere,
 }: AppTopbarProps) {
   const nodeTool = envScan?.tools.find((tool) => tool.toolId === 'node');
   const branchName = gitStatus?.branch.detached ? '(detached)' : gitStatus?.branch.branchName ?? '—';
@@ -78,6 +80,7 @@ export function AppTopbar({
           onCreate={onCreateBranch}
           onFetch={onFetch}
           onPush={onPush}
+          branchesInUseElsewhere={branchesInUseElsewhere}
         />
         <TopbarMenu
           label="Runtime"
