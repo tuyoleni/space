@@ -39,6 +39,10 @@ import type {
   ConnectedServicesResult,
   CreateProjectFromTemplateInput,
   CreateProjectResult,
+  ProjectApplyRemedyInput,
+  ProjectApplyRemedyResult,
+  ProjectDiagnoseInput,
+  ProjectDiagnosis,
   RemoveProjectInput,
   RemoveProjectResult,
   CreateTerminalInput,
@@ -195,6 +199,14 @@ export interface SpaceAPI {
     detect(input: DetectProjectInput): Promise<ProjectDetectionReport>;
     /** PRJ-005: lockfile-based package manager resolution. */
     detectPackageManager(input: DetectPackageManagerInput): Promise<PackageManagerDetection>;
+    /**
+     * Preconditions for a Git/GitHub action, in plain language with the
+     * fixes Space can perform. Called *before* an action so the user meets
+     * a resolvable question instead of the real CLI's stderr.
+     */
+    diagnose(input: ProjectDiagnoseInput): Promise<ProjectDiagnosis>;
+    /** Runs one remedy returned by `diagnose`, then re-diagnoses. */
+    applyRemedy(input: ProjectApplyRemedyInput): Promise<ProjectApplyRemedyResult>;
     /** Unregisters a project from the workspace. Never deletes anything on disk. */
     remove(input: RemoveProjectInput): Promise<RemoveProjectResult>;
     /** PRJ-003/ADR-006: apply a trust decision (allow-once/trust-this-project/keep-untrusted). */

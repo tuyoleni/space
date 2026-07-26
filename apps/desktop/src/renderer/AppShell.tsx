@@ -7,6 +7,7 @@ import type {
   GitStatusSummary,
   Project,
   ProjectDetectionReport,
+  ProjectIssue,
   ProjectTemplateSummary,
   ServiceInfo,
   TerminalSessionInfo,
@@ -25,6 +26,7 @@ import { TerminalsView } from './views/TerminalsView';
 import { EnvironmentView } from './views/EnvironmentView';
 import { ProjectsView } from './views/ProjectsView';
 import { SystemView } from './views/SystemView';
+import { ProjectIssueDialog } from './ProjectIssueDialog';
 import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } from './views/ProjectDialogs';
 import { OnboardingWizard } from './OnboardingWizard';
 import { GithubSetupPrompt } from './GithubSetupPrompt';
@@ -75,6 +77,9 @@ export function AppShell() {
   const [runtime, setRuntime] = useState<ProjectRuntimeState>({ detections: {}, devServers: {}, services: {}, openTerminal: {} });
 
   const [createOpen, setCreateOpen] = useState(false);
+  // The blocking precondition a user hit, shown as a resolvable dialog
+  // rather than the underlying command's stderr.
+  const [projectIssue, setProjectIssue] = useState<ProjectIssue | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
@@ -264,6 +269,13 @@ export function AppShell() {
     });
   }
 
+  /**
+   * Pushing checks its own preconditions first. Without this, a project with
+   * no remote produced `fatal: 'origin' does not appear to be a git
+   * repository` — the real CLI's real message, shown to someone who has
+   * never configured a remote and cannot act on it. The blocking issue is
+   * knowable beforehand, so the user gets a dialog with the fix instead.
+   */
   function handlePush(): void {
     if (!selectedProject || !gitStatus?.branch.branchName) {
       return;
@@ -272,6 +284,11 @@ export function AppShell() {
     const branch = gitStatus.branch.branchName;
     const setUpstream = !gitStatus.branch.upstream;
     void runGuarded(async () => {
+      const diagnosis = await window.space.project.diagnose({ projectId, action: 'push' });
+      if (diagnosis.blocking) {
+        setProjectIssue(diagnosis.blocking);
+        return;
+      }
       await window.space.git.push({ projectId, branch, setUpstream });
       await refreshGitContext();
       toast({ variant: 'success', message: `Pushed ${branch}${setUpstream ? ' (set upstream)' : ''}.` });
@@ -685,6 +702,18 @@ export function AppShell() {
         </div>
       </div>
 
+      <ProjectIssueDialog
+        open={projectIssue !== null}
+        onOpenChange={(next) => !next && setProjectIssue(null)}
+        issue={projectIssue}
+        projectId={selectedProject?.id ?? ''}
+        onResolved={async () => {
+          if (activeWorkspace) {
+            await refreshProjects(activeWorkspace.id);
+          }
+          await refreshGitContext();
+        }}
+      />
       <CreateProjectDialog
         open={createOpen}
         onOpenChange={setCreateOpen}

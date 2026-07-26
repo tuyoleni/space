@@ -26,6 +26,8 @@ const spaceAPI: SpaceAPI = {
     pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickFolder),
     add: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectAdd, input),
     remove: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectRemove, input),
+    diagnose: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDiagnose, input),
+    applyRemedy: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectApplyRemedy, input),
 
     detect: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetect, input),
     detectPackageManager: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetectPackageManager, input),

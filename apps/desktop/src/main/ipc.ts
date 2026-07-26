@@ -30,6 +30,8 @@ import {
   automationSettingsSetInputSchema,
   cloneProjectInputSchema,
   createProjectFromTemplateInputSchema,
+  projectApplyRemedyInputSchema,
+  projectDiagnoseInputSchema,
   removeProjectInputSchema,
   gitCommitInputSchema,
   gitConflictResolveInputSchema,
@@ -122,6 +124,7 @@ import type { GithubHandlers } from './github-handlers';
 import type { PackageManagerHandlers } from './package-manager-handlers';
 import type { ProjectEnvironmentHandlers } from './project-environment-handlers';
 import type { ProjectHandlers } from './project-handlers';
+import { createProjectReadinessHandlers } from './project-readiness-handlers';
 import { createServiceHandlers } from './service-handlers';
 import type { StorageClient } from './storage-client';
 import type { SystemHandlers } from './system-handlers';
@@ -272,6 +275,39 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.projectAdd, async (event, input) => {
     assertIpcSender(event, trusted);
     return storage.call('project.add', addProjectInputSchema.parse(input));
+  });
+
+  /**
+   * Readiness checks and their fixes. Built here from handlers this function
+   * already receives rather than taken as another parameter — it composes
+   * existing capabilities and owns no state, so there is nothing for main.ts
+   * to construct or hold.
+   */
+  const projectReadinessHandlers = createProjectReadinessHandlers(storage, {
+    gitHandlers,
+    githubHandlers,
+    environmentHandlers,
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectDiagnose, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = projectDiagnoseInputSchema.parse(input);
+    return projectReadinessHandlers.diagnose({
+      projectId: parsed.projectId,
+      ...(parsed.action !== undefined ? { action: parsed.action } : {}),
+    });
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectApplyRemedy, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = projectApplyRemedyInputSchema.parse(input);
+    return projectReadinessHandlers.applyRemedy({
+      projectId: parsed.projectId,
+      remedyId: parsed.remedyId,
+      ...(parsed.remoteUrl !== undefined ? { remoteUrl: parsed.remoteUrl } : {}),
+      ...(parsed.owner !== undefined ? { owner: parsed.owner } : {}),
+      ...(parsed.visibility !== undefined ? { visibility: parsed.visibility } : {}),
+    });
   });
 
   /**

@@ -62,6 +62,81 @@ export interface RemoveProjectResult {
   readonly canonicalPath: string;
 }
 
+// ---------------------------------------------------------------------------
+// Project readiness: preconditions checked *before* a Git/GitHub action runs,
+// so the user meets a resolvable question instead of the real CLI's stderr
+// ("fatal: 'origin' does not appear to be a git repository"). Mirrors
+// @space/domain's ProjectIssue/ProjectRemedy shapes at the IPC boundary, the
+// same way ProjectDetectionReport mirrors @space/environment's — the renderer
+// never imports the packages that do the real work.
+// ---------------------------------------------------------------------------
+
+export type ProjectIssueId =
+  | 'not-a-repository'
+  | 'no-commits'
+  | 'no-remote'
+  | 'no-upstream'
+  | 'github-cli-missing'
+  | 'github-signed-out';
+
+export type ProjectRemedyId =
+  | 'initialize-repository'
+  | 'create-initial-commit'
+  | 'publish-to-github'
+  | 'add-existing-remote'
+  | 'push-and-set-upstream'
+  | 'install-github-cli'
+  | 'sign-in-to-github';
+
+export interface ProjectRemedy {
+  readonly id: ProjectRemedyId;
+  readonly label: string;
+  readonly description: string;
+  /** False when choosing this opens a form or hands off to the browser. */
+  readonly automatic: boolean;
+  readonly recommended: boolean;
+}
+
+export interface ProjectIssue {
+  readonly id: ProjectIssueId;
+  readonly severity: 'blocking' | 'advisory';
+  readonly title: string;
+  readonly detail: string;
+  readonly remedies: readonly ProjectRemedy[];
+}
+
+export type ProjectAction = 'commit' | 'push' | 'publish';
+
+export interface ProjectDiagnoseInput {
+  readonly projectId: string;
+  /** When given, `blocking` is the single issue standing in the way of this action. */
+  readonly action?: ProjectAction;
+}
+
+export interface ProjectDiagnosis {
+  readonly issues: readonly ProjectIssue[];
+  /** The one issue to raise first for `action`, or null when it can proceed. */
+  readonly blocking: ProjectIssue | null;
+}
+
+export interface ProjectApplyRemedyInput {
+  readonly projectId: string;
+  readonly remedyId: ProjectRemedyId;
+  /** Required by `add-existing-remote`. */
+  readonly remoteUrl?: string;
+  /** Owner for `publish-to-github`; defaults to the connected account. */
+  readonly owner?: string;
+  readonly visibility?: GithubRepoVisibility;
+}
+
+export interface ProjectApplyRemedyResult {
+  readonly applied: boolean;
+  /** Plain-language outcome, suitable to show as-is. */
+  readonly message: string;
+  /** State after the remedy, so the caller can re-render without a second round trip. */
+  readonly diagnosis: ProjectDiagnosis;
+}
+
 export interface ProjectIconInput {
   readonly canonicalPath: string;
 }

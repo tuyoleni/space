@@ -21,3 +21,4 @@ export * from './github-confirmation';
 export * from './agent-confirmation';
 export * from './automation-confirmation';
 export * from './resource-limits';
+export * from './project-readiness';

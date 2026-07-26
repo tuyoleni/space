@@ -38,6 +38,7 @@ import {
   HistoryStore,
   initRepository,
   CommitFailedError,
+  addRemote as addRemoteEngine,
   listRemotes as listRemotesEngine,
   listStashes as listStashesEngine,
   listTags as listTagsEngine,
@@ -602,6 +603,25 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     return listRemotesEngine(cwd, gitExecutor);
   }
 
+  /**
+   * Links the repository to a remote it doesn't have yet (`git remote add`).
+   * Refuses to silently replace an existing one: repointing a remote changes
+   * where every future push lands, which is not something to do as a side
+   * effect of a "link this project" click.
+   */
+  async function addRemote(input: { projectId: string; name: string; url: string }): Promise<readonly GitRemoteEntry[]> {
+    const project = await requireProject(input.projectId);
+    const cwd = repoCwd(project);
+    const existing = await listRemotesEngine(cwd, gitExecutor);
+    if (existing.some((remote) => remote.name === input.name)) {
+      throw new Error(`A remote named "${input.name}" already exists — remove it first if you meant to repoint it.`);
+    }
+    return recordMutation(project, 'git.remote.add', `Linked "${project.name}" to ${input.url}`, async () => {
+      await addRemoteEngine(cwd, input.name, input.url, gitExecutor);
+      return listRemotesEngine(cwd, gitExecutor);
+    });
+  }
+
   /** Read-only: the repository's stashes, newest first (`git stash list`). */
   async function listStashes(input: GitProjectInput): Promise<readonly GitStashEntry[]> {
     const project = await requireProject(input.projectId);
@@ -701,6 +721,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     diffStats,
     diffFile,
     listRemotes,
+    addRemote,
     listStashes,
     listTags,
     listWorktrees,

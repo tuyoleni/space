@@ -67,6 +67,27 @@ export const gitInitInputSchema = z.object({
 });
 
 /** Storage-worker-internal — called by git-handlers.ts only after a real `git init` has already succeeded, never directly by the renderer. */
+export const projectDiagnoseInputSchema = z.object({
+  projectId: z.string().min(1),
+  action: z.enum(['commit', 'push', 'publish']).optional(),
+});
+
+export const projectApplyRemedyInputSchema = z.object({
+  projectId: z.string().min(1),
+  remedyId: z.enum([
+    'initialize-repository',
+    'create-initial-commit',
+    'publish-to-github',
+    'add-existing-remote',
+    'push-and-set-upstream',
+    'install-github-cli',
+    'sign-in-to-github',
+  ]),
+  remoteUrl: z.string().trim().min(1).max(2000).refine((v) => !v.startsWith('-'), 'remote must not look like a flag').optional(),
+  owner: z.string().trim().min(1).refine((v) => !v.startsWith('-'), 'owner must not look like a flag').optional(),
+  visibility: githubRepoVisibilitySchema.optional(),
+});
+
 export const removeProjectInputSchema = z.object({
   projectId: z.string().min(1),
 });

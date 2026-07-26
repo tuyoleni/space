@@ -13,6 +13,8 @@ export const IPC_CHANNELS = {
   projectPickFolder: 'project:pickFolder',
   projectAdd: 'project:add',
   projectRemove: 'project:remove',
+  projectDiagnose: 'project:diagnose',
+  projectApplyRemedy: 'project:applyRemedy',
 
   // M4
   projectDetect: 'project:detect',
