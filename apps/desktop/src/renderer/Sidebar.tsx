@@ -9,10 +9,11 @@ import {
   Search,
   TerminalSquare,
   Wrench,
+  X,
 } from 'lucide-react';
 import { siGithub } from 'simple-icons';
 import type { Project, WorkspaceSummary } from '@space/contracts';
-import { Badge, Button, Dialog, Input, NavItem, StatusDot, cn } from '@space/ui';
+import { Badge, Button, Dialog, IconButton, Input, NavItem, StatusDot, cn } from '@space/ui';
 import type { NavView } from './nav';
 import { ProjectIcon } from './ProjectIcon';
 import { BrandIcon } from './brand-icons';
@@ -30,6 +31,8 @@ interface SidebarProps {
   readonly view: NavView;
   readonly onNavigate: (view: NavView) => void;
   readonly onSelectProject: (projectId: string) => void;
+  /** Unregisters a project from the workspace; the confirmation lives in AppShell, which owns the dialog. */
+  readonly onRemoveProject: (project: Project) => void;
   readonly onActivateWorkspace: (workspaceId: string) => void;
   readonly onCreateWorkspace: (name: string) => void;
   readonly onNewProject: () => void;
@@ -50,6 +53,7 @@ export function Sidebar({
   view,
   onNavigate,
   onSelectProject,
+  onRemoveProject,
   onActivateWorkspace,
   onCreateWorkspace,
   onNewProject,
@@ -171,20 +175,40 @@ export function Sidebar({
 
       <div className="mt-2 flex-1 overflow-y-auto px-3">
         {filteredProjects.map((project) => (
-          <button
+          // A row, not a single button: the remove affordance is its own
+          // control and cannot be nested inside the select button.
+          <div
             key={project.id}
-            type="button"
-            onClick={() => onSelectProject(project.id)}
             className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              'focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2',
+              'group flex w-full items-center gap-2 rounded-md pr-1 transition-colors',
               project.id === selectedProjectId ? 'bg-surface-hover text-fg' : 'text-fg-muted hover:bg-surface-hover hover:text-fg',
             )}
           >
-            <ProjectIcon projectId={project.id} canonicalPath={project.canonicalPath} size={18} />
-            <span className="min-w-0 flex-1 truncate">{project.name}</span>
-            {runningProjectIds.has(project.id) && <StatusDot tone="success" label="dev server running" />}
-          </button>
+            <button
+              type="button"
+              onClick={() => onSelectProject(project.id)}
+              className={cn(
+                'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm',
+                'focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2',
+              )}
+            >
+              <ProjectIcon projectId={project.id} canonicalPath={project.canonicalPath} size={18} />
+              <span className="min-w-0 flex-1 truncate">{project.name}</span>
+              {runningProjectIds.has(project.id) && <StatusDot tone="success" label="dev server running" />}
+            </button>
+            {/*
+              Stays in the DOM (not conditionally rendered) so it remains
+              reachable by keyboard; only its opacity is tied to hover, and
+              focus-visible brings it back for anyone tabbing through.
+            */}
+            <IconButton
+              aria-label={`Remove ${project.name} from Space`}
+              className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+              onClick={() => onRemoveProject(project)}
+            >
+              <X size={13} />
+            </IconButton>
+          </div>
         ))}
         {filteredProjects.length === 0 && <p className="px-2 py-3 text-center text-xs text-fg-faint">No projects match.</p>}
       </div>

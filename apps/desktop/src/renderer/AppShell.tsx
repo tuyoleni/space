@@ -14,7 +14,7 @@ import type {
   TrustDecision,
   WorkspaceSummary,
 } from '@space/contracts';
-import { Dialog, InlineBanner, useToast } from '@space/ui';
+import { Button, Dialog, InlineBanner, useToast } from '@space/ui';
 import { toErrorMessage } from './errors';
 import { Sidebar } from './Sidebar';
 import { AppTopbar } from './AppTopbar';
@@ -80,6 +80,7 @@ export function AppShell() {
   // The blocking precondition a user hit, shown as a resolvable dialog
   // rather than the underlying command's stderr.
   const [projectIssue, setProjectIssue] = useState<ProjectIssue | null>(null);
+  const [projectPendingRemoval, setProjectPendingRemoval] = useState<Project | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
@@ -337,6 +338,23 @@ export function AppShell() {
     });
   }
 
+  function handleRemoveProject(): void {
+    const project = projectPendingRemoval;
+    if (!project || !activeWorkspace) {
+      return;
+    }
+    const workspaceId = activeWorkspace.id;
+    void runGuarded(async () => {
+      const result = await window.space.project.remove({ projectId: project.id });
+      setProjectPendingRemoval(null);
+      await refreshProjects(workspaceId);
+      toast({
+        variant: 'success',
+        message: `Removed "${result.name}" from Space. Your files are still at ${result.canonicalPath}.`,
+      });
+    });
+  }
+
   function handleCreateProject(request: CreateProjectRequest): void {
     if (!activeWorkspace || !request.templateId || !request.name.trim()) {
       return;
@@ -578,6 +596,7 @@ export function AppShell() {
           view={view}
           onNavigate={setView}
           onSelectProject={selectProject}
+          onRemoveProject={setProjectPendingRemoval}
           onActivateWorkspace={handleActivateWorkspace}
           onCreateWorkspace={handleCreateWorkspace}
           onNewProject={() => setCreateOpen(true)}
@@ -701,6 +720,35 @@ export function AppShell() {
           />
         </div>
       </div>
+
+      {/*
+        Removing a project is about Space's own record of it, never the
+        user's files — the confirmation says so explicitly and names the
+        exact path being left behind, because "Remove" next to a project
+        name reads as "delete my work" to most people.
+      */}
+      <Dialog
+        open={projectPendingRemoval !== null}
+        onOpenChange={(next) => !next && setProjectPendingRemoval(null)}
+        title={`Remove "${projectPendingRemoval?.name ?? ''}" from Space?`}
+        footer={
+          <>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => setProjectPendingRemoval(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" disabled={busy} onClick={handleRemoveProject}>
+              Remove from Space
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-fg-muted">
+          This only removes it from your Space workspace. Nothing on disk is touched — the folder, its Git history, and every
+          file stay exactly where they are, at{' '}
+          <code className="text-fg">{projectPendingRemoval?.canonicalPath}</code>. You can add it back at any time with Add
+          Folder.
+        </p>
+      </Dialog>
 
       <ProjectIssueDialog
         open={projectIssue !== null}
