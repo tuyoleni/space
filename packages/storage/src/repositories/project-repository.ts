@@ -136,6 +136,24 @@ export class ProjectRepository {
     return updated;
   }
 
+  /**
+   * Unregisters a project from its workspace. This removes Space's *record*
+   * of the project and nothing else — the directory, its Git repository, and
+   * every file in it are left exactly as they are. Space orchestrates real
+   * tools rather than owning the user's code, so "remove" here can never
+   * mean "delete from disk" (spec section 39's prohibition on destructive
+   * shortcuts).
+   *
+   * Rows in other tables follow the foreign keys declared in the schema:
+   * operations, activity events, and terminal sessions keep their history
+   * with `project_id` set to NULL, while project-scoped automations, agent
+   * permissions, and dev-process records cascade away with the project they
+   * only made sense for.
+   */
+  remove(id: string): boolean {
+    return this.db.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0;
+  }
+
   /** Set once a project transitions from "plain folder" to "real Git repository" — real `git init`, never guessed. */
   updateRepositoryRoot(id: string, repositoryRoot: string, updatedAt: string): ProjectRow {
     this.db.prepare('UPDATE projects SET repository_root = ?, updated_at = ? WHERE id = ?').run(

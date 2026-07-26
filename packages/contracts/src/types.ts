@@ -46,6 +46,22 @@ export interface AddProjectInput {
   readonly name?: string;
 }
 
+export interface RemoveProjectInput {
+  readonly projectId: string;
+}
+
+/**
+ * Removing a project unregisters it from the workspace and nothing more —
+ * the folder, its Git repository, and every file in it stay exactly where
+ * they are. `canonicalPath` comes back so the UI can say precisely where
+ * the files were left.
+ */
+export interface RemoveProjectResult {
+  readonly removed: boolean;
+  readonly name: string;
+  readonly canonicalPath: string;
+}
+
 export interface ProjectIconInput {
   readonly canonicalPath: string;
 }
@@ -480,6 +496,24 @@ export interface ProjectTemplateSummary {
   readonly previewCreationCommand: ProjectTemplateCommand;
 }
 
+/**
+ * Optional "publish this new project to GitHub straight away" step
+ * (PRJ-004 + GH-003 composed into one flow). The repository is created on
+ * the workspace's already-connected account — Space never asks for
+ * credentials here; it reuses the workspace's `gh` identity, exactly like
+ * every other GitHub operation.
+ */
+export interface CreateProjectGithubPublishOptions {
+  /** The connected account or an organisation it can create repositories in. */
+  readonly owner: string;
+  readonly visibility: GithubRepoVisibility;
+  /** Defaults to the project's directory name when omitted. */
+  readonly repositoryName?: string;
+  readonly description?: string;
+  /** Push the initial commit after creating the repository. */
+  readonly push: boolean;
+}
+
 export interface CreateProjectFromTemplateInput {
   readonly workspaceId: string;
   readonly templateId: string;
@@ -488,6 +522,30 @@ export interface CreateProjectFromTemplateInput {
   /** Also used as the new project directory's name. */
   readonly name: string;
   readonly options?: Readonly<Record<string, string | boolean>>;
+  /**
+   * Run `git init` and make an initial commit once the template has been
+   * scaffolded. Defaults to true: a new project that is not a repository
+   * cannot be committed, branched, or published, and every Git and GitHub
+   * operation on it fails with "not a Git repository".
+   */
+  readonly initializeGit?: boolean;
+  /** When present, also create the repository on GitHub. Implies `initializeGit`. */
+  readonly publishToGithub?: CreateProjectGithubPublishOptions;
+}
+
+/**
+ * The outcome of a create-project flow. Scaffolding, `git init`, and the
+ * GitHub publish are three separate real operations, and a later one can
+ * fail after an earlier one has already succeeded on disk. Rather than
+ * throwing away a project that genuinely exists, the failure is reported in
+ * `warnings` and the caller decides what to retry.
+ */
+export interface CreateProjectResult {
+  readonly project: Project;
+  readonly gitInitialized: boolean;
+  readonly github: { readonly nameWithOwner: string; readonly url: string } | null;
+  /** Non-fatal: the project was created, but a follow-on step did not complete. */
+  readonly warnings: readonly string[];
 }
 
 export interface CloneProjectInput {
@@ -1509,9 +1567,25 @@ export interface AiReviewFinding {
   readonly proposedFix: string | null;
 }
 
+/**
+ * Why a file's content was withheld from the remote model (ADR-008: binary
+ * files and known credential/env/key-material paths are excluded outright,
+ * never conditionally). Surfaced to the renderer because spec 13.3 requires
+ * the user to know which files were sent — what is absent has to be as
+ * visible as what is present.
+ */
+export type AiExclusionReason = 'sensitive-path' | 'binary';
+
+export interface AiExcludedFile {
+  readonly filePath: string;
+  readonly reason: AiExclusionReason;
+}
+
 export interface AiReviewCommentsResult {
   readonly findings: readonly AiReviewFinding[];
   readonly scannedFileCount: number;
+  /** Files skipped before any content was read — never sent to the model. */
+  readonly excluded: readonly AiExcludedFile[];
 }
 
 export interface AiApplyFixInput {
@@ -1534,6 +1608,8 @@ export interface AiGenerateCommitMessageInput {
 
 export interface AiGenerateCommitMessageResult {
   readonly message: string;
+  /** Selected files whose diff was withheld from the model — never sent. */
+  readonly excluded: readonly AiExcludedFile[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1653,4 +1729,74 @@ export interface AutomationSettingsGetInput {
 export interface AutomationSettingsSetInput {
   readonly workspaceId: string;
   readonly enabled: boolean;
+}
+
+/**
+ * External AI coding tools Space can wire to its own local MCP server, so
+ * they stop working blind on a folder and start seeing the workspace the
+ * project actually belongs to. One entry per tool Space knows how to
+ * configure for real — never a tool whose config format Space would have to
+ * guess at.
+ */
+export type AiToolId = 'claude-code' | 'cursor' | 'vscode';
+
+export interface McpServerStatus {
+  readonly enabled: boolean;
+  /** The loopback URL external tools connect to; null while the server is off. */
+  readonly url: string | null;
+  readonly toolCount: number;
+}
+
+/**
+ * How Space registers itself with one tool: `cli` hands the job to the
+ * tool's own CLI (which owns its config file), `config-file` merges into the
+ * tool's user-level JSON config.
+ */
+export type AiToolConnectMechanism = 'cli' | 'config-file';
+
+export interface AiToolConnection {
+  readonly id: AiToolId;
+  readonly displayName: string;
+  /** Real detection — the tool's CLI answers, or its config directory exists. */
+  readonly detected: boolean;
+  readonly mechanism: AiToolConnectMechanism;
+  /** The config Space writes: a file path, or the CLI command that owns it. */
+  readonly configPath: string;
+  /** Space's MCP server is already registered there. */
+  readonly connected: boolean;
+  /** Space can launch this tool inside a project's workspace terminal. */
+  readonly launchable: boolean;
+  /** Null when connecting is possible; otherwise why it isn't. */
+  readonly unavailableReason: string | null;
+}
+
+export interface AiToolsStatus {
+  readonly server: McpServerStatus;
+  readonly tools: readonly AiToolConnection[];
+}
+
+export interface McpSetEnabledInput {
+  readonly enabled: boolean;
+}
+
+export interface AiToolConnectInput {
+  readonly tool: AiToolId;
+}
+
+export interface AiToolConnectResult {
+  readonly tool: AiToolId;
+  readonly configPath: string;
+  /** true when Space created the config, false when it merged into an existing one. */
+  readonly created: boolean;
+}
+
+export interface AiToolLaunchInput {
+  readonly tool: AiToolId;
+  readonly workspaceId: string;
+  readonly projectId: string;
+}
+
+export interface AiToolLaunchResult {
+  /** Subscribe via `terminal.subscribe`; the session is bound to the workspace + project. */
+  readonly sessionId: string;
 }

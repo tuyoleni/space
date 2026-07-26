@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, DownloadCloud, Download, Laptop2, Package, RefreshCw, Terminal, Zap } from 'lucide-react';
 import type { EnvironmentScanResult, EnvironmentScanToolResult, GithubAuthReport } from '@space/contracts';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, StatusDot, useToast } from '@space/ui';
+import { AiToolsPanel } from '../AiToolsPanel';
 import { BrandIcon, TOOL_BRAND } from '../brand-icons';
 import { EnvironmentProjectPanel } from '../EnvironmentProjectPanel';
 import { EnvironmentServicesPanel } from '../EnvironmentServicesPanel';
@@ -295,6 +296,7 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
       <div className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4">
         <EnvironmentProjectPanel projectId={selectedProjectId} />
         <EnvironmentServicesPanel workspaceId={activeWorkspaceId} projectId={selectedProjectId} githubReport={githubReport} />
+        <AiToolsPanel workspaceId={activeWorkspaceId} projectId={selectedProjectId} />
         {scan && (
           <EnvironmentSuggestedActions
             scan={scan}

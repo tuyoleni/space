@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, Shield, Sparkles, Upload } from 'lucide-react';
-import type { AgentStandingPermissionSummary, AiReviewFinding, Project } from '@space/contracts';
+import type { AgentStandingPermissionSummary, AiExcludedFile, AiReviewFinding, Project } from '@space/contracts';
 import { Badge, Button, formatRelativeTime, useToast } from '@space/ui';
 import { PromptDialog } from './PromptDialog';
 import { toErrorMessage } from './errors';
@@ -33,6 +33,9 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
   const [apiKeyPromptOpen, setApiKeyPromptOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [findings, setFindings] = useState<readonly AiReviewFinding[] | null>(null);
+  // Spec 13.3: the user must be able to see which files were withheld from
+  // the model, not just which ones were sent.
+  const [excluded, setExcluded] = useState<readonly AiExcludedFile[]>([]);
   const [applyingId, setApplyingId] = useState<string | null>(null);
 
   async function guarded(action: () => Promise<void>): Promise<void> {
@@ -65,7 +68,10 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
     setReviewing(true);
     void window.space.ai
       .reviewComments({ projectId: project.id })
-      .then((result) => setFindings(result.findings))
+      .then((result) => {
+        setFindings(result.findings);
+        setExcluded(result.excluded);
+      })
       .catch((caught) => toast({ variant: 'error', message: toErrorMessage(caught) }))
       .finally(() => setReviewing(false));
   }
@@ -195,6 +201,21 @@ export function AgentPanel({ project, workspaceId }: AgentPanelProps) {
           <Button size="sm" variant="ghost" disabled={reviewing} onClick={handleAiReview}>
             <Sparkles size={13} /> {reviewing ? 'Reviewing…' : 'Review TODO/FIXME comments'}
           </Button>
+
+          {excluded.length > 0 && (
+            <div className="mt-2 rounded border border-border bg-app-bg px-2 py-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-fg-muted">
+                <Shield size={12} /> {excluded.length} file{excluded.length === 1 ? '' : 's'} withheld from the model
+              </p>
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {excluded.map((entry) => (
+                  <li key={entry.filePath} className="truncate text-xs text-fg-faint">
+                    <code>{entry.filePath}</code> — {entry.reason === 'binary' ? 'binary file' : 'credential or key material'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {findings && (
             <ul className="mt-2 flex flex-col gap-1.5">

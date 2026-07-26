@@ -12,6 +12,7 @@ export const IPC_CHANNELS = {
   projectInspectFolder: 'project:inspectFolder',
   projectPickFolder: 'project:pickFolder',
   projectAdd: 'project:add',
+  projectRemove: 'project:remove',
 
   // M4
   projectDetect: 'project:detect',
@@ -183,6 +184,15 @@ export const IPC_CHANNELS = {
 
   // Real dependency vulnerability/outdated scan (npm/pnpm audit+outdated), read-only
   dependencyScan: 'dependency:scan',
+
+  // Local MCP server + the external AI tools wired to it. `aiToolsConnect` writes
+  // real config into the tool's own user-level config (or via its own CLI);
+  // `aiToolsLaunch` starts the tool inside a project's workspace-bound terminal.
+  aiToolsStatus: 'aiTools:status',
+  aiToolsSetServerEnabled: 'aiTools:setServerEnabled',
+  aiToolsConnect: 'aiTools:connect',
+  aiToolsDisconnect: 'aiTools:disconnect',
+  aiToolsLaunch: 'aiTools:launch',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

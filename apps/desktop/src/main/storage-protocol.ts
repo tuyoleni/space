@@ -10,6 +10,7 @@ export type StorageMethod =
   | 'project.list'
   | 'project.inspectFolder'
   | 'project.add'
+  | 'project.remove'
   // M4
   | 'project.detect'
   | 'project.detectPackageManager'
@@ -52,6 +53,9 @@ export type StorageMethod =
   // M8: app-level settings (spec 29.2 telemetry opt-in)
   | 'appSettings.isTelemetryEnabled'
   | 'appSettings.setTelemetryEnabled'
+  // MCP server opt-in (external AI tool access; same default-OFF posture as telemetry)
+  | 'appSettings.isMcpServerEnabled'
+  | 'appSettings.setMcpServerEnabled'
   // First-run bootstrap/onboarding (spec section 8, ONB-001/006/008)
   | 'bootstrap.getLatestRun'
   | 'bootstrap.createRun'

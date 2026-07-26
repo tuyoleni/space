@@ -535,6 +535,20 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
     }
   }
 
+  /**
+   * Stops every dev server belonging to one project — used before the
+   * project is unregistered, since a live child process whose project row
+   * has gone can never be listed or stopped through the UI again.
+   */
+  async function stopDevServersForProject(projectId: string): Promise<void> {
+    const running = await listDevServers(projectId).catch(() => [] as DevProcessInfo[]);
+    for (const devProcess of running) {
+      if (liveDevProcesses.has(devProcess.id)) {
+        await stopDevServer({ devProcessId: devProcess.id }).catch(() => undefined);
+      }
+    }
+  }
+
   return {
     detect,
     detectPackageManager,
@@ -548,6 +562,7 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
     stopDevServer,
     listDevServers,
     stopAllDevServers,
+    stopDevServersForProject,
   };
 }
 

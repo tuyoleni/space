@@ -25,6 +25,7 @@ const spaceAPI: SpaceAPI = {
     inspectFolder: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInspectFolder, input),
     pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickFolder),
     add: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectAdd, input),
+    remove: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectRemove, input),
 
     detect: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetect, input),
     detectPackageManager: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectDetectPackageManager, input),
@@ -181,6 +182,13 @@ const spaceAPI: SpaceAPI = {
     status: () => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesStatus),
     startLogin: (input) => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesStartLogin, input),
     deploy: (input) => ipcRenderer.invoke(IPC_CHANNELS.connectedServicesDeploy, input),
+  },
+  aiTools: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.aiToolsStatus),
+    setServerEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsSetServerEnabled, input),
+    connect: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsConnect, input),
+    disconnect: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsDisconnect, input),
+    launch: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsLaunch, input),
   },
   packages: {
     listInstalled: () => ipcRenderer.invoke(IPC_CHANNELS.packagesListInstalled),

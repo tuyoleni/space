@@ -27,7 +27,22 @@ export type MenuCommand =
 
 const DOCS_URL = 'https://github.com/tuyoleni/space';
 
-export function buildAppMenu(getWindow: () => BrowserWindow | null, isPackaged: boolean): Menu {
+/**
+ * The Tools menu's MCP-server toggle. Passed in rather than read here so
+ * this module stays a pure menu builder: main.ts owns the server's real
+ * lifecycle, and the checkbox reflects whether it is actually running, not
+ * merely what was last persisted.
+ */
+export interface McpServerMenuToggle {
+  isEnabled: () => boolean;
+  setEnabled: (enabled: boolean) => void;
+}
+
+export function buildAppMenu(
+  getWindow: () => BrowserWindow | null,
+  isPackaged: boolean,
+  mcpServer?: McpServerMenuToggle,
+): Menu {
   const isMac = process.platform === 'darwin';
 
   function send(command: MenuCommand): void {
@@ -101,6 +116,23 @@ export function buildAppMenu(getWindow: () => BrowserWindow | null, isPackaged: 
         { label: 'Open Changes', accelerator: 'CmdOrCtrl+Shift+G', click: () => send('go-changes') },
       ],
     },
+    // Only shown once main.ts has an MCP lifecycle to bind to — a checkbox
+    // that cannot actually start or stop anything is worse than no menu.
+    ...(mcpServer
+      ? ([
+          {
+            label: 'Tools',
+            submenu: [
+              {
+                label: 'Allow External AI Tools (MCP Server)',
+                type: 'checkbox',
+                checked: mcpServer.isEnabled(),
+                click: (item) => mcpServer.setEnabled(item.checked),
+              },
+            ],
+          },
+        ] satisfies MenuItemConstructorOptions[])
+      : []),
     // The full windowMenu role gives the compliant Minimize/Zoom/Front (mac)
     // and the window list.
     { role: 'windowMenu' },

@@ -66,10 +66,30 @@ export function resolveToolSource(resolvedPath: string | null): string | null {
   return 'System';
 }
 
-/** Homebrew formula name for a tool id, where it differs from the id itself. */
-const HOMEBREW_FORMULA_BY_TOOL_ID: Readonly<Record<string, string>> = {
+/**
+ * Homebrew formula that actually *versions* a given tool id, where it
+ * differs from the id itself. `null` means "no formula versions this tool
+ * independently" — not "look it up under its own name".
+ *
+ * The distinction matters because `brew info` silently follows aliases:
+ * `brew info npm` resolves to the `node` formula, since npm ships inside
+ * it. Treating that as npm's own latest version is what made an installed
+ * npm 11.12.1 offer an "update" to 26.5.0 — Node's version, for a
+ * different tool. Homebrew has no independent npm version to report, so
+ * the honest answer is none at all rather than a neighbouring package's.
+ *
+ * `python -> python3` is a genuine same-tool alias (it resolves to
+ * `python@3.14`, which really does version Python), so it stays a lookup.
+ */
+export const HOMEBREW_FORMULA_BY_TOOL_ID: Readonly<Record<string, string | null>> = {
   python: 'python3',
+  npm: null,
 };
+
+/** The formula to query for a tool, or null when none versions it independently. */
+export function homebrewFormulaForTool(toolId: string): string | null {
+  return toolId in HOMEBREW_FORMULA_BY_TOOL_ID ? (HOMEBREW_FORMULA_BY_TOOL_ID[toolId] ?? null) : toolId;
+}
 
 /**
  * Real newest-version lookup for a Homebrew-installed tool via
@@ -106,7 +126,10 @@ async function enrichTool(tool: { toolId: string; found: boolean; path: string |
     return { toolId: tool.toolId, source, latestVersion: null, updateAvailable: null };
   }
 
-  const formula = HOMEBREW_FORMULA_BY_TOOL_ID[tool.toolId] ?? tool.toolId;
+  const formula = homebrewFormulaForTool(tool.toolId);
+  if (formula === null) {
+    return { toolId: tool.toolId, source, latestVersion: null, updateAvailable: null };
+  }
   const latestVersion = await lookupHomebrewLatestVersion(formula);
   let updateAvailable: boolean | null = null;
   if (latestVersion !== null && tool.version !== null) {

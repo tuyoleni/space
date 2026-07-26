@@ -5,7 +5,7 @@ import { Badge, Button, EmptyState, Input } from '@space/ui';
 import type { ProjectActions, ProjectRuntimeState } from '../AppShell';
 import { ProjectIcon } from '../ProjectIcon';
 import { ProjectDetail } from './ProjectDetail';
-import { CloneProjectDialog, CreateProjectDialog } from './ProjectDialogs';
+import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } from './ProjectDialogs';
 
 interface ProjectsViewProps {
   readonly workspace: WorkspaceSummary;
@@ -17,7 +17,7 @@ interface ProjectsViewProps {
   readonly selectedProjectId: string | null;
   readonly onSelectProject: (projectId: string | null) => void;
   readonly onAddFolder: () => void;
-  readonly onCreateProject: (templateId: string, name: string) => void;
+  readonly onCreateProject: (request: CreateProjectRequest) => void;
   readonly onCloneProject: (url: string, name: string) => void;
 }
 
@@ -112,7 +112,13 @@ export function ProjectsView({
         )}
       </div>
 
-      <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} templates={templates} onCreate={onCreateProject} />
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        templates={templates}
+        workspaceId={workspace.id}
+        onCreate={onCreateProject}
+      />
       <CloneProjectDialog open={cloneOpen} onOpenChange={setCloneOpen} onClone={onCloneProject} />
     </div>
   );

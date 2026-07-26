@@ -88,6 +88,7 @@ function setup() {
   } as unknown as ProjectHandlers;
   const gitHandlers = {
     status: vi.fn(),
+    initRepo: vi.fn(),
     stage: vi.fn(),
     unstage: vi.fn(),
     commit: vi.fn(),
@@ -214,6 +215,13 @@ function setup() {
     runNextStep: vi.fn(),
     cancel: vi.fn(),
   } as unknown as BootstrapHandlers;
+  const aiToolHandlers = {
+    status: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    launch: vi.fn(),
+    setMcpEnabled: vi.fn(),
+  } as unknown as Parameters<typeof registerIpcHandlers>[17];
   registerIpcHandlers(
     trusted,
     storage,
@@ -232,6 +240,7 @@ function setup() {
     connectedServicesHandlers,
     packageManagerHandlers,
     aiHandlers,
+    aiToolHandlers,
     bootstrapHandlers,
   );
   return {
@@ -438,8 +447,6 @@ describe('registerIpcHandlers', () => {
       [IPC_CHANNELS.projectDetect, 'detect', { canonicalPath: '/a' }],
       [IPC_CHANNELS.projectDetectPackageManager, 'detectPackageManager', { canonicalPath: '/a' }],
       [IPC_CHANNELS.projectTrustDecision, 'trustDecision', { projectId: 'p-1', decision: 'trust-this-project' }],
-      [IPC_CHANNELS.projectCreateFromTemplate, 'createFromTemplate', { workspaceId: 'ws-1' }],
-      [IPC_CHANNELS.projectClone, 'clone', { workspaceId: 'ws-1' }],
       [IPC_CHANNELS.projectInstallDependencies, 'installDependencies', { projectId: 'p-1' }],
     ] as const)('routes %s to projectHandlers.%s', async (channel, method, input) => {
       const { projectHandlers } = setup();
@@ -447,6 +454,139 @@ describe('registerIpcHandlers', () => {
       const result = await handlerFor(channel)(validEvent, input);
       expect(projectHandlers[method]).toHaveBeenCalledWith(input);
       expect(result).toBe('ok');
+    });
+
+    it('projectClone validates and forwards only the fields the caller actually supplied', async () => {
+      const { projectHandlers } = setup();
+      (projectHandlers.clone as ReturnType<typeof vi.fn>).mockResolvedValue('ok');
+      const result = await handlerFor(IPC_CHANNELS.projectClone)(validEvent, {
+        workspaceId: 'ws-1',
+        remoteUrl: 'git@github.com:acme/app.git',
+        destinationParentDirectory: '/parent',
+      });
+      expect(projectHandlers.clone).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        remoteUrl: 'git@github.com:acme/app.git',
+        destinationParentDirectory: '/parent',
+      });
+      expect(result).toBe('ok');
+    });
+
+    /**
+     * PRJ-004 composes three handlers. A project that scaffolds but never
+     * gets `git init` is exactly what made every later Git/GitHub action
+     * fail with "not a Git repository", so these pin the composition down.
+     */
+    describe('projectCreateFromTemplate composes scaffold + git init + publish', () => {
+      const baseInput = {
+        workspaceId: 'ws-1',
+        templateId: 'node-basic',
+        destinationParentDirectory: '/parent',
+        name: 'space-landing',
+      };
+      const scaffolded = { id: 'p-1', name: 'space-landing', canonicalPath: '/parent/space-landing', repositoryRoot: null };
+      const initialized = { ...scaffolded, repositoryRoot: '/parent/space-landing' };
+
+      it('initializes a Git repository by default', async () => {
+        const { projectHandlers, gitHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockResolvedValue(initialized);
+
+        const result = await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, baseInput);
+
+        expect(gitHandlers.initRepo).toHaveBeenCalledWith({ projectId: 'p-1' });
+        expect(result).toMatchObject({ project: initialized, gitInitialized: true, github: null, warnings: [] });
+      });
+
+      it('skips initialization when the caller explicitly opts out', async () => {
+        const { projectHandlers, gitHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+
+        const result = await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, {
+          ...baseInput,
+          initializeGit: false,
+        });
+
+        expect(gitHandlers.initRepo).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ gitInitialized: false, github: null });
+      });
+
+      it('creates the GitHub repository on the connected account after initializing', async () => {
+        const { projectHandlers, gitHandlers, githubHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockResolvedValue(initialized);
+        (githubHandlers.publishRepository as ReturnType<typeof vi.fn>).mockResolvedValue({
+          nameWithOwner: 'acme/space-landing',
+          url: 'https://github.com/acme/space-landing',
+        });
+
+        const result = await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, {
+          ...baseInput,
+          publishToGithub: { owner: 'acme', visibility: 'private', push: true },
+        });
+
+        expect(githubHandlers.publishRepository).toHaveBeenCalledWith('p-1', {
+          owner: 'acme',
+          name: 'space-landing',
+          visibility: 'private',
+          sourceFolder: '/parent/space-landing',
+          push: true,
+        });
+        expect(result).toMatchObject({ github: { nameWithOwner: 'acme/space-landing' }, warnings: [] });
+      });
+
+      it('publishing implies initialization even when initializeGit is false', async () => {
+        const { projectHandlers, gitHandlers, githubHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockResolvedValue(initialized);
+        (githubHandlers.publishRepository as ReturnType<typeof vi.fn>).mockResolvedValue({ nameWithOwner: 'a/b', url: 'u' });
+
+        await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, {
+          ...baseInput,
+          initializeGit: false,
+          publishToGithub: { owner: 'acme', visibility: 'public', push: false },
+        });
+
+        expect(gitHandlers.initRepo).toHaveBeenCalled();
+      });
+
+      it('keeps the project and reports a warning when git init fails', async () => {
+        const { projectHandlers, gitHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git not found'));
+
+        const result = (await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, baseInput)) as {
+          project: unknown;
+          gitInitialized: boolean;
+          warnings: string[];
+        };
+
+        expect(result.project).toEqual(scaffolded);
+        expect(result.gitInitialized).toBe(false);
+        expect(result.warnings[0]).toMatch(/git not found/i);
+      });
+
+      it('does not attempt a publish when initialization failed', async () => {
+        const { projectHandlers, gitHandlers, githubHandlers } = setup();
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git not found'));
+
+        const result = (await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, {
+          ...baseInput,
+          publishToGithub: { owner: 'acme', visibility: 'private', push: true },
+        })) as { github: unknown; warnings: string[] };
+
+        expect(githubHandlers.publishRepository).not.toHaveBeenCalled();
+        expect(result.github).toBeNull();
+        expect(result.warnings).toHaveLength(2);
+      });
+
+      it('rejects a name that would escape the destination directory', async () => {
+        setup();
+        await expect(
+          handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, { ...baseInput, name: '../evil' }),
+        ).rejects.toThrow();
+      });
     });
 
     it('projectListTemplates calls projectHandlers.listTemplates with no args', async () => {

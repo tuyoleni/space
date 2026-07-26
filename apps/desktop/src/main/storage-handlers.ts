@@ -24,6 +24,7 @@ import {
   projectListInputSchema,
   projectTrustDecisionInputSchema,
   projectSetRepositoryRootInputSchema,
+  removeProjectInputSchema,
   workspaceActivateInputSchema,
   type DevProcessInfo,
   type PackageManagerDetection,
@@ -272,6 +273,31 @@ async function trustDecision(
         : storage.projects.updateTrustState(project.id, nextState, now),
   );
   return toProject(result);
+}
+
+/**
+ * Unregisters a project from its workspace, leaving every file on disk
+ * untouched. The receipt is written *before* the row is deleted, because
+ * `withReceipt` records `projectId` and the foreign key would null it out
+ * the moment the project is gone — the operation log should still say which
+ * project this was about.
+ */
+async function removeProject(storage: Storage, input: { projectId: string }): Promise<{ removed: boolean; name: string; canonicalPath: string }> {
+  const project = requireProject(storage, input.projectId);
+  const { result } = await withReceipt(
+    storage.operations,
+    {
+      workspaceId: project.workspaceId,
+      // Deliberately not project-scoped: the row this would point at ceases
+      // to exist, and a dangling reference reads worse than none.
+      projectId: null,
+      type: 'project.remove',
+      risk: 'local-reversible',
+      humanSummary: `Removed "${project.name}" from Space (files left on disk at ${project.canonicalPath})`,
+    },
+    () => storage.projects.remove(project.id),
+  );
+  return { removed: result, name: project.name, canonicalPath: project.canonicalPath };
 }
 
 /** Called once real `git init` on the project's folder has actually succeeded — never guessed ahead of the real command. */
@@ -560,6 +586,11 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
       return trustDecision(storage, input);
     }
 
+    case 'project.remove': {
+      const input = removeProjectInputSchema.parse(request.payload);
+      return removeProject(storage, input);
+    }
+
     case 'project.setRepositoryRoot': {
       const input = projectSetRepositoryRootInputSchema.parse(request.payload);
       return setRepositoryRoot(storage, input);
@@ -828,6 +859,16 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
     case 'appSettings.setTelemetryEnabled': {
       const input = appSettingsSetTelemetryEnabledSchema.parse(request.payload);
       storage.appSettings.setTelemetryEnabled(input.enabled, input.updatedAt);
+      return undefined;
+    }
+
+    case 'appSettings.isMcpServerEnabled': {
+      return storage.appSettings.isMcpServerEnabled();
+    }
+
+    case 'appSettings.setMcpServerEnabled': {
+      const input = appSettingsSetTelemetryEnabledSchema.parse(request.payload);
+      storage.appSettings.setMcpServerEnabled(input.enabled, input.updatedAt);
       return undefined;
     }
 

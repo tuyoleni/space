@@ -59,6 +59,12 @@ export function TerminalsView({ workspace, projects, envScan, selectedProjectId 
   const autoCreateAttemptedRef = useRef(false);
   const activity = useTerminalActivity();
 
+  // `createTerminal` is a plain function redeclared every render (it closes
+  // over `newTerminalProjectId`), so `refresh` cannot depend on it directly
+  // without re-running its effect on every render. The ref hands `refresh`
+  // the latest version while keeping its dependency list honest.
+  const createTerminalRef = useRef<() => Promise<void>>();
+
   const refresh = useCallback(async () => {
     const list = await window.space.terminal.list(workspace.id);
     const running = list.filter((session) => session.state === 'running');
@@ -69,7 +75,7 @@ export function TerminalsView({ workspace, projects, envScan, selectedProjectId 
     // deliberately-closed-down-to-zero state doesn't keep refilling itself.
     if (running.length === 0 && !autoCreateAttemptedRef.current) {
       autoCreateAttemptedRef.current = true;
-      await createTerminal();
+      await createTerminalRef.current?.();
     }
   }, [workspace.id]);
 
@@ -107,6 +113,8 @@ export function TerminalsView({ workspace, projects, envScan, selectedProjectId 
       clearInterval(timer);
     };
   }, []);
+
+  createTerminalRef.current = createTerminal;
 
   async function createTerminal(): Promise<void> {
     setBusy(true);

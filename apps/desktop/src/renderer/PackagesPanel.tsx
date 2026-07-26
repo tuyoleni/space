@@ -156,7 +156,7 @@ export function PackagesPanel() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery]);
+  }, [debouncedQuery, toast]);
 
   const isSearching = debouncedQuery !== '';
   const list = isSearching ? searchResults : installed;

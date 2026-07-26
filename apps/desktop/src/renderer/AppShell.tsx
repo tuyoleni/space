@@ -25,7 +25,7 @@ import { TerminalsView } from './views/TerminalsView';
 import { EnvironmentView } from './views/EnvironmentView';
 import { ProjectsView } from './views/ProjectsView';
 import { SystemView } from './views/SystemView';
-import { CloneProjectDialog, CreateProjectDialog } from './views/ProjectDialogs';
+import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } from './views/ProjectDialogs';
 import { OnboardingWizard } from './OnboardingWizard';
 import { GithubSetupPrompt } from './GithubSetupPrompt';
 import { useGithubAuth } from './useGithubAuth';
@@ -320,26 +320,45 @@ export function AppShell() {
     });
   }
 
-  function handleCreateProject(templateId: string, name: string): void {
-    if (!activeWorkspace || !templateId || !name.trim()) {
+  function handleCreateProject(request: CreateProjectRequest): void {
+    if (!activeWorkspace || !request.templateId || !request.name.trim()) {
       return;
     }
     const workspaceId = activeWorkspace.id;
-    const template = templates.find((candidate) => candidate.id === templateId);
+    const template = templates.find((candidate) => candidate.id === request.templateId);
     void runGuarded(async () => {
       const destinationParentDirectory = await window.space.project.pickParentDirectory();
       if (!destinationParentDirectory) {
         return;
       }
-      const project = await window.space.project.createFromTemplate({
+      const result = await window.space.project.createFromTemplate({
         workspaceId,
-        templateId,
+        templateId: request.templateId,
         destinationParentDirectory,
-        name: name.trim(),
+        name: request.name.trim(),
+        initializeGit: request.initializeGit,
+        ...(request.publishToGithub ? { publishToGithub: request.publishToGithub } : {}),
       });
       await refreshProjects(workspaceId);
-      toast({ variant: 'success', message: `Created "${project.name}" using ${template?.displayName ?? templateId} at ${project.canonicalPath}.` });
-      await offerGithubSetupIfNeeded(project);
+
+      const { project, github, warnings } = result;
+      const scaffolded = `Created "${project.name}" using ${template?.displayName ?? request.templateId} at ${project.canonicalPath}.`;
+      toast({
+        variant: 'success',
+        message: github ? `${scaffolded} Published to ${github.nameWithOwner}.` : scaffolded,
+      });
+
+      // The project exists either way; a failed follow-on step is reported
+      // as its own message rather than being folded into the success toast
+      // or swallowed.
+      for (const warning of warnings) {
+        toast({ variant: 'error', message: warning });
+      }
+
+      // Only nudge toward GitHub setup when we haven't just published there.
+      if (!github) {
+        await offerGithubSetupIfNeeded(project);
+      }
     });
   }
 
@@ -632,7 +651,11 @@ export function AppShell() {
                 onPush={handlePush}
               />
             ) : view === 'changes' ? (
-              <ChangesView workspace={activeWorkspace} project={selectedProject} />
+              <ChangesView
+                workspace={activeWorkspace}
+                project={selectedProject}
+                onProjectChanged={() => refreshProjects(activeWorkspace.id)}
+              />
             ) : view === 'terminal' ? null : view === 'environment' ? null : view === 'projects' ? (
               <ProjectsView
                 workspace={activeWorkspace}
@@ -662,7 +685,13 @@ export function AppShell() {
         </div>
       </div>
 
-      <CreateProjectDialog open={createOpen} onOpenChange={setCreateOpen} templates={templates} onCreate={handleCreateProject} />
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        templates={templates}
+        workspaceId={activeWorkspace?.id ?? ''}
+        onCreate={handleCreateProject}
+      />
       <CloneProjectDialog open={cloneOpen} onOpenChange={setCloneOpen} onClone={handleCloneProject} />
 
       <Dialog

@@ -71,6 +71,15 @@ export function forEachRefArgs(
 export interface DiffCommandOptions {
   readonly cached?: boolean;
   readonly paths?: readonly string[];
+  /**
+   * Emit binary file contents as a literal `GIT binary patch` blob.
+   * Defaults to true, which is what patch composition and round-tripping
+   * need. Callers that disclose diff text outside the machine (see
+   * ADR-008's "binary files must not be sent by default") pass `false` so
+   * a binary file degrades to a one-line "Binary files … differ" marker
+   * instead of its full contents.
+   */
+  readonly binary?: boolean;
 }
 
 function pathScope(paths?: readonly string[]): string[] {
@@ -101,7 +110,13 @@ export function diffNumstatArgs(options: DiffCommandOptions = {}): string[] {
  * no config-driven driver.
  */
 export function diffPatchArgs(options: DiffCommandOptions = {}): string[] {
-  return ['diff', '--no-ext-diff', '--binary', ...(options.cached ? ['--cached'] : []), ...pathScope(options.paths)];
+  return [
+    'diff',
+    '--no-ext-diff',
+    ...(options.binary === false ? [] : ['--binary']),
+    ...(options.cached ? ['--cached'] : []),
+    ...pathScope(options.paths),
+  ];
 }
 
 // ---------------------------------------------------------------------------

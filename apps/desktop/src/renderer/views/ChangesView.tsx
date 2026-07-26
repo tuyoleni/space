@@ -157,9 +157,11 @@ function toFeedEvent(event: ActivityEventRecord): ActivityFeedEvent {
 interface ChangesViewProps {
   readonly workspace: WorkspaceSummary;
   readonly project: Project | null;
+  /** Re-reads the project list after this view changes a project's own record (e.g. `git init` sets its repositoryRoot). */
+  readonly onProjectChanged?: () => void | Promise<void>;
 }
 
-export function ChangesView({ workspace, project }: ChangesViewProps) {
+export function ChangesView({ workspace, project, onProjectChanged }: ChangesViewProps) {
   // Intent groups + diff stats (the original CHG workflow).
   const [groups, setGroups] = useState<ChangeIntentLike[]>([]);
   const [stats, setStats] = useState<readonly GitFileDiffStat[]>([]);
@@ -204,14 +206,27 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
   // Remote (server) sync — what's on origin, not just the stale local view.
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
   const [fetching, setFetching] = useState(false);
+  const [initializing, setInitializing] = useState(false);
 
   const projectId = project?.id ?? null;
   const hasRepo = Boolean(project?.repositoryRoot);
 
   // --- Loaders (each a real window.space call) ---------------------------
 
+  // Every loader below is guarded on `hasRepo`, not just the ones that
+  // obviously read Git state: a project with no repository is a normal,
+  // expected condition, and the main process answers any Git call for one by
+  // throwing. Letting these run anyway turned that expected state into a
+  // stack of identical "is not a Git repository" error toasts (doubled again
+  // by StrictMode's development double-invoke) on top of an empty state that
+  // was already saying the same thing, more calmly.
   const refreshGroups = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || !hasRepo) {
+      setGroups([]);
+      setStats([]);
+      setGroupsLoaded(true);
+      return;
+    }
     setBusy(true);
     try {
       const [evidence, diffStats] = await Promise.all([
@@ -236,7 +251,7 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
     } finally {
       setBusy(false);
     }
-  }, [projectId]);
+  }, [projectId, hasRepo, toast]);
 
   const refreshStatus = useCallback(async () => {
     if (!projectId || !hasRepo) {
@@ -248,11 +263,14 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
     } catch (caught) {
       toast({ variant: 'error', message: toErrorMessage(caught) });
     }
-  }, [projectId, hasRepo]);
+  }, [projectId, hasRepo, toast]);
 
   const loadHistory = useCallback(
     async (count: number) => {
-      if (!projectId) return;
+      if (!projectId || !hasRepo) {
+        setCommits([]);
+        return;
+      }
       setHistoryBusy(true);
       try {
         const page = await window.space.git.loadHistory({ projectId, offset: 0, count });
@@ -264,7 +282,7 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
         setHistoryBusy(false);
       }
     },
-    [projectId],
+    [projectId, hasRepo, toast],
   );
 
   const refreshStashes = useCallback(async () => {
@@ -337,6 +355,28 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
       setFetching(false);
     }
   }, [projectId, hasRepo, refreshStatus, loadHistory, refreshGroups, refreshActivity]);
+
+  /**
+   * Runs a real `git init` plus an initial commit on the project's existing
+   * folder (the same `git.initRepo` the create-project flow uses), then asks
+   * the shell to re-read the project so `repositoryRoot` is populated and
+   * this view switches out of its empty state on its own.
+   */
+  async function initializeRepository(): Promise<void> {
+    if (!projectId || initializing) {
+      return;
+    }
+    setInitializing(true);
+    try {
+      await window.space.git.initRepo({ projectId });
+      await onProjectChanged?.();
+      toast({ variant: 'success', message: 'Initialized a Git repository and made an initial commit.' });
+    } catch (caught) {
+      toast({ variant: 'error', message: toErrorMessage(caught) });
+    } finally {
+      setInitializing(false);
+    }
+  }
 
   // Reset + load everything when the project changes.
   useEffect(() => {
@@ -569,6 +609,14 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
       try {
         const result = await window.space.ai.generateCommitMessage({ projectId, filePaths });
         setMessage(result.message);
+        // Spec 13.3: never let a withheld file pass silently — the message
+        // was written without it, and the user needs to know that.
+        if (result.excluded.length > 0) {
+          toast({
+            variant: 'info',
+            message: `Withheld from the model: ${result.excluded.map((entry) => entry.filePath).join(', ')}`,
+          });
+        }
       } catch (caught) {
         toast({ variant: 'error', message: toErrorMessage(caught) });
       } finally {
@@ -654,9 +702,20 @@ export function ChangesView({ workspace, project }: ChangesViewProps) {
     );
   }
   if (!project.repositoryRoot) {
+    // An empty state that only names the problem is a dead end — this one
+    // carries the fix, since `git init` is the whole remedy and Space can
+    // run it directly.
     return (
       <div className="p-6">
-        <EmptyState title="Not a Git repository" description={`"${project.name}" has no repository — changes tracking needs one.`} />
+        <EmptyState
+          title="Not a Git repository"
+          description={`"${project.name}" has no repository yet. Initializing one creates it in place and makes an initial commit — nothing already in the folder is moved or removed.`}
+          action={
+            <Button variant="primary" size="sm" disabled={initializing} onClick={initializeRepository}>
+              {initializing ? 'Initializing…' : 'Initialize repository'}
+            </Button>
+          }
+        />
       </div>
     );
   }

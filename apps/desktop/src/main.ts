@@ -21,6 +21,9 @@ import { createGitHandlers, type GitHandlers } from './main/git-handlers';
 import { createGithubHandlers, type GithubHandlers } from './main/github-handlers';
 import { fireAutomationTrigger, registerIpcHandlers } from './main/ipc';
 import { createAppLogger } from './main/logging';
+import { ensureMcpToken, startMcpServer, type McpServerHandle } from './main/mcp/mcp-server';
+import { createAiToolHandlers, type AiToolHandlers } from './main/mcp/ai-tool-handlers';
+import { MCP_TOOLS } from './main/mcp/tool-registry';
 import { createPackageManagerHandlers, type PackageManagerHandlers } from './main/package-manager-handlers';
 import { createProjectEnvironmentHandlers, type ProjectEnvironmentHandlers } from './main/project-environment-handlers';
 import { createProjectHandlers, type ProjectHandlers } from './main/project-handlers';
@@ -78,6 +81,7 @@ let automationHandlers: AutomationHandlers | null = null;
 let projectEnvironmentHandlers: ProjectEnvironmentHandlers | null = null;
 let connectedServicesHandlers: ConnectedServicesHandlers | null = null;
 let aiHandlers: AiHandlers | null = null;
+let aiToolHandlers: AiToolHandlers | null = null;
 let bootstrapHandlers: BootstrapHandlers | null = null;
 // Holds no state of its own (a pure machine scan) — created once, unlike
 // the other handler modules above which are recreated per storage/terminal
@@ -89,6 +93,7 @@ const assetHandlers: AssetHandlers = createAssetHandlers();
 const packageManagerHandlers: PackageManagerHandlers = createPackageManagerHandlers();
 let handlersRegistered = false;
 let scheduledAutomationTimer: ReturnType<typeof setInterval> | null = null;
+let mcpServerHandle: McpServerHandle | null = null;
 
 /**
  * M8: how often the `scheduled` automation trigger (spec 18.2) is checked
@@ -380,6 +385,63 @@ app.on('ready', () => {
   // renderer ever asks.
   void storage.call('system.reconcileOrphans', undefined);
 
+  // MCP server (external AI tool access, off by default). It reuses the same
+  // storage/git/environment handler objects the renderer talks to — one
+  // capability implementation, a second read-only front-end onto it.
+  const mcpDeps = { storage, gitHandlers, projectEnvironmentHandlers };
+  const mcpDataDir = path.join(app.getPath('userData'), 'mcp');
+
+  async function startMcp(): Promise<void> {
+    if (mcpServerHandle) {
+      return;
+    }
+    try {
+      mcpServerHandle = await startMcpServer({
+        deps: mcpDeps,
+        logger,
+        dataDir: mcpDataDir,
+        appVersion: app.getVersion(),
+      });
+    } catch (error) {
+      logger.error('MCP server failed to start', { errorMessage: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async function stopMcp(): Promise<void> {
+    const handle = mcpServerHandle;
+    mcpServerHandle = null;
+    if (handle) {
+      await handle.stop();
+    }
+  }
+
+  /**
+   * The single start/stop path for the server, shared by the Tools menu
+   * checkbox and the Environment screen's AI-tools panel, so the persisted
+   * opt-in and the menu state can never disagree with reality.
+   */
+  async function setMcpEnabled(enabled: boolean): Promise<void> {
+    await storage.call('appSettings.setMcpServerEnabled', { enabled, updatedAt: new Date().toISOString() });
+    if (enabled) {
+      await startMcp();
+    } else {
+      await stopMcp();
+    }
+    rebuildAppMenu();
+  }
+
+  aiToolHandlers = createAiToolHandlers(storage, {
+    terminal,
+    paths: { homeDirectory: app.getPath('home'), appDataDirectory: app.getPath('appData') },
+    server: {
+      isEnabled: () => mcpServerHandle !== null,
+      url: () => mcpServerHandle?.url ?? null,
+      setEnabled: setMcpEnabled,
+      toolCount: MCP_TOOLS.length,
+      token: () => ensureMcpToken(mcpDataDir),
+    },
+  });
+
   if (!handlersRegistered) {
     registerIpcHandlers(
       trustedSender as TrustedSender,
@@ -399,15 +461,38 @@ app.on('ready', () => {
       connectedServicesHandlers,
       packageManagerHandlers,
       aiHandlers,
+      aiToolHandlers,
       bootstrapHandlers,
       logger,
     );
     handlersRegistered = true;
   }
 
-  Menu.setApplicationMenu(
-    buildAppMenu(() => BrowserWindow.getAllWindows().find((w) => w.webContents.id === trustedSender.webContentsId) ?? null, app.isPackaged),
-  );
+  const getTrustedWindow = () =>
+    BrowserWindow.getAllWindows().find((w) => w.webContents.id === trustedSender.webContentsId) ?? null;
+
+  function rebuildAppMenu(): void {
+    Menu.setApplicationMenu(
+      buildAppMenu(getTrustedWindow, app.isPackaged, {
+        isEnabled: () => mcpServerHandle !== null,
+        setEnabled: (enabled) => {
+          void setMcpEnabled(enabled);
+        },
+      }),
+    );
+  }
+
+  rebuildAppMenu();
+
+  // Honour the persisted opt-in on launch, then refresh the menu checkbox
+  // once the server is actually up.
+  void (async () => {
+    const enabled = await storage.call<boolean>('appSettings.isMcpServerEnabled', undefined);
+    if (enabled) {
+      await startMcp();
+      rebuildAppMenu();
+    }
+  })();
 
   createWindow();
 });
@@ -418,6 +503,10 @@ app.on('before-quit', () => {
     scheduledAutomationTimer = null;
   }
   fireDevProcessExitedTrigger = null;
+  if (mcpServerHandle) {
+    void mcpServerHandle.stop();
+    mcpServerHandle = null;
+  }
   projectHandlers?.stopAllDevServers();
   terminalClient?.stop();
   storageClient?.stop();

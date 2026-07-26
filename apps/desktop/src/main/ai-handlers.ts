@@ -3,21 +3,41 @@
  * one request per TODO/FIXME comment found in the project, asking for a
  * proposed one-line fix. Nothing here is autonomous: `reviewComments` only
  * reads files and returns proposals, and `applyFix` only writes the one
- * line the renderer already showed the user and got confirmation for
- * (mirrors agent-handlers.ts's `confirmed`-gated dispatch — the model never
- * edits a file on its own initiative). The API key is never held in plain
- * text at rest: `setApiKey` encrypts it with Electron's OS-backed
+ * line the renderer already showed the user and got confirmation for — the
+ * model never edits a file on its own initiative. The API key is never held
+ * in plain text at rest: `setApiKey` encrypts it with Electron's OS-backed
  * `safeStorage` (Keychain on macOS, DPAPI on Windows) before writing it to
  * disk.
+ *
+ * This is the only module in the app that sends content to a remote model,
+ * so ADR-008's non-negotiable floor is enforced *here*, at the point of
+ * egress, in the same three overlapping layers the ADR specifies:
+ *
+ *  1. Whole-file exclusion by path (`isEligibleForModel` -> `isSensitivePath`):
+ *     `.env*`, SSH keys, `*.pem`/`*.key`, `credentials`/`secrets`, `.npmrc`,
+ *     `.netrc`, `.git-credentials` are never opened, never diffed, never
+ *     sent — content-independent, so it does not rely on step 2 catching
+ *     anything. Binary files are excluded on the same footing.
+ *  2. Pattern redaction (`redactSecretPatterns`) over every fragment that
+ *     does leave, as defence in depth — never as a replacement for step 1.
+ *  3. An audit receipt per model call (spec 19.3: "logged as metadata, not
+ *     raw sensitive content") recording counts and file paths only.
+ *
+ * Every exclusion is also reported back to the renderer, because spec 13.3
+ * requires the user to know which files were sent: what was withheld is as
+ * visible as what was not.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeStorage } from 'electron';
 import { ApiError, GoogleGenAI } from '@google/genai';
+import { isEligibleForModel } from '@space/agent';
 import { createNodeGitExecutor, diffPatchArgs } from '@space/git-engine';
+import { isSensitivePath, redactSecretPatterns } from '@space/workspace-runner';
 import type {
   AiApplyFixInput,
   AiApplyFixResult,
+  AiExcludedFile,
   AiGenerateCommitMessageInput,
   AiGenerateCommitMessageResult,
   AiKeyStatus,
@@ -27,7 +47,7 @@ import type {
   AiSetApiKeyInput,
   Project,
 } from '@space/contracts';
-import type { StorageCaller } from './project-handlers';
+import { recordOperation, type StorageCaller } from './project-handlers';
 
 /**
  * Fast, cheap Gemini model — appropriate for a short per-comment review call, not a long
@@ -84,7 +104,13 @@ async function readStoredKey(keyFilePath: string): Promise<string | null> {
   }
 }
 
-async function walkForTodos(root: string, dir: string, out: RawFinding[], budget: { filesScanned: number }): Promise<void> {
+async function walkForTodos(
+  root: string,
+  dir: string,
+  out: RawFinding[],
+  budget: { filesScanned: number },
+  excluded: AiExcludedFile[],
+): Promise<void> {
   if (out.length >= MAX_FINDINGS || budget.filesScanned >= MAX_FILES_SCANNED) {
     return;
   }
@@ -93,7 +119,11 @@ async function walkForTodos(root: string, dir: string, out: RawFinding[], budget
     if (out.length >= MAX_FINDINGS || budget.filesScanned >= MAX_FILES_SCANNED) {
       return;
     }
-    if (entry.name.startsWith('.') && entry.name !== '.env') {
+    // Dotfiles are skipped wholesale. There is deliberately no exception for
+    // `.env` here: an earlier version carved one out, which was inert only
+    // because `.env` has no scannable extension — one entry in
+    // SCANNABLE_EXTENSIONS away from disclosing an environment file.
+    if (entry.name.startsWith('.')) {
       if (entry.isDirectory() && !EXCLUDED_DIRS.has(entry.name)) {
         // Allow non-dotfile-convention dirs through, but most dotdirs (.git, .cache, ...) are noise.
       } else {
@@ -105,10 +135,17 @@ async function walkForTodos(root: string, dir: string, out: RawFinding[], budget
       if (EXCLUDED_DIRS.has(entry.name)) {
         continue;
       }
-      await walkForTodos(root, fullPath, out, budget);
+      await walkForTodos(root, fullPath, out, budget, excluded);
       continue;
     }
     if (!entry.isFile() || !SCANNABLE_EXTENSIONS.has(path.extname(entry.name))) {
+      continue;
+    }
+    // ADR-008 layer 1: refuse by path before the file is ever opened, so no
+    // credential/key-material content exists in memory to leak downstream.
+    const relativePath = path.relative(root, fullPath);
+    if (isSensitivePath(relativePath.split(path.sep).join('/'))) {
+      excluded.push({ filePath: relativePath, reason: 'sensitive-path' });
       continue;
     }
     budget.filesScanned += 1;
@@ -140,9 +177,14 @@ async function walkForTodos(root: string, dir: string, out: RawFinding[], budget
 
 /** Asks Gemini for a single-line fix; returns null when it can't confidently propose one-line replacement. */
 async function proposeFix(client: GoogleGenAI, finding: RawFinding): Promise<string | null> {
+  // ADR-008 layer 2: the surrounding context is the only free-form content
+  // that leaves here, so it passes through pattern redaction first. The file
+  // itself already survived the path-based gate in `walkForTodos`.
   const response = await client.models.generateContent({
     model: MODEL,
-    contents: `File: ${finding.file}\nLine ${finding.line}: ${finding.comment}\n\nContext:\n${finding.context}`,
+    contents:
+      `File: ${finding.file}\nLine ${finding.line}: ${redactSecretPatterns(finding.comment)}\n\n` +
+      `Context:\n${redactSecretPatterns(finding.context)}`,
     config: {
       maxOutputTokens: 300,
       // This model line thinks by default, and thinking tokens count against
@@ -185,10 +227,13 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
     const project = await storage.call<Project>('project.get', { projectId: input.projectId });
     const raw: RawFinding[] = [];
     const budget = { filesScanned: 0 };
-    await walkForTodos(project.canonicalPath, project.canonicalPath, raw, budget);
+    const excluded: AiExcludedFile[] = [];
+    const startedAt = new Date().toISOString();
+    await walkForTodos(project.canonicalPath, project.canonicalPath, raw, budget, excluded);
 
     const client = new GoogleGenAI({ apiKey });
     const findings: AiReviewFinding[] = [];
+    let modelRequestCount = 0;
     for (let i = 0; i < raw.length; i += 1) {
       const item = raw[i];
       if (!item) {
@@ -196,6 +241,7 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
       }
       let proposedFix: string | null;
       try {
+        modelRequestCount += 1;
         proposedFix = await proposeFix(client, item);
       } catch (error) {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -216,14 +262,44 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
       });
     }
 
-    return { findings, scannedFileCount: budget.filesScanned };
+    // ADR-008 layer 3: metadata only — counts and paths, never the prompt
+    // text or the model's reply (spec 19.3).
+    await recordOperation(storage, {
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      type: 'ai.reviewComments',
+      humanSummary: `AI review: ${modelRequestCount} model request(s) over ${findings.length} comment(s)`,
+      startedAt,
+      state: 'succeeded',
+      exitCode: 0,
+      partialState: {
+        modelRequestCount,
+        disclosedFilePaths: [...new Set(findings.map((finding) => finding.file))],
+        excludedFilePaths: excluded.map((entry) => entry.filePath),
+      },
+    });
+
+    return { findings, scannedFileCount: budget.filesScanned, excluded };
   }
 
   async function applyFix(input: AiApplyFixInput): Promise<AiApplyFixResult> {
     const project = await storage.call<Project>('project.get', { projectId: input.projectId });
-    const targetPath = path.join(project.canonicalPath, input.file);
-    if (!targetPath.startsWith(path.resolve(project.canonicalPath) + path.sep)) {
+    const projectRoot = await fs.realpath(project.canonicalPath);
+    const targetPath = path.resolve(projectRoot, input.file);
+    if (!targetPath.startsWith(projectRoot + path.sep)) {
       throw new Error('Refusing to write outside the project directory');
+    }
+    // `path.resolve` collapses `..` but knows nothing about symlinks: a link
+    // inside the project pointing outward would otherwise pass the check
+    // above and be written through. Resolve the real location too.
+    const realTargetPath = await fs.realpath(targetPath).catch(() => targetPath);
+    if (realTargetPath !== targetPath && !realTargetPath.startsWith(projectRoot + path.sep)) {
+      throw new Error('Refusing to write through a symlink that leaves the project directory');
+    }
+    // A fix is a write into the user's working tree, so it answers to the
+    // same path policy as everything else: never edit credential/key material.
+    if (isSensitivePath(input.file.split(path.sep).join('/'))) {
+      throw new Error('Refusing to modify a credential or key-material file');
     }
     const content = await fs.readFile(targetPath, 'utf-8');
     const lines = content.split('\n');
@@ -245,16 +321,43 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
       throw new Error('No files selected — include at least one change group first');
     }
     const project = await storage.call<Project>('project.get', { projectId: input.projectId });
+
+    // ADR-008 layer 1, before any diff is even requested: partition the
+    // selected paths into what may leave and what may not. A withheld path
+    // is never passed to `git diff`, so its content is never read, let alone
+    // sent — the exclusion does not depend on redaction catching anything.
+    const excluded: AiExcludedFile[] = [];
+    const eligiblePaths: string[] = [];
+    for (const filePath of input.filePaths) {
+      const normalized = filePath.split(path.sep).join('/');
+      if (!isEligibleForModel(normalized, false)) {
+        excluded.push({ filePath, reason: 'sensitive-path' });
+        continue;
+      }
+      eligiblePaths.push(filePath);
+    }
+    if (eligiblePaths.length === 0) {
+      throw new Error(
+        'Every selected file is a credential, environment, or key-material file — none of it can be sent to a model. Write this commit message yourself.',
+      );
+    }
+
+    const startedAt = new Date().toISOString();
     const gitExecutor = createNodeGitExecutor();
     const cwd = project.canonicalPath;
+    // `binary: false` keeps a changed binary file to git's one-line "Binary
+    // files … differ" marker instead of a full literal blob (ADR-008:
+    // "binary files must not be sent by default").
     const [unstaged, staged] = await Promise.all([
-      gitExecutor(diffPatchArgs({ cached: false, paths: input.filePaths }), { cwd }),
-      gitExecutor(diffPatchArgs({ cached: true, paths: input.filePaths }), { cwd }),
+      gitExecutor(diffPatchArgs({ cached: false, paths: eligiblePaths, binary: false }), { cwd }),
+      gitExecutor(diffPatchArgs({ cached: true, paths: eligiblePaths, binary: false }), { cwd }),
     ]);
-    const diffText = `${staged.stdout}${unstaged.stdout}`.trim();
-    if (!diffText) {
+    const rawDiffText = `${staged.stdout}${unstaged.stdout}`.trim();
+    if (!rawDiffText) {
       throw new Error('No diff found for the selected files');
     }
+    // ADR-008 layer 2: defence in depth over whatever survived layer 1.
+    const diffText = redactSecretPatterns(rawDiffText);
     const truncated = diffText.length > MAX_DIFF_CHARS ? `${diffText.slice(0, MAX_DIFF_CHARS)}\n... (truncated)` : diffText;
 
     const client = new GoogleGenAI({ apiKey });
@@ -275,6 +378,16 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
       });
       text = (response.text ?? '').trim();
     } catch (error) {
+      await recordOperation(storage, {
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        type: 'ai.generateCommitMessage',
+        humanSummary: 'AI commit message request failed',
+        startedAt,
+        state: 'failed',
+        exitCode: 1,
+        partialState: { disclosedFilePaths: eligiblePaths, excludedFilePaths: excluded.map((e) => e.filePath) },
+      });
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         throw new Error('Gemini API rejected the configured key — check it and try again');
       }
@@ -283,7 +396,21 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
     if (!text) {
       throw new Error('Gemini returned an empty commit message — try again');
     }
-    return { message: text };
+
+    // ADR-008 layer 3: metadata only (spec 19.3) — which paths were
+    // disclosed and which were withheld, never the diff or the reply.
+    await recordOperation(storage, {
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      type: 'ai.generateCommitMessage',
+      humanSummary: `AI commit message from ${eligiblePaths.length} file(s)`,
+      startedAt,
+      state: 'succeeded',
+      exitCode: 0,
+      partialState: { disclosedFilePaths: eligiblePaths, excludedFilePaths: excluded.map((e) => e.filePath) },
+    });
+
+    return { message: text, excluded };
   }
 
   return { keyStatus, setApiKey, reviewComments, applyFix, generateCommitMessage };

@@ -50,6 +50,16 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
   // Mirrors exactly what the user has typed since the last Enter, so
   // onCommand can report real input instead of reconstructing it.
   const inputBufferRef = useRef('');
+  // The xterm instance and its subscriptions are built once per session
+  // (TERM-002) and must survive a parent re-render that hands down new
+  // callback identities. Reading these through refs keeps the effect
+  // honestly dependency-free of the callbacks while still always invoking
+  // the latest ones — tearing down a live PTY subscription just because the
+  // parent re-rendered would drop output.
+  const onCommandRef = useRef(onCommand);
+  const onOutputChunkRef = useRef(onOutputChunk);
+  onCommandRef.current = onCommand;
+  onOutputChunkRef.current = onOutputChunk;
 
   useImperativeHandle(
     ref,
@@ -154,7 +164,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     const unsubscribe = window.space.terminal.subscribe(session.id, (event) => {
       if (event.type === 'output') {
         term.write(event.chunk);
-        onOutputChunk?.(event.chunk, new Date().toISOString());
+        onOutputChunkRef.current?.(event.chunk, new Date().toISOString());
       } else if (event.type === 'exit') {
         term.writeln(`\r\n-- process exited (code ${event.exitCode ?? 'unknown'}) --`);
       } else if (event.type === 'backpressure') {
@@ -164,7 +174,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
     const disposable = term.onData((data) => {
       void window.space.terminal.write({ sessionId: session.id, data });
-      if (!onCommand) {
+      const reportCommand = onCommandRef.current;
+      if (!reportCommand) {
         return;
       }
       // Walk char-by-char since a single onData call can carry more than one
@@ -173,7 +184,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         if (ch === '\r' || ch === '\n') {
           const command = inputBufferRef.current;
           inputBufferRef.current = '';
-          onCommand(command, new Date().toISOString());
+          reportCommand(command, new Date().toISOString());
         } else if (ch === '\x7f' || ch === '\b') {
           inputBufferRef.current = inputBufferRef.current.slice(0, -1);
         } else {

@@ -20,7 +20,9 @@ const MID = ROW_HEIGHT / 2;
 const LANE_COLORS = ['#3b82f6', '#39d353', '#e3a008', '#f04747', '#a855f7', '#14b8a6'] as const;
 
 function laneColor(col: number): string {
-  return LANE_COLORS[col % LANE_COLORS.length]!;
+  // `col % length` is always in range, but index signatures are `T | undefined`
+  // under noUncheckedIndexedAccess — fall back rather than assert non-null.
+  return LANE_COLORS[col % LANE_COLORS.length] ?? LANE_COLORS[0];
 }
 
 interface LaneEdge {

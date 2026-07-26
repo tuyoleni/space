@@ -16,6 +16,7 @@ import {
   agentCommitComposeInputSchema,
   agentDiffLoadInputSchema,
   agentIntentGenerateInputSchema,
+  addProjectInputSchema,
   agentPermissionGrantInputSchema,
   agentPermissionRevokeInputSchema,
   agentPlanDispatchInputSchema,
@@ -27,6 +28,9 @@ import {
   automationSetEnabledInputSchema,
   automationSettingsGetInputSchema,
   automationSettingsSetInputSchema,
+  cloneProjectInputSchema,
+  createProjectFromTemplateInputSchema,
+  removeProjectInputSchema,
   gitCommitInputSchema,
   gitConflictResolveInputSchema,
   gitCreateBranchInputSchema,
@@ -89,6 +93,9 @@ import {
   aiReviewCommentsInputSchema,
   aiApplyFixInputSchema,
   aiGenerateCommitMessageInputSchema,
+  aiToolConnectInputSchema,
+  aiToolLaunchInputSchema,
+  mcpSetEnabledInputSchema,
   packageSearchInputSchema,
   packageActionInputSchema,
   IPC_CHANNELS,
@@ -103,6 +110,7 @@ import { createLogger, type Logger } from '@space/logging';
 import { assertIpcSender, type TrustedSender } from '@space/security';
 import type { AgentHandlers } from './agent-handlers';
 import type { AiHandlers } from './ai-handlers';
+import type { AiToolHandlers } from './mcp/ai-tool-handlers';
 import type { AssetHandlers } from './asset-handlers';
 import type { AutomationHandlers } from './automation-handlers';
 import type { BootstrapHandlers } from './bootstrap-handlers';
@@ -149,6 +157,11 @@ function sendToTrustedWindow(trusted: TrustedSender, channel: string, payload: u
  * unchanged; main.ts passes the real file-backed logger (spec 29.3).
  */
 const consoleLogger: Logger = createLogger({ sink: { write: (entry) => console.error(JSON.stringify(entry)) }, minLevel: 'error' });
+
+/** The message a user should see for a failed step, without leaking a stack. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function fireAutomationTrigger(
   automationHandlers: AutomationHandlers,
@@ -202,6 +215,7 @@ export function registerIpcHandlers(
   connectedServicesHandlers: ConnectedServicesHandlers,
   packageManagerHandlers: PackageManagerHandlers,
   aiHandlers: AiHandlers,
+  aiToolHandlers: AiToolHandlers,
   bootstrapHandlers: BootstrapHandlers,
   logger: Logger = consoleLogger,
 ): void {
@@ -257,7 +271,26 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.projectAdd, async (event, input) => {
     assertIpcSender(event, trusted);
-    return storage.call('project.add', input);
+    return storage.call('project.add', addProjectInputSchema.parse(input));
+  });
+
+  /**
+   * Unregisters a project. Any dev server Space started for it is stopped
+   * first — the row is about to disappear, and a live child process whose
+   * project no longer exists can never be surfaced or stopped again.
+   */
+  ipcMain.handle(IPC_CHANNELS.projectRemove, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = removeProjectInputSchema.parse(input);
+    try {
+      await projectHandlers.stopDevServersForProject(parsed.projectId);
+    } catch (error) {
+      logger.warn('Could not stop dev servers before removing project', {
+        projectId: parsed.projectId,
+        errorMessage: errorMessage(error),
+      });
+    }
+    return storage.call('project.remove', parsed);
   });
 
   // M4: project detection, trust, create/clone, install, dev servers.
@@ -282,14 +315,91 @@ export function registerIpcHandlers(
     return projectHandlers.listTemplates();
   });
 
+  /**
+   * PRJ-004 end to end. Three real operations compose here rather than
+   * inside any one handler module, because this is the only layer that
+   * holds all three: scaffolding (projectHandlers), `git init` + initial
+   * commit (gitHandlers), and repository creation/push (githubHandlers).
+   *
+   * A project that scaffolds but never gets `git init` is the state that
+   * made every later Git and GitHub action fail with "not a Git
+   * repository", so initialisation is the default rather than a separate
+   * thing to remember. Steps after scaffolding are best-effort: the
+   * directory is already on disk and registered, so a `git`/`gh` failure is
+   * reported as a warning instead of discarding real work.
+   */
   ipcMain.handle(IPC_CHANNELS.projectCreateFromTemplate, async (event, input) => {
     assertIpcSender(event, trusted);
-    return projectHandlers.createFromTemplate(input);
+    const parsed = createProjectFromTemplateInputSchema.parse(input);
+    // Scaffolding only needs the template half; the Git/GitHub options are
+    // consumed here, not by projectHandlers.
+    const project = await projectHandlers.createFromTemplate({
+      workspaceId: parsed.workspaceId,
+      templateId: parsed.templateId,
+      destinationParentDirectory: parsed.destinationParentDirectory,
+      name: parsed.name,
+      ...(parsed.options !== undefined ? { options: parsed.options } : {}),
+    });
+
+    const warnings: string[] = [];
+    // A GitHub publish is meaningless without a repository to publish.
+    const wantsGit = parsed.initializeGit ?? true;
+    const shouldInitialize = wantsGit || parsed.publishToGithub !== undefined;
+
+    let initialized = project;
+    let gitInitialized = false;
+    if (shouldInitialize) {
+      try {
+        initialized = await gitHandlers.initRepo({ projectId: project.id });
+        gitInitialized = initialized.repositoryRoot !== null;
+      } catch (error) {
+        warnings.push(`Git initialization failed: ${errorMessage(error)}`);
+        logger.error('Project created but git init failed', {
+          projectId: project.id,
+          errorMessage: errorMessage(error),
+        });
+      }
+    }
+
+    let github: { readonly nameWithOwner: string; readonly url: string } | null = null;
+    if (parsed.publishToGithub) {
+      if (!gitInitialized) {
+        warnings.push('Skipped the GitHub publish because the project is not a Git repository.');
+      } else {
+        try {
+          github = await githubHandlers.publishRepository(project.id, {
+            owner: parsed.publishToGithub.owner,
+            name: parsed.publishToGithub.repositoryName ?? parsed.name,
+            visibility: parsed.publishToGithub.visibility,
+            sourceFolder: initialized.repositoryRoot ?? initialized.canonicalPath,
+            push: parsed.publishToGithub.push,
+            ...(parsed.publishToGithub.description !== undefined
+              ? { description: parsed.publishToGithub.description }
+              : {}),
+          });
+        } catch (error) {
+          warnings.push(`GitHub publish failed: ${errorMessage(error)}`);
+          logger.error('Project created but GitHub publish failed', {
+            projectId: project.id,
+            errorMessage: errorMessage(error),
+          });
+        }
+      }
+    }
+
+    return { project: initialized, gitInitialized, github, warnings };
   });
 
   ipcMain.handle(IPC_CHANNELS.projectClone, async (event, input) => {
     assertIpcSender(event, trusted);
-    return projectHandlers.clone(input);
+    const parsed = cloneProjectInputSchema.parse(input);
+    return projectHandlers.clone({
+      workspaceId: parsed.workspaceId,
+      remoteUrl: parsed.remoteUrl,
+      destinationParentDirectory: parsed.destinationParentDirectory,
+      ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+      ...(parsed.branch !== undefined ? { branch: parsed.branch } : {}),
+    });
   });
 
   ipcMain.handle(IPC_CHANNELS.projectInstallDependencies, async (event, input) => {
@@ -1132,6 +1242,42 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = connectedServiceDeployInputSchema.parse(input);
     return connectedServicesHandlers.deploy(parsed);
+  });
+
+  // ---------------------------------------------------------------------
+  // Local MCP server + the external AI tools wired to it. `connect` writes
+  // real config into the tool's own user-level config and starts the server;
+  // `launch` starts the tool inside a project's workspace-bound terminal so
+  // every command it runs inherits that workspace's environment.
+  // ---------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsStatus, async (event) => {
+    assertIpcSender(event, trusted);
+    return aiToolHandlers.status();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsSetServerEnabled, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = mcpSetEnabledInputSchema.parse(input);
+    return aiToolHandlers.setServerEnabled(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsConnect, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiToolConnectInputSchema.parse(input);
+    return aiToolHandlers.connect(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsDisconnect, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiToolConnectInputSchema.parse(input);
+    return aiToolHandlers.disconnect(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsLaunch, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiToolLaunchInputSchema.parse(input);
+    return aiToolHandlers.launch(parsed);
   });
 
   // ---------------------------------------------------------------------

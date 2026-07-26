@@ -7,6 +7,7 @@ interface SqliteAppSettingRow {
 }
 
 const TELEMETRY_ENABLED_KEY = 'telemetry.enabled';
+const MCP_SERVER_ENABLED_KEY = 'mcpServer.enabled';
 
 /**
  * App-level (not per-workspace) settings — a plain key/value store so
@@ -42,5 +43,18 @@ export class AppSettingsRepository {
 
   setTelemetryEnabled(enabled: boolean, updatedAt: string): void {
     this.set(TELEMETRY_ENABLED_KEY, enabled ? 'true' : 'false', updatedAt);
+  }
+
+  /**
+   * The local MCP server's opt-in. Same default-OFF posture as telemetry:
+   * absence of a row means off, so a fresh install never exposes Space's
+   * data to an external AI tool until the user explicitly turns it on.
+   */
+  isMcpServerEnabled(): boolean {
+    return this.get(MCP_SERVER_ENABLED_KEY) === 'true';
+  }
+
+  setMcpServerEnabled(enabled: boolean, updatedAt: string): void {
+    this.set(MCP_SERVER_ENABLED_KEY, enabled ? 'true' : 'false', updatedAt);
   }
 }

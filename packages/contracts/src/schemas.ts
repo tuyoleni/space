@@ -6,6 +6,11 @@ import { z } from 'zod';
  * without domain validation"). Main-process handlers must parse the raw
  * IPC payload through these before touching storage or the filesystem.
  */
+// Declared up here rather than beside the other GitHub schemas because the
+// create-project flow (which can publish straight to GitHub) references it
+// well before that section of this file is evaluated.
+const githubRepoVisibilitySchema = z.enum(['public', 'private', 'internal']);
+
 export const createWorkspaceInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
   iconToken: z.string().min(1).max(100).optional(),
@@ -62,6 +67,10 @@ export const gitInitInputSchema = z.object({
 });
 
 /** Storage-worker-internal — called by git-handlers.ts only after a real `git init` has already succeeded, never directly by the renderer. */
+export const removeProjectInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
 export const projectSetRepositoryRootInputSchema = z.object({
   projectId: z.string().min(1),
   repositoryRoot: z.string().min(1),
@@ -82,6 +91,28 @@ export const createProjectFromTemplateInputSchema = z.object({
     .regex(/^[^/\\]+$/, 'name must not contain a path separator')
     .refine((value) => value !== '.' && value !== '..', 'name must not be "." or ".."'),
   options: z.record(z.string(), projectTemplateOptionValueSchema).optional(),
+  initializeGit: z.boolean().optional(),
+  publishToGithub: z
+    .object({
+      // Same "must not look like a flag" guard the rest of the gh surface
+      // uses — these values become `gh repo create` arguments.
+      owner: z
+        .string()
+        .trim()
+        .min(1)
+        .refine((value) => !value.startsWith('-'), 'owner must not look like a flag'),
+      visibility: githubRepoVisibilitySchema,
+      repositoryName: z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .regex(/^[A-Za-z0-9._-]+$/, 'repository name may only contain letters, digits, ".", "_" and "-"')
+        .optional(),
+      description: z.string().max(350).optional(),
+      push: z.boolean(),
+    })
+    .optional(),
 });
 
 export const cloneProjectInputSchema = z.object({
@@ -250,8 +281,6 @@ export const githubAuthLogoutInputSchema = z.object({
   workspaceId: z.string().min(1),
   host: z.string().min(1).optional(),
 });
-
-const githubRepoVisibilitySchema = z.enum(['public', 'private', 'internal']);
 
 export const githubRepoPlanPublishInputSchema = z.object({
   workspaceId: z.string().min(1),
@@ -654,4 +683,16 @@ export const packageSearchInputSchema = z.object({ query: z.string().trim().min(
 export const packageActionInputSchema = z.object({
   source: packageSourceSchema,
   name: z.string().trim().min(1).max(200),
+});
+
+const aiToolIdSchema = z.enum(['claude-code', 'cursor', 'vscode']);
+
+export const mcpSetEnabledInputSchema = z.object({ enabled: z.boolean() });
+
+export const aiToolConnectInputSchema = z.object({ tool: aiToolIdSchema });
+
+export const aiToolLaunchInputSchema = z.object({
+  tool: aiToolIdSchema,
+  workspaceId: z.string().min(1),
+  projectId: z.string().min(1),
 });

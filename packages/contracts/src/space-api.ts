@@ -2,6 +2,12 @@ import type {
   ActivityEvent,
   ActivityListRangeInput,
   AddProjectInput,
+  AiToolConnectInput,
+  AiToolConnectResult,
+  AiToolLaunchInput,
+  AiToolLaunchResult,
+  AiToolsStatus,
+  McpSetEnabledInput,
   AgentCommitComposeInput,
   AgentCommitComposeResult,
   AgentDiffLoadInput,
@@ -32,6 +38,9 @@ import type {
   ConnectedServiceLoginResult,
   ConnectedServicesResult,
   CreateProjectFromTemplateInput,
+  CreateProjectResult,
+  RemoveProjectInput,
+  RemoveProjectResult,
   CreateTerminalInput,
   CreateWorkspaceInput,
   DependencyScanInput,
@@ -186,11 +195,19 @@ export interface SpaceAPI {
     detect(input: DetectProjectInput): Promise<ProjectDetectionReport>;
     /** PRJ-005: lockfile-based package manager resolution. */
     detectPackageManager(input: DetectPackageManagerInput): Promise<PackageManagerDetection>;
+    /** Unregisters a project from the workspace. Never deletes anything on disk. */
+    remove(input: RemoveProjectInput): Promise<RemoveProjectResult>;
     /** PRJ-003/ADR-006: apply a trust decision (allow-once/trust-this-project/keep-untrusted). */
     trustDecision(input: ProjectTrustDecisionInput): Promise<Project>;
     /** PRJ-004: template metadata shown before any creation command runs. */
     listTemplates(): Promise<ProjectTemplateSummary[]>;
-    createFromTemplate(input: CreateProjectFromTemplateInput): Promise<Project>;
+    /**
+     * PRJ-004: scaffold from a template, then (unless opted out) `git init`
+     * with an initial commit, and optionally create the repository on the
+     * workspace's connected GitHub account and push. Later steps failing
+     * does not discard the project — see `CreateProjectResult.warnings`.
+     */
+    createFromTemplate(input: CreateProjectFromTemplateInput): Promise<CreateProjectResult>;
     /** PRJ-001/004 clone flow, via @space/git-engine. */
     clone(input: CloneProjectInput): Promise<Project>;
     /** PRJ-005: gated by project trust unless `allowOnce` is set. */
@@ -432,6 +449,26 @@ export interface SpaceAPI {
     stats(): Promise<SystemStatsResult>;
     /** Real top-CPU process list from `ps` (macOS); empty on platforms without a wired parser rather than fabricated. */
     processes(): Promise<readonly SystemProcessInfo[]>;
+  };
+  readonly aiTools: {
+    /** Local MCP server state plus every AI tool Space can wire to it, with real detection and real connected state. */
+    status(): Promise<AiToolsStatus>;
+    /** Starts/stops the loopback MCP server (same opt-in the Tools menu toggles). */
+    setServerEnabled(input: McpSetEnabledInput): Promise<AiToolsStatus>;
+    /**
+     * Writes Space's MCP server into that tool's own user-level config — via
+     * its CLI where it has one, otherwise a JSON merge — and starts the server
+     * if it wasn't running. No copy-pasting a token out of a file.
+     */
+    connect(input: AiToolConnectInput): Promise<AiToolConnectResult>;
+    /** Removes only Space's own entry from that tool's config; everything else there is left alone. */
+    disconnect(input: AiToolConnectInput): Promise<void>;
+    /**
+     * Starts the tool's CLI in a real workspace-bound terminal for one project,
+     * so every command it runs inherits that workspace's environment (spec 5.3)
+     * instead of a raw shell. Subscribe to the returned sessionId for output.
+     */
+    launch(input: AiToolLaunchInput): Promise<AiToolLaunchResult>;
   };
   readonly dependencies: {
     /** Real `npm|pnpm audit --json` + `outdated --json` for one project's real package manager — read-only, never `audit fix`. Yarn reports `supported: false` with a reason instead of a guessed parse. */
