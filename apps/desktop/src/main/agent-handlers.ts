@@ -19,6 +19,7 @@ import path from 'node:path';
 import {
   applyModelProposals,
   buildModelDisclosure,
+  binarySelectionPaths,
   buildSelectionsFromFileDiffs,
   composePatchFromSelections,
   computeIntrinsicRisk,
@@ -41,6 +42,7 @@ import {
   diffPatchArgs,
   parseStatusOutput,
   parseUnifiedDiff,
+  stageFiles,
   stagePatch,
   statusArgs,
   type FileDiff,
@@ -246,6 +248,14 @@ export function createAgentHandlers(storage: StorageCaller, options: AgentHandle
     const patchText = composePatchFromSelections(input.evidence, lookup);
     if (patchText.length > 0) {
       await stagePatch(cwd, patchText, gitExecutor);
+    }
+    // Binary files have no hunks to apply, so they are staged wholesale.
+    // Without this they were dropped from the commit in silence: the commit
+    // succeeded, reported the files it did include, and left the new image
+    // or font untracked on disk.
+    const binaryPaths = binarySelectionPaths(input.evidence);
+    if (binaryPaths.length > 0) {
+      await stageFiles(cwd, binaryPaths, gitExecutor);
     }
     return gitHandlers.commit({ projectId: input.projectId, message: input.message });
   }

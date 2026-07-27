@@ -196,13 +196,46 @@ export function GuidedSyncDialog({ open, onOpenChange, project, onChanged }: Gui
     }
   }
 
+  /**
+   * `git pull --autostash` drops its own stash when the restore applies
+   * cleanly, but keeps it when the restore conflicts — correct of Git, since
+   * the work would otherwise be unrecoverable. Once the conflict is resolved
+   * and the sync verifies, that entry is a duplicate of what is already in
+   * the working tree, and nothing was removing it: every conflicted sync left
+   * another "autostash" behind, quietly growing the stash list while the
+   * dialog reported success.
+   *
+   * Only entries Git itself names `autostash` are touched — a stash the user
+   * made is never dropped by this.
+   */
+  async function dropRestoredAutostash(): Promise<void> {
+    if (!project) return;
+    try {
+      const stashes = await window.space.git.listStashes({ projectId: project.id });
+      // Highest index first: dropping shifts every later index down by one.
+      const autostashes = stashes
+        .filter((entry) => entry.message.trim() === 'autostash')
+        .sort((a, b) => b.index - a.index);
+      for (const entry of autostashes) {
+        await window.space.git.dropStash({ projectId: project.id, index: entry.index, confirmed: true });
+      }
+    } catch {
+      // A leftover stash is untidy, not dangerous — never fail a completed
+      // sync over the cleanup of something the user can still see and drop.
+    }
+  }
+
   async function resolve(path: string, side: 'ours' | 'theirs'): Promise<void> {
     if (!project) return;
     setBusy(true);
     try {
       await window.space.git.resolveConflict({ projectId: project.id, path, side });
       const after = await window.space.git.status({ projectId: project.id });
-      setVerifiedPhase(after, after.conflictedFiles.length === 0 && after.operationState.kind === 'none' ? 'complete' : 'conflicts');
+      const done = after.conflictedFiles.length === 0 && after.operationState.kind === 'none';
+      if (done) {
+        await dropRestoredAutostash();
+      }
+      setVerifiedPhase(after, done ? 'complete' : 'conflicts');
       await onChanged?.();
     } catch (caught) {
       setError(toErrorMessage(caught));
@@ -216,6 +249,7 @@ export function GuidedSyncDialog({ open, onOpenChange, project, onChanged }: Gui
     setBusy(true);
     try {
       await window.space.git.continueConflict({ projectId: project.id });
+      await dropRestoredAutostash();
       const after = await window.space.git.status({ projectId: project.id });
       setVerifiedPhase(after, 'complete');
       await onChanged?.();
@@ -354,6 +388,19 @@ export function GuidedSyncDialog({ open, onOpenChange, project, onChanged }: Gui
                     {conflictIsIntegration ? 'Use incoming' : 'Restore my local version'}
                   </Button>
                 </div>
+                {/* At the restore stage the "synced version" already contains
+                    whatever teammates pushed, so taking the local copy of this
+                    file drops their committed work from the working tree. That
+                    is invisible otherwise — the sync reports success, and the
+                    revert only shows up as an innocent-looking modification
+                    that the next commit would quietly ship. */}
+                {!conflictIsIntegration && (
+                  <p className="mt-2 text-xs leading-5 text-fg-muted">
+                    Restoring your local copy discards what was just pulled into{' '}
+                    <span className="text-fg">{file}</span> — including changes teammates already
+                    pushed. Keep the synced version if you are not sure.
+                  </p>
+                )}
               </div>
             ))}
           </div>
