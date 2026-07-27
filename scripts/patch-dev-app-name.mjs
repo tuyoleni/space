@@ -1,6 +1,5 @@
 /**
- * Dev-only: rename the Electron binary's bundle so the macOS application
- * menu shows "Space", not "Electron".
+ * Dev-only: prepare the development bundle so macOS presents it as Space.
  *
  * On macOS the bold app-menu title (and the "About X / Hide X / Quit X"
  * items) come from the running bundle's Info.plist `CFBundleName` —
@@ -17,6 +16,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 const APP_NAME = 'Space';
+const SPACE_ICON_PATH = path.join(process.cwd(), 'apps', 'desktop', 'assets', 'icons', 'icon.icns');
 
 if (process.platform !== 'darwin') {
   process.exit(0);
@@ -56,6 +56,16 @@ const mainPlist = path.join(appPath, 'Contents', 'Info.plist');
 if (fs.existsSync(mainPlist)) {
   setPlistValue(mainPlist, 'CFBundleName', APP_NAME);
   setPlistValue(mainPlist, 'CFBundleDisplayName', APP_NAME);
+  setPlistValue(mainPlist, 'CFBundleIconFile', 'icon.icns');
+}
+
+// Replace the framework icon before launch so the Dock, About panel, app
+// switcher, and Finder all resolve the same Space artwork in development.
+const resourcesDir = path.join(appPath, 'Contents', 'Resources');
+if (fs.existsSync(SPACE_ICON_PATH) && fs.existsSync(resourcesDir)) {
+  for (const iconFile of ['electron.icns', 'Electron.icns', 'icon.icns']) {
+    fs.copyFileSync(SPACE_ICON_PATH, path.join(resourcesDir, iconFile));
+  }
 }
 
 // Helper bundles (GPU/Renderer/Plugin) — cosmetic, for Activity Monitor.
@@ -76,4 +86,4 @@ try {
 }
 
 // eslint-disable-next-line no-console
-console.log(`[patch-dev-app-name] set macOS bundle name to "${APP_NAME}"`);
+console.log(`[patch-dev-app-name] prepared macOS development bundle for "${APP_NAME}"`);

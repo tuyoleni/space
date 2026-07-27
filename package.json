@@ -1,7 +1,7 @@
 {
   "name": "space",
   "private": true,
-  "description": "Space: a cross-platform Electron desktop app for workspace, Git, GitHub, terminal, and project management.",
+  "description": "Space: a cross-platform desktop app for workspace, Git, GitHub, terminal, and project management.",
   "workspaces": [
     "apps/*",
     "packages/*"

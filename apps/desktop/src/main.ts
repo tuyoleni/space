@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Notification, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, Notification, session, shell, Tray } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import type { Logger } from '@space/logging';
@@ -7,6 +7,17 @@ import { buildAppMenu } from './main/app-menu';
 // The productName ("Space") only applies to the packaged app; set it in dev
 // too so the macOS app menu reads "Space", not "Electron".
 app.setName('Space');
+
+const SPACE_VERSION = app.isPackaged ? app.getVersion() : '1.0.0';
+const SPACE_ICON_PATH = path.join(__dirname, '../../assets/icons/icon.png');
+const SPACE_MENU_BAR_ICON_PATH = path.join(__dirname, '../../assets/icons/menu-bar-icon.svg');
+
+app.setAboutPanelOptions({
+  applicationName: 'Space',
+  applicationVersion: SPACE_VERSION,
+  version: '',
+  iconPath: SPACE_ICON_PATH,
+});
 import { createNodeOsCredentialExecutor, NodeKeychainCredentialStore, type CredentialStorePort, type TrustedSender } from '@space/security';
 import { runP0ASpike } from './spikes/p0a-runner';
 import { createAgentHandlers, type AgentHandlers } from './main/agent-handlers';
@@ -96,6 +107,8 @@ let handlersRegistered = false;
 let scheduledAutomationTimer: ReturnType<typeof setInterval> | null = null;
 let mcpServerHandle: McpServerHandle | null = null;
 let onboardingWindow: BrowserWindow | null = null;
+let statusTray: Tray | null = null;
+let isQuitting = false;
 
 /**
  * M8: how often the `scheduled` automation trigger (spec 18.2) is checked
@@ -153,7 +166,7 @@ const createWindow = (kind: 'main' | 'onboarding' = 'main'): BrowserWindow => {
     // Packaged builds get their icon from forge.config.ts's packagerConfig.icon;
     // this only matters for `npm start`'s Windows/Linux taskbar icon in dev
     // (macOS dev Dock icon is set separately via app.dock.setIcon above).
-    ...(!app.isPackaged ? { icon: path.join(__dirname, '../../assets/icons/icon.png') } : {}),
+    ...(!app.isPackaged ? { icon: SPACE_ICON_PATH } : {}),
     // The native title bar is hidden and replaced by the app's own topbar
     // (a `.space-titlebar-drag` region in index.css) so window chrome reads
     // as part of the UI rather than a separate opaque strip on top of it,
@@ -185,6 +198,18 @@ const createWindow = (kind: 'main' | 'onboarding' = 'main'): BrowserWindow => {
   });
 
   trustedSender.webContentsId = mainWindow.webContents.id;
+
+  // Closing Space sends it to the menu bar rather than stopping terminals,
+  // automations, or the opted-in MCP server. The explicit Quit command still
+  // tears down every worker through the normal before-quit lifecycle.
+  if (kind === 'main') {
+    mainWindow.on('close', (event) => {
+      if (!isQuitting) {
+        event.preventDefault();
+        mainWindow.hide();
+      }
+    });
+  }
 
   // Deny all permission requests by default; specific approved flows will
   // request narrowly-scoped permissions explicitly as features land.
@@ -309,11 +334,11 @@ app.on('ready', () => {
 
   // The packaged app gets its icon from forge.config.ts's packagerConfig.icon
   // (baked into the .app/.exe bundle); in dev there's no bundle, so `npm
-  // start` otherwise shows Electron's default icon in the Dock. Dock icon
+  // start` otherwise shows the development runtime's default icon in the Dock. Dock icon
   // has no window to attach to (unlike the BrowserWindow `icon` option
   // below, which covers Windows/Linux taskbar in dev), so it's set here.
   if (!app.isPackaged && process.platform === 'darwin') {
-    app.dock?.setIcon(path.join(__dirname, '../../assets/icons/icon.png'));
+    app.dock?.setIcon(nativeImage.createFromPath(SPACE_ICON_PATH));
   }
 
   // spec 29.3: real, local-only, rotating/redacted logging — replaces the
@@ -490,6 +515,54 @@ app.on('ready', () => {
   const getTrustedWindow = () =>
     BrowserWindow.getAllWindows().find((w) => w.webContents.id === trustedSender.webContentsId) ?? null;
 
+  function showSpaceWindow(): void {
+    const main = getTrustedWindow();
+    if (main && !main.isDestroyed()) {
+      if (main.isMinimized()) {
+        main.restore();
+      }
+      main.show();
+      main.focus();
+      return;
+    }
+
+    const onboarding = onboardingWindow;
+    if (onboarding && !onboarding.isDestroyed()) {
+      onboarding.show();
+      onboarding.focus();
+      return;
+    }
+
+    void (async () => {
+      const status = await bootstrapHandlers?.getStatus();
+      if (status?.status === 'complete') {
+        createWindow('main');
+      } else {
+        onboardingWindow = createWindow('onboarding');
+        onboardingWindow.on('closed', () => {
+          onboardingWindow = null;
+        });
+      }
+    })();
+  }
+
+  function createStatusTray(): void {
+    const icon = nativeImage.createFromPath(SPACE_MENU_BAR_ICON_PATH).resize({ width: 18, height: 18 });
+    icon.setTemplateImage(true);
+    statusTray = new Tray(icon);
+    statusTray.setToolTip('Space is running in the background');
+    statusTray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Open Space', click: showSpaceWindow },
+        { type: 'separator' },
+        { label: 'Space is running in the background', enabled: false },
+        { type: 'separator' },
+        { label: 'Quit Space', click: () => app.quit() },
+      ]),
+    );
+    statusTray.on('click', showSpaceWindow);
+  }
+
   function rebuildAppMenu(): void {
     Menu.setApplicationMenu(
       buildAppMenu(getTrustedWindow, app.isPackaged, {
@@ -502,6 +575,7 @@ app.on('ready', () => {
   }
 
   rebuildAppMenu();
+  createStatusTray();
 
   // Honour the persisted opt-in on launch, then refresh the menu checkbox
   // once the server is actually up.
@@ -527,6 +601,9 @@ app.on('ready', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
+  statusTray?.destroy();
+  statusTray = null;
   if (scheduledAutomationTimer) {
     clearInterval(scheduledAutomationTimer);
     scheduledAutomationTimer = null;
@@ -560,19 +637,27 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void (async () => {
-      const status = await bootstrapHandlers?.getStatus();
-      if (status?.status === 'complete') {
-        createWindow('main');
-      } else {
-        onboardingWindow = createWindow('onboarding');
-        onboardingWindow.on('closed', () => {
-          onboardingWindow = null;
-        });
-      }
-    })();
+  const existing = BrowserWindow.getAllWindows().find((window) => window.webContents.id === trustedSender.webContentsId);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) {
+      existing.restore();
+    }
+    existing.show();
+    existing.focus();
+    return;
   }
+
+  void (async () => {
+    const status = await bootstrapHandlers?.getStatus();
+    if (status?.status === 'complete') {
+      createWindow('main');
+    } else {
+      onboardingWindow = createWindow('onboarding');
+      onboardingWindow.on('closed', () => {
+        onboardingWindow = null;
+      });
+    }
+  })();
 });
 
 app.on('web-contents-created', (_event, contents) => {
