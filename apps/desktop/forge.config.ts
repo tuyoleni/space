@@ -6,7 +6,9 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { rebuild } from '@electron/rebuild';
+import { execFile as execFileCb } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { promisify } from 'node:util';
 import path from 'node:path';
 
 // npm workspaces hoist dependencies to the monorepo root, so apps/desktop
@@ -16,6 +18,8 @@ import path from 'node:path';
 // binaries at all (found and fixed during the P0-A spike, section 36.1.1).
 // ADR-001 tracks this as the interim strategy; a monorepo-aware packaging
 // tool may replace it later.
+const execFile = promisify(execFileCb);
+
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..');
 const RUNTIME_ONLY_PACKAGES = ['better-sqlite3', 'node-pty'];
 
@@ -172,9 +176,44 @@ const osxSign = {
   identity: APPLE_IDENTITY,
   optionsForFile: () => ({
     entitlements: path.join(__dirname, 'entitlements.plist'),
-    hardenedRuntime: HAS_DEVELOPER_ID,
+    hardenedRuntime: true,
   }),
 };
+
+/**
+ * Ad-hoc re-sign, inside-out, with the hardened runtime deliberately off.
+ *
+ * @electron/osx-sign turns the hardened runtime on by default, and under it
+ * macOS enforces library validation: the main binary may only load code
+ * signed by the *same team*. An ad-hoc signature has no team, so the loader
+ * refused the bundled Electron Framework outright — "mapping process and
+ * mapped file (non-platform) have different Team IDs" — and the packaged app
+ * died before showing a window. Notarized Developer ID builds want the
+ * hardened runtime and keep it; unsigned local and CI builds cannot satisfy
+ * it and must not claim to.
+ *
+ * Order matters: nested code has to be signed before whatever contains it,
+ * or resigning the outer bundle invalidates the seal that was just made.
+ */
+async function adhocSign(appPath: string): Promise<void> {
+  const sign = async (target: string): Promise<void> => {
+    await execFile('codesign', ['--force', '--sign', '-', '--timestamp=none', target]);
+  };
+
+  const frameworks = path.join(appPath, 'Contents', 'Frameworks');
+  const nested = await fs.readdir(frameworks).catch(() => [] as string[]);
+  for (const entry of nested) {
+    const target = path.join(frameworks, entry);
+    if (entry.endsWith('.app')) {
+      const helperBinaries = await fs.readdir(path.join(target, 'Contents', 'MacOS')).catch(() => [] as string[]);
+      for (const binary of helperBinaries) {
+        await sign(path.join(target, 'Contents', 'MacOS', binary));
+      }
+    }
+    await sign(target);
+  }
+  await sign(appPath);
+}
 
 // Notarization only runs with a real Developer ID and App Store Connect API
 // key; ad-hoc builds have nothing Apple would accept.
@@ -195,7 +234,7 @@ const config: ForgeConfig = {
     // cask's `zap` stanza deleting preferences under a domain the app never
     // wrote to.
     appBundleId: 'com.tuyoleni.space',
-    ...(process.platform === 'darwin' ? { osxSign } : {}),
+    ...(process.platform === 'darwin' && HAS_DEVELOPER_ID ? { osxSign } : {}),
     ...(osxNotarize ? { osxNotarize } : {}),
     // electron-packager appends the right extension per platform itself
     // (.icns on darwin, .ico on win32) when given an extension-less path —
@@ -254,6 +293,22 @@ const config: ForgeConfig = {
     // links point to the DMGs instead.
     new MakerZIP({}, ['darwin']),
   ],
+  hooks: {
+    // Ad-hoc builds are signed here rather than by @electron/osx-sign, which
+    // always enables the hardened runtime — fatal without a real team, since
+    // library validation then refuses the bundle's own framework.
+    async postPackage(_forgeConfig, packageResult) {
+      if (process.platform !== 'darwin' || HAS_DEVELOPER_ID) {
+        return;
+      }
+      for (const outputPath of packageResult.outputPaths) {
+        const entries = await fs.readdir(outputPath).catch(() => [] as string[]);
+        for (const entry of entries.filter((name) => name.endsWith('.app'))) {
+          await adhocSign(path.join(outputPath, entry));
+        }
+      }
+    },
+  },
   plugins: [
     new VitePlugin({
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
