@@ -74,22 +74,33 @@ export const nodeResolveOnPath: CommandOnPathResolver = async (executable) => {
 
 export const nodeRunCommand: CommandRunner = (executable, args, options) => {
   return new Promise<CommandExecutionResult>((resolve, reject) => {
+    const maxOutputBytes = options?.maxOutputBytes ?? 16 * 1024 * 1024;
     const child = spawn(executable, [...args], {
       cwd: options?.cwd,
+      env: options?.env ? { ...process.env, ...options.env } : process.env,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
     const timeout = options?.timeoutMs
-      ? setTimeout(() => child.kill('SIGTERM'), options.timeoutMs)
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGTERM');
+        }, options.timeoutMs)
       : undefined;
 
+    const appendBounded = (current: string, chunk: Buffer): string => {
+      const next = current + chunk.toString('utf-8');
+      return next.length > maxOutputBytes ? next.slice(-maxOutputBytes) : next;
+    };
+
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf-8');
+      stdout = appendBounded(stdout, chunk);
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf-8');
+      stderr = appendBounded(stderr, chunk);
     });
     child.on('error', (error) => {
       if (timeout) clearTimeout(timeout);
@@ -97,6 +108,9 @@ export const nodeRunCommand: CommandRunner = (executable, args, options) => {
     });
     child.on('close', (code) => {
       if (timeout) clearTimeout(timeout);
+      if (timedOut) {
+        stderr = appendBounded(stderr, Buffer.from(`\nSpace stopped the command after ${options?.timeoutMs ?? 0} ms.`, 'utf8'));
+      }
       resolve({ exitCode: code, stdout, stderr });
     });
   });

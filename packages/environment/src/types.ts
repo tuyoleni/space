@@ -93,7 +93,14 @@ export interface CommandExecutionResult {
 export type CommandRunner = (
   executable: string,
   args: readonly string[],
-  options?: { readonly cwd?: string; readonly timeoutMs?: number },
+  options?: {
+    readonly cwd?: string;
+    readonly timeoutMs?: number;
+    /** Extra process-local environment values; merged over the host environment. */
+    readonly env?: Readonly<Record<string, string>>;
+    /** Per-stream capture ceiling. The tail is retained so failures stay actionable. */
+    readonly maxOutputBytes?: number;
+  },
 ) => Promise<CommandExecutionResult>;
 
 /** Resolves an executable name to an absolute path via PATH lookup, or null if absent. */

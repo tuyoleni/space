@@ -30,6 +30,7 @@ import {
   nodeResolveOnPath,
   nodeRunCommand,
   performScan,
+  runHomebrewCommand,
   resumeAction,
   transition,
   verifyTool,
@@ -296,7 +297,10 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
         // `failed` and the raw Node error leaks to the caller instead of a
         // real, upserted (and therefore retryable) step outcome.
         const executable = (await resolveBootstrapExecutable(plannedStep.strategy.executable)) ?? plannedStep.strategy.executable;
-        return nodeRunCommand(executable, plannedStep.strategy.args, { timeoutMs: 180_000 }).catch(
+        const execution = plannedStep.strategy.packageManagerId === 'homebrew'
+          ? runHomebrewCommand(plannedStep.strategy.args, { executable })
+          : nodeRunCommand(executable, plannedStep.strategy.args, { timeoutMs: 180_000 });
+        return execution.catch(
           (error: unknown) => ({ exitCode: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) }),
         );
       },

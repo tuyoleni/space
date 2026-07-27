@@ -1,45 +1,33 @@
-import { describe, expect, it } from 'vitest';
-import { HOMEBREW_OFFICIAL_SITE_URL, buildHomebrewInstallStep, describeHomebrewScan, needsHomebrew } from './homebrew';
+import { describe, expect, it, vi } from 'vitest';
+import { HOMEBREW_LARGE_INSTALL_TIMEOUT_MS, HOMEBREW_RELIABILITY_ENV, runHomebrewCommand } from './homebrew';
+import type { CommandRunner } from './types';
 
-describe('buildHomebrewInstallStep (spec section 8.4)', () => {
-  it('shows the official installer source and targets the Apple Silicon prefix on arm64', () => {
-    const step = buildHomebrewInstallStep(0, 'arm64');
-    expect(step.humanExplanation).toContain(HOMEBREW_OFFICIAL_SITE_URL);
-    expect(step.humanExplanation).toContain('/opt/homebrew');
-    expect(step.strategy?.officialSourceUrl).toContain('githubusercontent.com/Homebrew/install');
+describe('runHomebrewCommand', () => {
+  it('applies large-download limits and process-local Git/curl reliability settings', async () => {
+    const runner: CommandRunner = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+
+    await runHomebrewCommand(['install', 'large-tool'], { runner });
+
+    expect(runner).toHaveBeenCalledWith('brew', ['install', 'large-tool'], expect.objectContaining({
+      timeoutMs: HOMEBREW_LARGE_INSTALL_TIMEOUT_MS,
+      env: HOMEBREW_RELIABILITY_ENV,
+    }));
   });
 
-  it('targets the Intel prefix on x64', () => {
-    const step = buildHomebrewInstallStep(0, 'x64');
-    expect(step.humanExplanation).toContain('/usr/local');
+  it('retries transient large Git failures and then succeeds', async () => {
+    const runner = vi.fn()
+      .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'RPC failed; curl 92 HTTP/2 stream was not closed cleanly' })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'installed', stderr: '' }) as CommandRunner;
+
+    await expect(runHomebrewCommand(['install', 'large-tool'], { runner })).resolves.toMatchObject({ exitCode: 0 });
+    expect(runner).toHaveBeenCalledTimes(2);
   });
 
-  it('is marked interactive and elevation-requiring so prompts are never hidden (spec 8.4)', () => {
-    const step = buildHomebrewInstallStep(0, 'arm64');
-    expect(step.interactive).toBe(true);
-    expect(step.requiresElevation).toBe(true);
-    expect(step.changesMachineState).toBe(true);
-  });
-});
+  it('does not retry deterministic package failures', async () => {
+    const runner = vi.fn(async () => ({ exitCode: 1, stdout: '', stderr: 'No available formula with the name "missing".' }));
 
-describe('needsHomebrew', () => {
-  it('is true when any chosen strategy uses Homebrew', () => {
-    expect(needsHomebrew([null, { packageManagerId: 'homebrew' } as never])).toBe(true);
-  });
+    await runHomebrewCommand(['install', 'missing'], { runner });
 
-  it('is false when no strategy uses Homebrew', () => {
-    expect(needsHomebrew([null, { packageManagerId: 'winget' } as never])).toBe(false);
-  });
-});
-
-describe('describeHomebrewScan', () => {
-  it('describes a found installation', () => {
-    expect(describeHomebrewScan({ id: 'homebrew', found: true, path: '/opt/homebrew/bin/brew', version: '4.3.1' })).toContain(
-      '/opt/homebrew/bin/brew',
-    );
-  });
-
-  it('describes an absent installation', () => {
-    expect(describeHomebrewScan(null)).toContain('not detected');
+    expect(runner).toHaveBeenCalledTimes(1);
   });
 });

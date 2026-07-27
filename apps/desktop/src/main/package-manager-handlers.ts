@@ -27,7 +27,7 @@
  */
 import https from 'node:https';
 import { app } from 'electron';
-import { nodeRunCommand, compareVersions } from '@space/environment';
+import { nodeRunCommand, compareVersions, runHomebrewCommand } from '@space/environment';
 import type {
   PackageActionInput,
   PackageActionResult,
@@ -575,7 +575,11 @@ export function createPackageManagerHandlers(): PackageManagerHandlers {
       return { source: input.source, name: input.name, succeeded: false, exitCode: null, message: `Unknown package source "${input.source}".` };
     }
 
-    const result = await nodeRunCommand(command.executable, command.args, { timeoutMs: PACKAGE_ACTION_TIMEOUT_MS }).catch(
+    const executesWithHomebrew = input.source === 'homebrew-formula' || input.source === 'homebrew-cask';
+    const execution = executesWithHomebrew
+      ? runHomebrewCommand(command.args)
+      : nodeRunCommand(command.executable, command.args, { timeoutMs: PACKAGE_ACTION_TIMEOUT_MS });
+    const result = await execution.catch(
       (error: unknown) => ({
         exitCode: null as number | null,
         stdout: '',

@@ -24,7 +24,7 @@
  */
 import path from 'node:path';
 import os from 'node:os';
-import { createNodeScanDependencies, nodeRunCommand, performScan, TOOL_MANIFEST, compareVersions } from '@space/environment';
+import { createNodeScanDependencies, nodeRunCommand, performScan, runHomebrewCommand, TOOL_MANIFEST, compareVersions } from '@space/environment';
 import type { InstallStrategy } from '@space/environment';
 import type {
   EnvironmentScanInput,
@@ -212,7 +212,10 @@ async function runToolAction(toolId: string, action: 'install' | 'update'): Prom
   }
 
   const args = buildActionArgs(strategy, action);
-  const result = await nodeRunCommand(strategy.executable, args, { timeoutMs: 120_000 }).catch((error: unknown) => ({
+  const execution = strategy.packageManagerId === 'homebrew'
+    ? runHomebrewCommand(args, { executable: strategy.executable })
+    : nodeRunCommand(strategy.executable, args, { timeoutMs: 120_000 });
+  const result = await execution.catch((error: unknown) => ({
     exitCode: null as number | null,
     stdout: '',
     stderr: error instanceof Error ? error.message : String(error),
