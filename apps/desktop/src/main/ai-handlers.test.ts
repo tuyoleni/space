@@ -12,11 +12,13 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@space/contracts';
 
 /** Every prompt handed to the model, in order — the egress under test. */
 const sentPrompts: string[] = [];
+const sentRequests: Array<{ model: string; config?: Record<string, unknown> }> = [];
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -30,10 +32,12 @@ vi.mock('@google/genai', () => ({
   ApiError: class ApiError extends Error {
     status = 500;
   },
+  ThinkingLevel: { MINIMAL: 'MINIMAL' },
   GoogleGenAI: class {
     models = {
-      generateContent: async ({ contents }: { contents: string }) => {
+      generateContent: async ({ contents, model, config }: { contents: string; model: string; config?: Record<string, unknown> }) => {
         sentPrompts.push(contents);
+        sentRequests.push({ model, ...(config !== undefined ? { config } : {}) });
         return { text: 'chore: update things' };
       },
     };
@@ -80,6 +84,7 @@ function makeStorage(project: Project) {
 
 beforeEach(async () => {
   sentPrompts.length = 0;
+  sentRequests.length = 0;
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'space-ai-privacy-'));
   keyFilePath = path.join(tmpDir, 'ai-credentials.enc');
   await fs.writeFile(keyFilePath, Buffer.from('fake-api-key', 'utf8'));
@@ -202,5 +207,31 @@ describe('ADR-008: generateCommitMessage path partitioning', () => {
     ).rejects.toThrow(/credential, environment, or key-material/);
 
     expect(sentPrompts).toHaveLength(0);
+  });
+
+  it('uses a stable Gemini 3 model with its supported thinking-level configuration', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await fs.mkdir(projectDir, { recursive: true });
+    execFileSync('git', ['init', '-q'], { cwd: projectDir });
+    await fs.writeFile(path.join(projectDir, 'app.ts'), 'export const answer = 42;\n');
+    execFileSync('git', ['add', 'app.ts'], { cwd: projectDir });
+
+    const project = projectAt(projectDir);
+    const { storage } = makeStorage(project);
+    const handlers = createAiHandlers(storage, { keyFilePath });
+
+    await expect(
+      handlers.generateCommitMessage({ projectId: project.id, filePaths: ['app.ts'] }),
+    ).resolves.toEqual({ message: 'chore: update things', excluded: [] });
+
+    expect(sentRequests).toHaveLength(1);
+    expect(sentRequests[0]?.model).toBe('gemini-3.5-flash-lite');
+    expect(sentRequests[0]?.config).toMatchObject({
+      maxOutputTokens: 512,
+      thinkingConfig: { thinkingLevel: 'MINIMAL' },
+    });
+    expect(sentRequests[0]?.config).not.toMatchObject({
+      thinkingConfig: { thinkingBudget: expect.anything() },
+    });
   });
 });

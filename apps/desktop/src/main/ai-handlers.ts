@@ -30,7 +30,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeStorage } from 'electron';
-import { ApiError, GoogleGenAI } from '@google/genai';
+import { ApiError, GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { isEligibleForModel } from '@space/agent';
 import { createNodeGitExecutor, diffPatchArgs } from '@space/git-engine';
 import { isSensitivePath, redactSecretPatterns } from '@space/workspace-runner';
@@ -50,12 +50,12 @@ import type {
 import { recordOperation, type StorageCaller } from './project-handlers';
 
 /**
- * Fast, cheap Gemini model — appropriate for a short per-comment review call, not a long
- * reasoning task. `gemini-flash-latest` is prone to real, repeated 503 "high demand"
- * responses from Google's side; `gemini-flash-lite-latest` is the lighter-weight sibling
- * in the same alias family and has proven reliable in practice.
+ * Fast, cheap Gemini model — appropriate for short review and commit-message
+ * requests. Keep this pinned to a stable model: the `*-latest` alias can move
+ * to a new model generation whose request parameters are incompatible with
+ * the previous one (as happened when Flash-Lite moved from 2.5 to 3.x).
  */
-const MODEL = 'gemini-flash-lite-latest';
+const MODEL = 'gemini-3.5-flash-lite';
 const MAX_FINDINGS = 15;
 const MAX_FILES_SCANNED = 2000;
 const CONTEXT_LINES = 5;
@@ -86,6 +86,28 @@ export interface AiHandlers {
 
 /** Diff text past this length is truncated before being sent to the model — plenty for a commit message, cheap to send. */
 const MAX_DIFF_CHARS = 12000;
+
+/** Gemini 3.x does not support disabling thought with a numeric token budget. */
+const FAST_THINKING_CONFIG = { thinkingLevel: ThinkingLevel.MINIMAL } as const;
+
+function friendlyGeminiError(error: unknown): Error {
+  if (!(error instanceof ApiError)) {
+    return error instanceof Error ? error : new Error('Gemini request failed — try again');
+  }
+  if (error.status === 400) {
+    return new Error('Gemini could not generate a response with the current model settings — update Space or write the message manually');
+  }
+  if (error.status === 401 || error.status === 403) {
+    return new Error('Gemini API rejected the configured key — check it and try again');
+  }
+  if (error.status === 429) {
+    return new Error('Gemini is rate-limiting requests — wait a moment and try again');
+  }
+  if (error.status >= 500) {
+    return new Error('Gemini is temporarily unavailable — try again in a moment');
+  }
+  return new Error('Gemini request failed — try again');
+}
 
 interface RawFinding {
   readonly file: string;
@@ -186,12 +208,10 @@ async function proposeFix(client: GoogleGenAI, finding: RawFinding): Promise<str
       `File: ${finding.file}\nLine ${finding.line}: ${redactSecretPatterns(finding.comment)}\n\n` +
       `Context:\n${redactSecretPatterns(finding.context)}`,
     config: {
-      maxOutputTokens: 300,
-      // This model line thinks by default, and thinking tokens count against
-      // maxOutputTokens — left on, a short budget here gets consumed almost
-      // entirely by thinking and the real answer comes back truncated
-      // (verified empirically). This is a one-line lookup, not a reasoning task.
-      thinkingConfig: { thinkingBudget: 0 },
+      maxOutputTokens: 512,
+      // Gemini 3.x cannot turn thinking fully off. Minimal is the supported
+      // low-latency setting for this one-line lookup.
+      thinkingConfig: FAST_THINKING_CONFIG,
       systemInstruction:
         'You are reviewing a single TODO/FIXME code comment in its surrounding file context. ' +
         'If you can propose a concrete one-line code fix that resolves the comment, respond with ONLY the replacement line ' +
@@ -367,8 +387,8 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
         model: MODEL,
         contents: truncated,
         config: {
-          maxOutputTokens: 200,
-          thinkingConfig: { thinkingBudget: 0 },
+          maxOutputTokens: 512,
+          thinkingConfig: FAST_THINKING_CONFIG,
           systemInstruction:
             'You are writing a git commit message for the given unified diff. ' +
             'Respond with ONLY the commit message: a concise imperative-mood subject line (under 72 characters), ' +
@@ -388,10 +408,7 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
         exitCode: 1,
         partialState: { disclosedFilePaths: eligiblePaths, excludedFilePaths: excluded.map((e) => e.filePath) },
       });
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        throw new Error('Gemini API rejected the configured key — check it and try again');
-      }
-      throw error;
+      throw friendlyGeminiError(error);
     }
     if (!text) {
       throw new Error('Gemini returned an empty commit message — try again');
