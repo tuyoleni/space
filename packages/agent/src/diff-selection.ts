@@ -31,6 +31,15 @@ export interface DiffSelection {
    * selections").
    */
   readonly contentSnapshot: string;
+  /**
+   * A whole-file selection standing in for a binary file, which has no hunks
+   * to select. Excluding these entirely meant a new image, font, or other
+   * asset never became evidence, never joined a change group, and was left
+   * behind by a commit that reported success — silent data loss for anyone
+   * whose work is not purely text. Binary content is all-or-nothing, so the
+   * commit path stages these files directly instead of applying a patch.
+   */
+  readonly binary?: boolean;
 }
 
 function hunkContentSnapshot(hunk: DiffHunk): string {
@@ -63,6 +72,21 @@ export function buildSelectionsFromFileDiffs(
   const selections: DiffSelection[] = [];
   for (const file of fileDiffs) {
     if (file.isBinary) {
+      // One whole-file unit, so the file is at least selectable and
+      // committable. There is nothing hunk-shaped here, so the fields that
+      // describe a hunk carry empty placeholders and `binary` is what the
+      // commit path keys off.
+      selections.push({
+        filePath: file.path,
+        oldPath: file.oldPath,
+        staged,
+        hunkHeader: '',
+        hunkIndex: 0,
+        lineRange: { startLine: 0, endLine: 0 },
+        selectedLineIndexes: null,
+        contentSnapshot: '',
+        binary: true,
+      });
       continue;
     }
     file.hunks.forEach((hunk, hunkIndex) => {
@@ -106,6 +130,11 @@ export function isSelectionStale(selection: DiffSelection, lookup: DiffLookup): 
   const file = lookup.fileDiff(selection.filePath, selection.staged);
   if (!file) {
     return true;
+  }
+  // A binary selection has no hunk or line text to compare, so "still
+  // present in the fresh diff" is the whole staleness question for it.
+  if (selection.binary === true) {
+    return false;
   }
   const hunk = findHunk(file, selection);
   if (!hunk) {
@@ -153,6 +182,21 @@ export class StaleSelectionError extends Error {
  * than silently applying a patch built from evidence that no longer
  * matches the real diff — the caller must refresh and re-select first.
  */
+/**
+ * Paths of the binary evidence in `selections`, which the commit path stages
+ * with `git add` instead of by applying patch text. Already-staged binary
+ * evidence is skipped: it is where the commit needs it already.
+ */
+export function binarySelectionPaths(selections: readonly DiffSelection[]): string[] {
+  return [
+    ...new Set(
+      selections
+        .filter((selection) => selection.binary === true && selection.staged === 'unstaged')
+        .map((selection) => selection.filePath),
+    ),
+  ];
+}
+
 export function composePatchFromSelections(
   selections: readonly DiffSelection[],
   lookup: DiffLookup,
@@ -173,7 +217,9 @@ export function composePatchFromSelections(
   // does not apply", since the base content it expects no longer exists.
   // Already-staged evidence needs no action here — it's already exactly
   // where the eventual commit needs it.
-  const toApply = selections.filter((selection) => selection.staged === 'unstaged');
+  // Binary selections carry no hunks, so there is no patch text to build for
+  // them; the caller stages those paths directly (see `binarySelectionPaths`).
+  const toApply = selections.filter((selection) => selection.staged === 'unstaged' && selection.binary !== true);
 
   const byFile = new Map<string, DiffSelection[]>();
   for (const selection of toApply) {

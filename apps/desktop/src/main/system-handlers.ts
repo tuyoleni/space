@@ -10,17 +10,25 @@
  * helper executables for many apps (Electron included), so resolving an icon
  * from that path produces Finder's generic document glyph. We instead ask
  * Launch Services for the process's owning `.app` bundle, then read that
- * bundle icon — the same source macOS uses for a running application.
+ * bundle's own icon file (see app-icon.ts) — the artwork the app ships,
+ * rather than the placeholder Launch Services returns for most bundles.
  */
 import os from 'node:os';
 import path from 'node:path';
-import { app } from 'electron';
 import { nodeRunCommand } from '@space/environment';
 import type { SystemProcessInfo, SystemStatsResult } from '@space/contracts';
+import { createAppIconResolver } from './app-icon';
 
 const CPU_SAMPLE_WINDOW_MS = 200;
 const PROCESS_LIST_LIMIT = 40;
 const PS_TIMEOUT_MS = 5_000;
+
+/**
+ * How many processes get the expensive per-process treatment (Launch
+ * Services lookup + icon extraction). Comfortably more than the panel shows
+ * without scrolling, and far below the several hundred a Mac is running.
+ */
+const MAX_REPORTED_PROCESSES = 24;
 
 interface CpuSample {
   readonly idle: number;
@@ -98,25 +106,9 @@ export interface SystemHandlers {
 }
 
 export function createSystemHandlers(): SystemHandlers {
-  // Icon data URLs cached by the path they were resolved from (bundle or
-  // executable) — icons never change, so every poll after the first is free.
-  const iconCache = new Map<string, string | null>();
-
-  async function iconFor(bundlePath: string): Promise<string | null> {
-    const cached = iconCache.get(bundlePath);
-    if (cached !== undefined) {
-      return cached;
-    }
-    try {
-      const image = await app.getFileIcon(bundlePath, { size: 'small' });
-      const dataUrl = image.isEmpty() ? null : image.toDataURL();
-      iconCache.set(bundlePath, dataUrl);
-      return dataUrl;
-    } catch {
-      iconCache.set(bundlePath, null);
-      return null;
-    }
-  }
+  // Reads each bundle's own icon file (see app-icon.ts) and caches it by
+  // path — icons never change, so every poll after the first is free.
+  const icons = createAppIconResolver();
 
   async function processCount(): Promise<number | null> {
     if (process.platform !== 'darwin') {
@@ -161,7 +153,13 @@ export function createSystemHandlers(): SystemHandlers {
     if (!result || result.exitCode !== 0) {
       return [];
     }
-    const raw = parsePsOutput(result.stdout);
+    // `ps -r` already sorted by CPU, so the interesting processes are at the
+    // top. Resolving a bundle path and extracting an icon for *every* process
+    // on the machine — several hundred of them, every poll — is what made an
+    // idle Space spike the CPU it is supposed to be reporting on. The panel
+    // is a "what is using this Mac" list, not a process explorer, so the tail
+    // was work nobody ever saw.
+    const raw = parsePsOutput(result.stdout).slice(0, MAX_REPORTED_PROCESSES);
     const rows = await Promise.all(
       raw.map(async (proc) => {
         // Prefer Launch Services (critical for Electron helper processes),
@@ -171,7 +169,7 @@ export function createSystemHandlers(): SystemHandlers {
         if (!bundlePath) {
           return null;
         }
-        const iconDataUrl = await iconFor(bundlePath);
+        const iconDataUrl = await icons.iconFor(bundlePath);
         if (!iconDataUrl) {
           return null;
         }

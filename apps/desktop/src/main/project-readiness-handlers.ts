@@ -138,13 +138,27 @@ export function createProjectReadinessHandlers(storage: StorageCaller, deps: Pro
 
   async function runRemedy(project: Project, input: ProjectApplyRemedyInput): Promise<string> {
     switch (input.remedyId) {
-      case 'initialize-repository':
-      case 'create-initial-commit': {
-        // `initRepo` is idempotent and already stages + commits everything,
-        // so it is the correct action for both "no repository" and "a
-        // repository nobody has committed to".
+      case 'initialize-repository': {
         await gitHandlers.initRepo({ projectId: project.id });
         return 'Set up version history and saved a first snapshot.';
+      }
+
+      case 'create-initial-commit': {
+        if (project.repositoryRoot === null) {
+          // The project changed underneath the open dialog. Let the
+          // initialization path repair both missing preconditions.
+          await gitHandlers.initRepo({ projectId: project.id });
+        } else {
+          // `initRepo` is intentionally a no-op once repositoryRoot exists.
+          // This remedy is specifically for the other state: Git exists but
+          // has no commits. Use the real staging and commit handlers so the
+          // operation receives the normal trust, identity, receipt, queue,
+          // and error handling instead of falsely reporting an init no-op as
+          // a saved snapshot.
+          await gitHandlers.stage({ projectId: project.id, paths: ['.'] });
+          await gitHandlers.commit({ projectId: project.id, message: 'Initial commit' });
+        }
+        return 'Saved the first snapshot.';
       }
 
       case 'publish-to-github': {

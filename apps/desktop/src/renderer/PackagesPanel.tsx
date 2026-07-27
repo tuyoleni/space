@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Download, DownloadCloud, Package, RefreshCw, Trash2 } from 'lucide-react';
 import type { PackageEntry, PackageSource } from '@space/contracts';
 import { Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, EmptyState, Input, useToast } from '@space/ui';
-import { BrandIcon, SERVICE_BRAND, TOOL_BRAND, brandForPackage } from './brand-icons';
+import { PackageIcon } from './brand-icons';
 
 const SEARCH_DEBOUNCE_MS = 350;
 
@@ -13,15 +13,14 @@ const SOURCE_LABEL: Record<PackageSource, string> = {
   winget: 'WinGet',
 };
 
-/** Best-effort brand icon for a package entry — its own real icon first, then a known-brand guess, then a generic glyph. Never a broken image. */
-function PackageIcon({ entry }: { readonly entry: PackageEntry }) {
+/** A package entry's real icon — the app icon it ships, then its brand mark, then a neutral glyph. Never a broken image. */
+function PackageEntryIcon({ entry }: { readonly entry: PackageEntry }) {
   if (entry.iconDataUrl) {
     return <img src={entry.iconDataUrl} alt="" className="h-6 w-6 shrink-0 rounded object-contain" />;
   }
-  const brand = brandForPackage(entry.name) ?? TOOL_BRAND[entry.name] ?? SERVICE_BRAND[entry.name] ?? null;
   return (
     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-surface-hover">
-      {brand ? <BrandIcon icon={brand} size={14} /> : <Package size={14} className="text-fg-faint" />}
+      <PackageIcon name={entry.name} />
     </span>
   );
 }
@@ -40,7 +39,7 @@ function PackageTile({ entry, busy, onInstall, onUpdate, onRequestUninstall, hid
   const installed = entry.installedVersion !== null;
   return (
     <div className="flex min-h-11 items-center gap-2 px-3 py-2" title={entry.description ?? undefined}>
-      <PackageIcon entry={entry} />
+      <PackageEntryIcon entry={entry} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-fg">{entry.displayName}</p>
         <p className="text-[11px] text-fg-faint">{SOURCE_LABEL[entry.source]}</p>

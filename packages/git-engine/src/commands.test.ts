@@ -79,8 +79,8 @@ describe('structured command builders (spec 11.3)', () => {
 
   it('builds fetch/pull with explicit merge-vs-rebase mode', () => {
     expect(fetchArgs()).toEqual(['fetch', '--prune', '--', 'origin']);
-    expect(pullArgs('rebase')).toEqual(['pull', '--rebase', '--', 'origin']);
-    expect(pullArgs('merge', 'origin', 'main')).toEqual(['pull', '--no-rebase', '--', 'origin', 'main']);
+    expect(pullArgs('rebase')).toEqual(['pull', '--rebase', '--autostash', '--', 'origin']);
+    expect(pullArgs('merge', 'origin', 'main')).toEqual(['pull', '--no-rebase', '--autostash', '--', 'origin', 'main']);
   });
 
   it('builds push with force-with-lease as the only default force mode', () => {

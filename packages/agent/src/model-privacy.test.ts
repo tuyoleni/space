@@ -79,9 +79,12 @@ describe('buildModelDisclosure', () => {
   it('excludes binary files with no hunks to select in the first place', () => {
     const files = parseUnifiedDiff(BINARY_PATCH);
     const selections = buildSelectionsFromFileDiffs(files, 'unstaged');
-    expect(selections).toEqual([]);
+    // A binary file is selectable (so it can be committed) but must never be
+    // disclosed: nothing is sent, and the exclusion is reported rather than
+    // passing silently.
     const disclosure = buildModelDisclosure(selections, lookupFrom(files));
     expect(disclosure.fragments).toEqual([]);
+    expect(disclosure.excluded).toEqual([{ filePath: 'logo.png', reason: 'binary' }]);
   });
 
   it('sends only the selected hunk, not the whole file (minimum evidence)', () => {

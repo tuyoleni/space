@@ -920,6 +920,8 @@ export async function handleStorageRequest(storage: Storage, request: StorageReq
           runId: z.string().min(1),
           sequence: z.number().int().min(0),
           toolId: z.string().nullable(),
+          displayName: z.string().nullable(),
+          changesMachineState: z.boolean().nullable(),
           state: z.string().min(1) as z.ZodType<BootstrapStepState>,
           humanExplanation: z.string(),
           commandDisplayRedacted: z.string().nullable(),

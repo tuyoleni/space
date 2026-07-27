@@ -1,7 +1,7 @@
-import { Download, Eraser, Package, Plus, Search, Zap } from 'lucide-react';
+import { Download, Eraser, Package, Plus, Search } from 'lucide-react';
 import type { EnvironmentScanResult, SystemProcessInfo, SystemStatsResult, TerminalSessionInfo } from '@space/contracts';
 import { Badge, Card, CardContent, CardHeader, CardRows, CardTitle, EmptyState, formatRelativeTime } from '@space/ui';
-import { BrandIcon, TOOL_BRAND } from './brand-icons';
+import { ToolIcon } from './brand-icons';
 
 const TOP_PROCESS_COUNT = 6;
 
@@ -14,18 +14,6 @@ interface TerminalSidebarProps {
   readonly onClear: () => void;
   readonly onFind: () => void;
   readonly onExport: () => void;
-}
-
-/** Real brand icon for a toolchain entry, with a lucide fallback for the few (e.g. Volta) that have no Simple Icon. Mirrors HomeView's ToolIcon. */
-function ToolIcon({ toolId }: { readonly toolId: string }) {
-  const brand = TOOL_BRAND[toolId];
-  if (brand) {
-    return <BrandIcon icon={brand} size={15} />;
-  }
-  if (toolId === 'volta') {
-    return <Zap size={15} className="text-accent" />;
-  }
-  return <Package size={15} className="text-fg-muted" />;
 }
 
 export function TerminalSidebar({ session, envScan, stats, processes, onNewTerminal, onClear, onFind, onExport }: TerminalSidebarProps) {

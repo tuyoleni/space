@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { JsPackageManagerId, ProjectEnvironmentInfo } from '@space/contracts';
-import { ChevronDown, ChevronRight, Cpu, FileKey2, Package, Play, ScrollText } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileKey2, Play, ScrollText } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardHeader, CardRows, CardTitle, Dialog, Input, useToast } from '@space/ui';
+import { ToolIcon } from './brand-icons';
 
 interface EnvironmentProjectPanelProps {
   readonly projectId: string | null;
@@ -150,7 +151,7 @@ export function EnvironmentProjectPanel({ projectId, onRunScript }: EnvironmentP
           <div className="flex items-center justify-between gap-3 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
               <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-hover text-fg-muted">
-                <Cpu size={14} />
+                <ToolIcon toolId="node" size={14} />
               </span>
               <span className="min-w-0">
                 <span className="block text-xs font-medium text-fg">Runtime</span>
@@ -171,7 +172,8 @@ export function EnvironmentProjectPanel({ projectId, onRunScript }: EnvironmentP
           <div className="flex items-center justify-between gap-3 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
               <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-hover text-fg-muted">
-                <Package size={14} />
+                {/* The project's own package manager, by its real mark — npm, pnpm, yarn or bun. */}
+                <ToolIcon toolId={info.packageManager ?? 'npm'} size={14} />
               </span>
               <span className="min-w-0">
                 <span className="block text-xs font-medium text-fg">Packages</span>

@@ -76,7 +76,9 @@ export function PackageUpdatesMenu() {
   }
 
   return (
-    <DropdownMenu.Root>
+    // Non-modal — see Sidebar.tsx: a modal menu whose item starts an async
+    // action leaks `pointer-events: none` onto <body> and freezes input.
+    <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild>
         <Button size="sm" variant="secondary" disabled={rows.length === 0}>
           {activeCount > 0 ? <Loader2 size={13} className="animate-spin" /> : <DownloadCloud size={13} />}

@@ -24,6 +24,8 @@ import type {
   AiApplyFixResult,
   AiGenerateCommitMessageInput,
   AiGenerateCommitMessageResult,
+  AiGitSyncGuideInput,
+  AiGitSyncGuideResult,
   AiKeyStatus,
   AiReviewCommentsInput,
   AiReviewCommentsResult,
@@ -411,6 +413,8 @@ export interface SpaceAPI {
     applyFix(input: AiApplyFixInput): Promise<AiApplyFixResult>;
     /** Generates a commit message from the staged/unstaged diff of exactly the given file paths. */
     generateCommitMessage(input: AiGenerateCommitMessageInput): Promise<AiGenerateCommitMessageResult>;
+    /** Metadata-only Gemini guidance for the safe Git synchronization modal. */
+    guideGitSync(input: AiGitSyncGuideInput): Promise<AiGitSyncGuideResult>;
   };
   readonly bootstrap: {
     /** Reads the latest persisted bootstrap run (if any) and what to do next — never mutates. */

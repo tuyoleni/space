@@ -40,6 +40,8 @@ import type {
   AiExcludedFile,
   AiGenerateCommitMessageInput,
   AiGenerateCommitMessageResult,
+  AiGitSyncGuideInput,
+  AiGitSyncGuideResult,
   AiKeyStatus,
   AiReviewCommentsInput,
   AiReviewCommentsResult,
@@ -82,6 +84,7 @@ export interface AiHandlers {
   reviewComments(input: AiReviewCommentsInput): Promise<AiReviewCommentsResult>;
   applyFix(input: AiApplyFixInput): Promise<AiApplyFixResult>;
   generateCommitMessage(input: AiGenerateCommitMessageInput): Promise<AiGenerateCommitMessageResult>;
+  guideGitSync(input: AiGitSyncGuideInput): Promise<AiGitSyncGuideResult>;
 }
 
 /** Diff text past this length is truncated before being sent to the model — plenty for a commit message, cheap to send. */
@@ -430,5 +433,71 @@ export function createAiHandlers(storage: StorageCaller, options: AiHandlersOpti
     return { message: text, excluded };
   }
 
-  return { keyStatus, setApiKey, reviewComments, applyFix, generateCommitMessage };
+  async function guideGitSync(input: AiGitSyncGuideInput): Promise<AiGitSyncGuideResult> {
+    const apiKey = await readStoredKey(options.keyFilePath);
+    if (!apiKey) {
+      throw new Error('No Gemini API key configured — safe sync still works without AI guidance');
+    }
+    const project = await storage.call<Project>('project.get', { projectId: input.projectId });
+    const startedAt = new Date().toISOString();
+    const client = new GoogleGenAI({ apiKey });
+    let message: string;
+    try {
+      const response = await client.models.generateContent({
+        model: MODEL,
+        // Metadata only: no source, diff, commit text, or file path crosses
+        // the model boundary for sync guidance.
+        contents: JSON.stringify({
+          phase: input.phase,
+          branch: input.branch,
+          hasUpstream: input.hasUpstream,
+          ahead: input.ahead,
+          behind: input.behind,
+          localChangeCount: input.localChangeCount,
+          conflictCount: input.conflictCount,
+          operationKind: input.operationKind,
+          hasError: input.hasError,
+        }),
+        config: {
+          maxOutputTokens: 300,
+          thinkingConfig: FAST_THINKING_CONFIG,
+          systemInstruction:
+            'You are the concise guide inside a safe Git synchronization wizard. ' +
+            'Explain the current state and the safest next action in one or two plain-language sentences. ' +
+            'Space uses git pull --autostash, so tracked local edits are protected before integration and restored afterward. ' +
+            'Never claim an operation completed unless the phase says complete, never recommend destructive reset/clean/force commands, ' +
+            'and do not use markdown or jargon without explaining it.',
+        },
+      });
+      message = (response.text ?? '').trim();
+    } catch (error) {
+      await recordOperation(storage, {
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        type: 'ai.gitSyncGuide',
+        humanSummary: 'AI safe-sync guidance request failed',
+        startedAt,
+        state: 'failed',
+        exitCode: 1,
+        partialState: { phase: input.phase },
+      });
+      throw friendlyGeminiError(error);
+    }
+    if (!message) {
+      throw new Error('Gemini returned empty sync guidance');
+    }
+    await recordOperation(storage, {
+      workspaceId: project.workspaceId,
+      projectId: project.id,
+      type: 'ai.gitSyncGuide',
+      humanSummary: `AI safe-sync guidance for ${input.phase}`,
+      startedAt,
+      state: 'succeeded',
+      exitCode: 0,
+      partialState: { phase: input.phase },
+    });
+    return { message };
+  }
+
+  return { keyStatus, setApiKey, reviewComments, applyFix, generateCommitMessage, guideGitSync };
 }

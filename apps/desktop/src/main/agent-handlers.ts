@@ -19,6 +19,7 @@ import path from 'node:path';
 import {
   applyModelProposals,
   buildModelDisclosure,
+  binarySelectionPaths,
   buildSelectionsFromFileDiffs,
   composePatchFromSelections,
   computeIntrinsicRisk,
@@ -39,8 +40,11 @@ import {
   applyPatchToWorktree,
   createNodeGitExecutor,
   diffPatchArgs,
+  parseStatusOutput,
   parseUnifiedDiff,
+  stageFiles,
   stagePatch,
+  statusArgs,
   type FileDiff,
   type GitExecutor,
 } from '@space/git-engine';
@@ -107,6 +111,13 @@ export function createAgentHandlers(storage: StorageCaller, options: AgentHandle
     return storage.call<Project>('project.get', { projectId });
   }
 
+  /**
+   * Ceiling on how many untracked files get a patch read per scan. A repo
+   * with a missing .gitignore can have thousands; reading them all would
+   * stall the Changes view for a list nobody can act on anyway.
+   */
+  const UNTRACKED_EVIDENCE_LIMIT = 200;
+
   function repoCwd(project: Project): string {
     if (!project.repositoryRoot) {
       throw new Error(`Project "${project.name}" is not a Git repository`);
@@ -114,25 +125,71 @@ export function createAgentHandlers(storage: StorageCaller, options: AgentHandle
     return project.repositoryRoot;
   }
 
+  /**
+   * A brand-new file is invisible to `git diff` on both sides, so it never
+   * became evidence, never landed in a change group, and could not be
+   * committed from Space at all — the dashboard counted it under "Untracked"
+   * while every list stayed empty and the working tree read as clean.
+   *
+   * `--no-index` against /dev/null produces exactly the new-file patch git
+   * would produce once the file were added, so it flows through the same
+   * parser, grouping, and staging path as every other change. The usual
+   * alternative (`git add -N`) would reach the same result by mutating the
+   * index behind the user's back on what is supposed to be a read.
+   */
+  async function loadUntrackedFileDiffs(cwd: string): Promise<FileDiff[]> {
+    const statusRaw = await gitExecutor(statusArgs({ untrackedFiles: 'all' }), { cwd });
+    if (statusRaw.exitCode !== 0) {
+      return [];
+    }
+    const untracked = parseStatusOutput(statusRaw.stdout)
+      .entries.filter((entry) => entry.kind === 'untracked')
+      .map((entry) => entry.path)
+      .slice(0, UNTRACKED_EVIDENCE_LIMIT);
+
+    const patches = await Promise.all(
+      untracked.map(async (filePath) => {
+        // `--no-index` exits 1 when the files differ, which is the normal
+        // case here (every line is an addition), so only a >1 exit is a
+        // real failure. A file that vanished between the status read and
+        // this call is skipped rather than failing the whole scan.
+        const raw = await gitExecutor(
+          [...diffPatchArgs(), '--no-index', '--', '/dev/null', filePath],
+          { cwd },
+        );
+        return raw.exitCode !== null && raw.exitCode > 1 ? '' : raw.stdout;
+      }),
+    );
+
+    return patches.filter((patch) => patch.length > 0).flatMap((patch) => parseUnifiedDiff(patch));
+  }
+
   /** Reads both halves of the real diff (spec 13.1: "the source data is the real Git diff") — never fabricated, never re-parsed from anything but git's own machine-readable patch output. */
   async function loadRepositoryEvidence(cwd: string): Promise<DiffSelection[]> {
-    const [unstagedRaw, stagedRaw] = await Promise.all([
+    const [unstagedRaw, stagedRaw, untrackedDiffs] = await Promise.all([
       gitExecutor(diffPatchArgs({ cached: false }), { cwd }),
       gitExecutor(diffPatchArgs({ cached: true }), { cwd }),
+      loadUntrackedFileDiffs(cwd),
     ]);
     const unstaged = buildSelectionsFromFileDiffs(parseUnifiedDiff(unstagedRaw.stdout), 'unstaged');
     const staged = buildSelectionsFromFileDiffs(parseUnifiedDiff(stagedRaw.stdout), 'staged');
-    return [...staged, ...unstaged];
+    const untracked = buildSelectionsFromFileDiffs(untrackedDiffs, 'unstaged');
+    return [...staged, ...unstaged, ...untracked];
   }
 
   /** Snapshots the current diff once and serves lookups from that snapshot — used for both staleness detection and patch composition, so both see the exact same "fresh" state. */
   async function freshFileDiffLookup(cwd: string): Promise<DiffLookup> {
-    const [unstagedRaw, stagedRaw] = await Promise.all([
+    const [unstagedRaw, stagedRaw, untrackedDiffs] = await Promise.all([
       gitExecutor(diffPatchArgs({ cached: false }), { cwd }),
       gitExecutor(diffPatchArgs({ cached: true }), { cwd }),
+      // Untracked files belong here too, or a selection covering a new file
+      // would look stale to the composer and get dropped from the commit
+      // without a word — the file would stay untracked after a "successful"
+      // commit that silently left it out.
+      loadUntrackedFileDiffs(cwd),
     ]);
     const byKey = new Map<string, FileDiff>();
-    for (const file of parseUnifiedDiff(unstagedRaw.stdout)) {
+    for (const file of [...parseUnifiedDiff(unstagedRaw.stdout), ...untrackedDiffs]) {
       byKey.set(`unstaged:${file.path}`, file);
     }
     for (const file of parseUnifiedDiff(stagedRaw.stdout)) {
@@ -191,6 +248,14 @@ export function createAgentHandlers(storage: StorageCaller, options: AgentHandle
     const patchText = composePatchFromSelections(input.evidence, lookup);
     if (patchText.length > 0) {
       await stagePatch(cwd, patchText, gitExecutor);
+    }
+    // Binary files have no hunks to apply, so they are staged wholesale.
+    // Without this they were dropped from the commit in silence: the commit
+    // succeeded, reported the files it did include, and left the new image
+    // or font untracked on disk.
+    const binaryPaths = binarySelectionPaths(input.evidence);
+    if (binaryPaths.length > 0) {
+      await stageFiles(cwd, binaryPaths, gitExecutor);
     }
     return gitHandlers.commit({ projectId: input.projectId, message: input.message });
   }

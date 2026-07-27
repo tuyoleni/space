@@ -115,7 +115,13 @@ export function Sidebar({
       <div className="mx-3 border-t border-border" />
 
       <div className="px-3 pt-3">
-        <RadixDropdownMenu.Root>
+        {/* Non-modal: a modal Radix menu locks `pointer-events: none` onto
+            <body> while open. When an item's onSelect starts an async action
+            (activating a workspace), the re-render remounts a second modal
+            layer mid-close, which captures "none" as the original body value
+            and restores it to "none" forever — the whole app stops accepting
+            clicks until a reload, which reads to users as a freeze. */}
+        <RadixDropdownMenu.Root modal={false}>
           <RadixDropdownMenu.Trigger asChild>
             <button
               type="button"

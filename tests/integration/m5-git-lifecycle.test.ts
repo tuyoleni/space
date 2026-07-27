@@ -311,6 +311,60 @@ describe('GIT-007: fetch, pull, and push against a local bare "remote"', () => {
     expect(fs.existsSync(path.join(secondClone, 'b.txt'))).toBe(true);
   });
 
+  it('autostashes tracked local edits during pull and restores them after incoming commits integrate', async () => {
+    const { bare, clone } = await makeBareRemoteWithClone();
+    await pushToRemote(clone, { branch: 'main', setUpstream: true }, executor);
+
+    const secondClone = path.join(dir, 'safe-sync-clone');
+    execFileSync('git', ['clone', '-q', bare, secondClone]);
+    execFileSync('git', ['config', 'user.email', workspaceIdentity.email], { cwd: secondClone });
+    execFileSync('git', ['config', 'user.name', workspaceIdentity.name], { cwd: secondClone });
+
+    fs.writeFileSync(path.join(secondClone, 'a.txt'), 'local work\n');
+    fs.writeFileSync(path.join(clone, 'incoming.txt'), 'from remote\n');
+    execFileSync('git', ['add', 'incoming.txt'], { cwd: clone });
+    execFileSync('git', ['commit', '-q', '-m', 'incoming change'], { cwd: clone });
+    await pushToRemote(clone, { branch: 'main' }, executor);
+
+    await pullRemote(secondClone, 'merge', 'origin', 'main', executor);
+
+    expect(fs.readFileSync(path.join(secondClone, 'a.txt'), 'utf-8')).toBe('local work\n');
+    expect(fs.readFileSync(path.join(secondClone, 'incoming.txt'), 'utf-8')).toBe('from remote\n');
+    expect(execFileSync('git', ['status', '--porcelain'], { cwd: secondClone }).toString()).toContain(' M a.txt');
+  });
+
+  it('keeps autostashed work recoverable when incoming and local commits conflict, then restores it on abort', async () => {
+    const { bare, clone } = await makeBareRemoteWithClone();
+    await pushToRemote(clone, { branch: 'main', setUpstream: true }, executor);
+
+    const secondClone = path.join(dir, 'conflicted-safe-sync');
+    execFileSync('git', ['clone', '-q', bare, secondClone]);
+    execFileSync('git', ['config', 'user.email', workspaceIdentity.email], { cwd: secondClone });
+    execFileSync('git', ['config', 'user.name', workspaceIdentity.name], { cwd: secondClone });
+    fs.writeFileSync(path.join(secondClone, 'a.txt'), 'local committed version\n');
+    fs.writeFileSync(path.join(secondClone, 'work.txt'), 'saved baseline\n');
+    execFileSync('git', ['add', 'a.txt', 'work.txt'], { cwd: secondClone });
+    execFileSync('git', ['commit', '-q', '-m', 'local commit'], { cwd: secondClone });
+    const localHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: secondClone }).toString().trim();
+    fs.writeFileSync(path.join(secondClone, 'work.txt'), 'uncommitted local work\n');
+
+    fs.writeFileSync(path.join(clone, 'a.txt'), 'incoming committed version\n');
+    execFileSync('git', ['add', 'a.txt'], { cwd: clone });
+    execFileSync('git', ['commit', '-q', '-m', 'incoming conflicting commit'], { cwd: clone });
+    await pushToRemote(clone, { branch: 'main' }, executor);
+
+    await expect(pullRemote(secondClone, 'merge', 'origin', 'main', executor)).rejects.toThrow(/CONFLICT|failed/i);
+    const duringConflict = await getFullRepositoryStatus(secondClone, executor, realFs);
+    expect(duringConflict.operationState.kind).toBe('merge');
+
+    const aborted = await abortOperation(secondClone, path.join(secondClone, '.git'), duringConflict.operationState, executor, realFs);
+
+    expect(aborted.completed).toBe(true);
+    expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: secondClone }).toString().trim()).toBe(localHead);
+    expect(fs.readFileSync(path.join(secondClone, 'a.txt'), 'utf-8')).toBe('local committed version\n');
+    expect(fs.readFileSync(path.join(secondClone, 'work.txt'), 'utf-8')).toBe('uncommitted local work\n');
+  });
+
   it('requires confirmation before a force-with-lease push, and a plain push needs none', async () => {
     const { clone } = await makeBareRemoteWithClone();
     await expect(pushToRemote(clone, { branch: 'main', force: 'with-lease' }, executor)).rejects.toThrow(

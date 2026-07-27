@@ -235,3 +235,34 @@ describe('ADR-008: generateCommitMessage path partitioning', () => {
     });
   });
 });
+
+describe('safe-sync AI guidance', () => {
+  it('sends repository metadata without source, diff text, or conflicted file paths', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await fs.mkdir(projectDir, { recursive: true });
+    const currentProject = projectAt(projectDir);
+    const { storage } = makeStorage(currentProject);
+    const handlers = createAiHandlers(storage, { keyFilePath });
+
+    await expect(
+      handlers.guideGitSync({
+        projectId: currentProject.id,
+        phase: 'conflicts',
+        branch: 'main',
+        hasUpstream: true,
+        ahead: 1,
+        behind: 2,
+        localChangeCount: 3,
+        conflictCount: 1,
+        operationKind: 'merge',
+        hasError: true,
+      }),
+    ).resolves.toEqual({ message: 'chore: update things' });
+
+    expect(sentPrompts).toHaveLength(1);
+    expect(sentPrompts[0]).toContain('"phase":"conflicts"');
+    expect(sentPrompts[0]).toContain('"conflictCount":1');
+    expect(sentPrompts[0]).not.toContain('secret.env');
+    expect(sentRequests[0]?.model).toBe('gemini-3.5-flash-lite');
+  });
+});

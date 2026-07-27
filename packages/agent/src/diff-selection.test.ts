@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseUnifiedDiff, type FileDiff } from '@space/git-engine';
 import {
+  binarySelectionPaths,
   buildSelectionsFromFileDiffs,
   composePatchFromSelections,
   detectStaleSelections,
@@ -48,7 +49,7 @@ describe('buildSelectionsFromFileDiffs', () => {
     expect(selections[1]).toMatchObject({ filePath: 'b.txt', staged: 'unstaged', hunkIndex: 0 });
   });
 
-  it('excludes binary files from evidence entirely', () => {
+  it('represents a binary file as one whole-file selection, since it has no hunks', () => {
     const binaryPatch = [
       'diff --git a/img.png b/img.png',
       'index aaa..bbb 100644',
@@ -56,7 +57,24 @@ describe('buildSelectionsFromFileDiffs', () => {
       '',
     ].join('\n');
     const files = parseUnifiedDiff(binaryPatch);
-    expect(buildSelectionsFromFileDiffs(files, 'unstaged')).toEqual([]);
+    const selections = buildSelectionsFromFileDiffs(files, 'unstaged');
+
+    // Producing nothing here is what silently dropped new images and fonts
+    // from commits that then reported success.
+    expect(selections).toHaveLength(1);
+    expect(selections[0]?.filePath).toBe('img.png');
+    expect(selections[0]?.binary).toBe(true);
+  });
+
+  it('reports binary selections as the paths to stage rather than patch', () => {
+    const binaryPatch = [
+      'diff --git a/img.png b/img.png',
+      'index aaa..bbb 100644',
+      'Binary files a/img.png and b/img.png differ',
+      '',
+    ].join('\n');
+    const files = parseUnifiedDiff(binaryPatch);
+    expect(binarySelectionPaths(buildSelectionsFromFileDiffs(files, 'unstaged'))).toEqual(['img.png']);
   });
 });
 

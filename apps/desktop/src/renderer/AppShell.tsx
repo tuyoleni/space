@@ -31,6 +31,7 @@ import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } fr
 import { GithubSetupPrompt } from './GithubSetupPrompt';
 import { useGithubAuth } from './useGithubAuth';
 import { GithubAuthDialog } from './GithubAuthDialog';
+import { GuidedSyncDialog } from './GuidedSyncDialog';
 
 export interface ProjectRuntimeState {
   readonly detections: Record<string, ProjectDetectionReport>;
@@ -84,6 +85,7 @@ export function AppShell() {
   const [projectPendingRemoval, setProjectPendingRemoval] = useState<Project | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
     setWorkspaces(await window.space.workspace.list());
@@ -215,7 +217,12 @@ export function AppShell() {
 
   function handleCreateWorkspace(name: string): void {
     void runGuarded('Creating workspace…', async () => {
-      await window.space.workspace.create({ name });
+      const created = await window.space.workspace.create({ name });
+      // Creating a workspace is an act of switching to it. Without this the
+      // new workspace lands in the switcher but nothing else changes — the
+      // sidebar still reads "No workspace" and the empty state still tells
+      // you to create one, so on first run it looks like nothing happened.
+      await window.space.workspace.activate(created.id);
       await refreshWorkspaces();
     });
   }
@@ -255,15 +262,7 @@ export function AppShell() {
   }
 
   function handleFetch(): void {
-    if (!selectedProject) {
-      return;
-    }
-    const projectId = selectedProject.id;
-    void runGuarded('Fetching from remote…', async () => {
-      await window.space.git.fetch({ projectId });
-      await refreshGitContext();
-      toast({ variant: 'success', message: 'Fetched from remote.' });
-    });
+    if (selectedProject?.repositoryRoot) setSyncOpen(true);
   }
 
   /**
@@ -706,6 +705,7 @@ export function AppShell() {
                 workspace={activeWorkspace}
                 project={selectedProject}
                 onProjectChanged={() => refreshProjects(activeWorkspace.id)}
+                onSync={() => setSyncOpen(true)}
               />
             ) : view === 'terminal' ? null : view === 'environment' ? null : view === 'projects' ? (
               <ProjectsView
@@ -774,6 +774,12 @@ export function AppShell() {
           }
           await refreshGitContext();
         }}
+      />
+      <GuidedSyncDialog
+        open={syncOpen}
+        onOpenChange={setSyncOpen}
+        project={selectedProject}
+        onChanged={refreshGitContext}
       />
       <CreateProjectDialog
         open={createOpen}

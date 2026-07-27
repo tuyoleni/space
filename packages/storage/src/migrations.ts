@@ -16,6 +16,7 @@ import { MIGRATION_0005_GITHUB } from './schema/0005_github';
 import { MIGRATION_0006_AGENT } from './schema/0006_agent';
 import { MIGRATION_0007_AUTOMATION } from './schema/0007_automation';
 import { MIGRATION_0008_APP_SETTINGS } from './schema/0008_app_settings';
+import { MIGRATION_0009_BOOTSTRAP_STEP_PLAN_METADATA } from './schema/0009_bootstrap_step_plan_metadata';
 
 export interface Migration {
   readonly version: number;
@@ -32,6 +33,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: 'agent', sql: MIGRATION_0006_AGENT },
   { version: 7, name: 'automation', sql: MIGRATION_0007_AUTOMATION },
   { version: 8, name: 'app_settings', sql: MIGRATION_0008_APP_SETTINGS },
+  { version: 9, name: 'bootstrap_step_plan_metadata', sql: MIGRATION_0009_BOOTSTRAP_STEP_PLAN_METADATA },
 ];
 
 function ensureMigrationsTable(db: Database.Database): void {

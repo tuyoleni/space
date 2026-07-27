@@ -632,6 +632,19 @@ export const aiGenerateCommitMessageInputSchema = z.object({
   filePaths: z.array(z.string().min(1)),
 });
 
+export const aiGitSyncGuideInputSchema = z.object({
+  projectId: z.string().min(1),
+  phase: z.enum(['fetched', 'ready', 'integrating', 'conflicts', 'complete', 'aborted', 'error']),
+  branch: z.string().min(1).nullable(),
+  hasUpstream: z.boolean(),
+  ahead: z.number().int().min(0).nullable(),
+  behind: z.number().int().min(0).nullable(),
+  localChangeCount: z.number().int().min(0),
+  conflictCount: z.number().int().min(0),
+  operationKind: z.enum(['none', 'merge', 'rebase', 'am', 'cherry-pick', 'revert', 'bisect']),
+  hasError: z.boolean(),
+});
+
 // ---------------------------------------------------------------------------
 // M8: automation (spec section 18). `trigger`/`conditions`/`actions` are
 // validated for real by @space/automation's own schemas inside

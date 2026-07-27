@@ -25,8 +25,23 @@ export function isInsideWorkTreeArgs(): string[] {
   return ['rev-parse', '--is-inside-work-tree'];
 }
 
-export function statusArgs(): string[] {
-  return ['status', '--porcelain=v2', '-z', '--branch'];
+/**
+ * `untrackedFiles: 'all'` makes Git list every untracked file individually
+ * instead of collapsing a wholly-untracked directory to one entry like
+ * `src/`. Callers that only count or display untracked paths want the
+ * default (cheaper, and one row per new directory reads better); callers
+ * that need to act on each file — diff it, stage it, count its lines — must
+ * ask for `all`, because a directory entry is not a path any per-file Git
+ * command can be pointed at.
+ */
+export function statusArgs(options: { readonly untrackedFiles?: 'normal' | 'all' } = {}): string[] {
+  return [
+    'status',
+    '--porcelain=v2',
+    '-z',
+    '--branch',
+    ...(options.untrackedFiles === 'all' ? ['--untracked-files=all'] : []),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +228,11 @@ export function fetchArgs(remoteName = 'origin'): string[] {
 export type PullMode = 'merge' | 'rebase';
 
 export function pullArgs(mode: PullMode, remoteName = 'origin', branch?: string): string[] {
-  const base = ['pull', mode === 'rebase' ? '--rebase' : '--no-rebase', '--', remoteName];
+  // Protect tracked local changes across integration. Git creates a
+  // temporary autostash before merge/rebase and reapplies it afterward;
+  // on conflicts/abort Git retains enough state to recover rather than
+  // requiring the renderer to imitate Git's transaction semantics.
+  const base = ['pull', mode === 'rebase' ? '--rebase' : '--no-rebase', '--autostash', '--', remoteName];
   return branch ? [...base, branch] : base;
 }
 

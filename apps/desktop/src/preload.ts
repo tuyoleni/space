@@ -157,6 +157,7 @@ const spaceAPI: SpaceAPI = {
     reviewComments: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiReviewComments, input),
     applyFix: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiApplyFix, input),
     generateCommitMessage: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiGenerateCommitMessage, input),
+    guideGitSync: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiGitSyncGuide, input),
   },
   bootstrap: {
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapGetStatus),

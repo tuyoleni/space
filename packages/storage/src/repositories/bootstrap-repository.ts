@@ -53,6 +53,10 @@ export interface BootstrapStepRow {
   readonly runId: string;
   readonly sequence: number;
   readonly toolId: string | null;
+  /** Plan-time label ("Homebrew"); null when the step has no name of its own. */
+  readonly displayName: string | null;
+  /** Whether the plan says this step modifies the machine; null for rows written before 0009. */
+  readonly changesMachineState: boolean | null;
   readonly state: BootstrapStepState;
   readonly humanExplanation: string;
   readonly commandDisplayRedacted: string | null;
@@ -71,6 +75,10 @@ export interface UpsertBootstrapStepRow {
   readonly runId: string;
   readonly sequence: number;
   readonly toolId: string | null;
+  /** Plan-time label ("Homebrew"); null when the step has no name of its own. */
+  readonly displayName: string | null;
+  /** Whether the plan says this step modifies the machine; null for rows written before 0009. */
+  readonly changesMachineState: boolean | null;
   readonly state: BootstrapStepState;
   readonly humanExplanation: string;
   readonly commandDisplayRedacted: string | null;
@@ -99,6 +107,8 @@ interface SqliteBootstrapStepRow {
   run_id: string;
   sequence: number;
   tool_id: string | null;
+  display_name: string | null;
+  changes_machine_state: number | null;
   state: BootstrapStepState;
   human_explanation: string;
   command_display_redacted: string | null;
@@ -130,6 +140,8 @@ function stepFromSqlite(row: SqliteBootstrapStepRow): BootstrapStepRow {
     runId: row.run_id,
     sequence: row.sequence,
     toolId: row.tool_id,
+    displayName: row.display_name,
+    changesMachineState: row.changes_machine_state === null ? null : row.changes_machine_state === 1,
     state: row.state,
     humanExplanation: row.human_explanation,
     commandDisplayRedacted: row.command_display_redacted,
@@ -222,13 +234,16 @@ export class BootstrapRepository {
     this.db
       .prepare(
         `INSERT INTO bootstrap_steps
-           (id, run_id, sequence, tool_id, state, human_explanation, command_display_redacted,
+           (id, run_id, sequence, tool_id, display_name, changes_machine_state, state,
+            human_explanation, command_display_redacted,
             started_at, ended_at, exit_code, redacted_output, retry_eligible, changed_machine_state,
             outcome, operation_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(run_id, sequence) DO UPDATE SET
            id = excluded.id,
            tool_id = excluded.tool_id,
+           display_name = excluded.display_name,
+           changes_machine_state = excluded.changes_machine_state,
            state = excluded.state,
            human_explanation = excluded.human_explanation,
            command_display_redacted = excluded.command_display_redacted,
@@ -246,6 +261,8 @@ export class BootstrapRepository {
         input.runId,
         input.sequence,
         input.toolId,
+        input.displayName,
+        input.changesMachineState === null ? null : input.changesMachineState ? 1 : 0,
         input.state,
         input.humanExplanation,
         input.commandDisplayRedacted,
