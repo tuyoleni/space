@@ -98,6 +98,7 @@ import {
   aiReviewCommentsInputSchema,
   aiApplyFixInputSchema,
   aiGenerateCommitMessageInputSchema,
+  aiGitSyncGuideInputSchema,
   aiToolConnectInputSchema,
   aiToolLaunchInputSchema,
   mcpSetEnabledInputSchema,
@@ -411,6 +412,14 @@ export function registerIpcHandlers(
           projectId: project.id,
           errorMessage: errorMessage(error),
         });
+        // `initRepo` records the repository as soon as `git init` succeeds,
+        // so a later failure (the initial commit finding no author identity,
+        // say) still leaves a real repository behind. Re-read the project
+        // instead of returning the pre-init copy, or the caller is told
+        // there is no repository while `.git` sits on disk — the state that
+        // used to leave a project stuck on "Not a Git repository" forever.
+        initialized = await storage.call<Project>('project.get', { projectId: project.id });
+        gitInitialized = initialized.repositoryRoot !== null;
       }
     }
 
@@ -1201,6 +1210,11 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = aiGenerateCommitMessageInputSchema.parse(input);
     return aiHandlers.generateCommitMessage(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiGitSyncGuide, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return aiHandlers.guideGitSync(aiGitSyncGuideInputSchema.parse(input));
   });
 
   // ---------------------------------------------------------------------

@@ -98,6 +98,12 @@ export function OnboardingWizard() {
 
   const codex = aiTools?.tools.find((tool) => tool.id === 'codex') ?? null;
 
+  // A plan always includes at least one passive prerequisite check, so a
+  // non-empty step list does not mean anything will be installed. Offering to
+  // "install required tools" on a Mac that already has everything reads as if
+  // Space is about to change the machine when it is only going to verify it.
+  const installsAnything = (status?.steps ?? []).some((step) => step.changesMachineState === true);
+
   return (
     <main className="flex min-h-screen flex-col bg-app-bg text-fg">
       <section className="mx-auto flex min-h-screen w-full max-w-xl flex-col">
@@ -123,13 +129,13 @@ export function OnboardingWizard() {
               <p className="mt-2 text-sm text-fg-muted">Space will only run the items listed below. Each is verified before setup can continue.</p>
               {status.blockReason && <div className="mt-6 flex items-start gap-3 rounded-lg border border-danger/30 bg-danger/10 p-4"><TriangleAlert className="mt-0.5 text-danger" size={18} /><span className="text-sm">{status.blockReason}</span></div>}
               <div className="mt-4 overflow-hidden rounded-lg border border-border">
-                {status.steps.length === 0 ? <div className="p-4 text-sm text-fg-muted">Everything required is already installed. Space will record verification before continuing.</div> : status.steps.map((step, index) => <StepRow key={`${step.toolId ?? step.displayName}-${index}`} step={step} />)}
+                {status.steps.length === 0 ? <div className="p-4 text-sm text-fg-muted">Everything required is already installed. Space will record verification before continuing.</div> : status.steps.map((step, index) => <StepRow key={`${step.toolId ?? step.displayName ?? step.humanExplanation}-${index}`} step={step} />)}
               </div>
               <div className="mt-4 flex items-center gap-3">
                 {status.status === 'blocked' || status.status === 'partially_complete' ? (
                   <Button variant="primary" onClick={() => void scanMachine()} disabled={busy}>Check this Mac again <ArrowRight size={15} /></Button>
                 ) : (
-                  <Button variant="primary" onClick={() => void installRequiredTools()} disabled={busy}>{busy ? 'Installing and verifying…' : status.steps.length === 0 ? 'Verify setup' : 'Install required tools'} <Wrench size={15} /></Button>
+                  <Button variant="primary" onClick={() => void installRequiredTools()} disabled={busy}>{busy ? 'Installing and verifying…' : installsAnything ? 'Install required tools' : 'Verify setup'} <Wrench size={15} /></Button>
                 )}
               </div>
             </div>
@@ -166,5 +172,5 @@ function ToolPreview({ icon, title, detail }: { readonly icon: JSX.Element; read
 
 function StepRow({ step }: { readonly step: BootstrapStepSummary }) {
   const active = step.state === 'running';
-  return <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"><StatusDot tone={step.state === 'successful' || step.state === 'skipped' ? 'success' : step.state === 'failed' ? 'danger' : 'neutral'} /><div className="min-w-0 flex-1"><p className="text-sm font-medium">{step.displayName}</p><p className="mt-0.5 text-xs text-fg-muted">{step.humanExplanation}</p></div><span className="text-xs text-fg-muted">{active ? 'Installing…' : step.state === 'successful' ? 'Installed' : step.state === 'skipped' ? 'Already present' : step.state === 'failed' ? 'Failed' : 'Required'}</span></div>;
+  return <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"><StatusDot tone={step.state === 'successful' || step.state === 'skipped' ? 'success' : step.state === 'failed' ? 'danger' : 'neutral'} /><div className="min-w-0 flex-1">{step.displayName === null ? <p className="text-sm">{step.humanExplanation}</p> : <><p className="text-sm font-medium">{step.displayName}</p><p className="mt-0.5 text-xs text-fg-muted">{step.humanExplanation}</p></>}</div><span className="text-xs text-fg-muted">{active ? 'Installing…' : step.state === 'successful' ? (step.changesMachineState === false ? 'Checked' : 'Installed') : step.state === 'skipped' ? 'Already present' : step.state === 'failed' ? 'Failed' : step.changesMachineState === false ? 'Will verify' : 'Required'}</span></div>;
 }

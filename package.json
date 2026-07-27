@@ -19,8 +19,9 @@
     "pretest": "npm run rebuild:node --silent",
     "test": "vitest run",
     "test:watch": "vitest",
-    "rebuild:node": "npm rebuild better-sqlite3",
-    "rebuild:electron": "electron-rebuild -m . -f -w better-sqlite3"
+    "_comment:rebuild": "better-sqlite3 builds one native binary but Space needs it under two ABIs (Node for vitest, Electron for the app). use-native-abi.mjs caches each build and swaps by copy, so neither runtime can be left broken by whatever ran last — a test run used to make the app die in V8 with an unexplained SIGTRAP.",
+    "rebuild:node": "node scripts/use-native-abi.mjs node",
+    "rebuild:electron": "node scripts/use-native-abi.mjs electron"
   },
   "license": "UNLICENSED",
   "devDependencies": {

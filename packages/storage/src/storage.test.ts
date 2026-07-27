@@ -81,17 +81,21 @@ describe('migrations (spec section 23.3)', () => {
       { version: 6, name: 'agent', sql: '' }, // already applied, filtered out
       { version: 7, name: 'automation', sql: '' }, // already applied, filtered out
       { version: 8, name: 'app_settings', sql: '' }, // already applied, filtered out
-      { version: 9, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
-      { version: 10, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
+      { version: 9, name: 'bootstrap_step_plan_metadata', sql: '' }, // already applied, filtered out
+      // Two synthetic migrations past the real schema head, so this test keeps
+      // exercising "one commits, the next rolls back" as real migrations are
+      // added rather than colliding with the newest shipped version number.
+      { version: 10, name: 'ok', sql: 'CREATE TABLE ok_table (id TEXT PRIMARY KEY);' },
+      { version: 11, name: 'broken', sql: 'CREATE TABLE this is not valid sql;' },
     ];
 
-    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 10.*rolled back/);
+    expect(() => runMigrations(db.db, dbPath, migrations)).toThrow(/Migration 11.*rolled back/);
 
     // version 9 committed (its own transaction succeeded before version 10 failed)
     const applied = db.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{
       version: number;
     }>;
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(
       db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ok_table'").get(),
     ).toBeTruthy();

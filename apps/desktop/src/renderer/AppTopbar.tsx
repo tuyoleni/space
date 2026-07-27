@@ -3,7 +3,7 @@ import { Bot, Hexagon, Layers, Loader2, MonitorDot, Plug, Unplug } from 'lucide-
 import type { AiToolConnection, AiToolsStatus, EnvironmentScanResult, GitRefEntry, GitStatusSummary, GithubAuthReport, Project, WorkspaceSummary } from '@space/contracts';
 import { StatusDot, TopbarMenu, useToast } from '@space/ui';
 import { BranchMenu } from './BranchMenu';
-import { AI_TOOL_BRAND, BrandIcon } from './brand-icons';
+import { AiToolIcon } from './brand-icons';
 
 interface AppTopbarProps {
   readonly workspaces: readonly WorkspaceSummary[];
@@ -121,17 +121,9 @@ export function AppTopbar({
 }
 
 function DeveloperToolIcon({ tool, size = 14 }: { readonly tool: AiToolConnection; readonly size?: number }) {
-  if (tool.iconDataUrl) {
-    return (
-      <span className="flex shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm" style={{ width: size + 2, height: size + 2 }}>
-        <img src={tool.iconDataUrl} alt="" className="rounded-[3px]" style={{ width: size, height: size }} />
-      </span>
-    );
-  }
-  const brand = AI_TOOL_BRAND[tool.id];
   return (
     <span className="flex shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm" style={{ width: size + 2, height: size + 2 }}>
-      {brand ? <BrandIcon icon={brand} size={size} /> : <Bot size={size} className="text-neutral-800" />}
+      <AiToolIcon toolId={tool.id} iconDataUrl={tool.iconDataUrl} size={size} />
     </span>
   );
 }

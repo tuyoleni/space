@@ -160,9 +160,10 @@ interface ChangesViewProps {
   readonly project: Project | null;
   /** Re-reads the project list after this view changes a project's own record (e.g. `git init` sets its repositoryRoot). */
   readonly onProjectChanged?: () => void | Promise<void>;
+  readonly onSync?: () => void;
 }
 
-export function ChangesView({ workspace, project, onProjectChanged }: ChangesViewProps) {
+export function ChangesView({ workspace, project, onProjectChanged, onSync }: ChangesViewProps) {
   // Intent groups + diff stats (the original CHG workflow).
   const [groups, setGroups] = useState<ChangeIntentLike[]>([]);
   const [stats, setStats] = useState<readonly GitFileDiffStat[]>([]);
@@ -781,8 +782,8 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
             <Button size="sm" variant="secondary" onClick={() => void Promise.all([refreshGroups(), refreshStatus()])} disabled={busy}>
               <RefreshCw size={13} className={busy ? 'animate-spin' : undefined} /> Scan
             </Button>
-            <Button size="sm" variant="primary" onClick={() => void fetchRemote()} disabled={fetching}>
-              <ArrowDownToLine size={13} className={fetching ? 'animate-pulse' : undefined} /> Fetch
+            <Button size="sm" variant="primary" onClick={() => onSync?.()} disabled={fetching || !onSync}>
+              <ArrowDownToLine size={13} className={fetching ? 'animate-pulse' : undefined} /> Safe sync
             </Button>
           </div>
         </div>

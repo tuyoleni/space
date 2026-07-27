@@ -21,7 +21,7 @@ describe('fetchRemote / pullRemote', () => {
   it('pulls with explicit rebase mode', async () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
     await pullRemote('/repo', 'rebase', 'origin', 'main', executor);
-    expect(executor).toHaveBeenCalledWith(['pull', '--rebase', '--', 'origin', 'main'], { cwd: '/repo' });
+    expect(executor).toHaveBeenCalledWith(['pull', '--rebase', '--autostash', '--', 'origin', 'main'], { cwd: '/repo' });
   });
 
   it('throws on failure', async () => {

@@ -33,6 +33,7 @@ import {
   dropStash as dropStashEngine,
   fetchRemote,
   parseDiffNumstatOutput,
+  parseStatusOutput,
   forEachRefArgs,
   getFullRepositoryStatus,
   HistoryStore,
@@ -44,6 +45,7 @@ import {
   listTags as listTagsEngine,
   listWorktrees as listWorktreesEngine,
   parseForEachRefOutput,
+  statusArgs,
   pullRemote,
   pushToRemote,
   readRepoLocalIdentity,
@@ -177,6 +179,13 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   const queue = new RepositoryOperationQueue();
   const historyStores = new Map<string, HistoryStore>();
 
+  /**
+   * Ceiling on untracked files given a per-file line count. A repository
+   * missing a .gitignore can list thousands; costing one `git diff` each
+   * would stall the Changes view for numbers nobody reads.
+   */
+  const UNTRACKED_STAT_LIMIT = 200;
+
   async function requireProject(projectId: string): Promise<Project> {
     return storage.call<Project>('project.get', { projectId });
   }
@@ -262,9 +271,10 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   /**
    * Resolves the commit identity from global `git config` (spec 11.6's
    * "workspace identity" — Space has no per-workspace identity settings UI
-   * yet). When that's unset, falls back to the workspace's authenticated
-   * GitHub account (`options.getFallbackIdentity`) rather than fabricating
-   * one outright; only when neither source has an identity does this throw.
+   * yet). When that's unset, falls back to the repository's own local
+   * identity, then to the workspace's authenticated GitHub account
+   * (`options.getFallbackIdentity`) rather than fabricating one outright;
+   * only when no source has an identity does this throw.
    * A repo-local override is still honored the same way plain `git commit`
    * would (spec 11.6 requires override to be an explicit acknowledged
    * action; there is no such UI step yet either, so a repo-local identity
@@ -275,15 +285,32 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
       gitExecutor(configGetArgs('user.name', 'global'), { cwd }),
       gitExecutor(configGetArgs('user.email', 'global'), { cwd }),
     ]);
+    const repoLocal = await readRepoLocalIdentity(cwd, gitExecutor);
     let workspaceIdentity: GitIdentity;
     if (name.exitCode !== 0 || !name.stdout.trim() || email.exitCode !== 0 || !email.stdout.trim()) {
-      const fallback = await options.getFallbackIdentity?.(workspaceId);
-      if (!fallback) {
-        throw new Error(
-          'No Git author identity is configured (run "git config --global user.name" / "user.email" first)',
-        );
+      // With no global config, a complete repo-local identity is not an
+      // "override" of anything — it is the only identity there is, and it is
+      // exactly what `git commit` would use in this repository. Honoring it
+      // keeps Space consistent with the command line instead of refusing to
+      // commit a repo Git would commit happily. Per-repo identities are a
+      // normal setup for anyone juggling work and personal accounts, and
+      // demanding a global one would force them to pick a wrong default.
+      if (repoLocal.name && repoLocal.email) {
+        workspaceIdentity = {
+          name: repoLocal.name,
+          email: repoLocal.email,
+          signingPolicy: 'none',
+          signingKeyId: null,
+        };
+      } else {
+        const fallback = await options.getFallbackIdentity?.(workspaceId);
+        if (!fallback) {
+          throw new Error(
+            'No Git author identity is configured. Set one for this repository with "git config user.name" / "user.email", for every repository with "git config --global …", or sign in to GitHub in Space.',
+          );
+        }
+        workspaceIdentity = fallback;
       }
-      workspaceIdentity = fallback;
     } else {
       workspaceIdentity = {
         name: name.stdout.trim(),
@@ -292,7 +319,6 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
         signingKeyId: null,
       };
     }
-    const repoLocal = await readRepoLocalIdentity(cwd, gitExecutor);
     return resolveCommitIdentity({ workspaceIdentity, repoLocal, overrideAcknowledged: false }).identity;
   }
 
@@ -315,6 +341,18 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
     return recordMutation(project, 'git.init', `Initialized Git for "${project.name}"`, async () => {
       await initRepository(cwd, 'main', gitExecutor);
       await stageFiles(cwd, ['.'], gitExecutor);
+      // The repository exists on disk the moment `git init` returns, so
+      // record it before attempting the initial commit. Recording it last
+      // meant a commit failure (no author identity configured, say) left a
+      // directory that has a real .git while Space insisted it was "not a
+      // Git repository" — and that state was unrecoverable, because this
+      // function short-circuits on the very repositoryRoot it never got to
+      // write. Now a failed initial commit is just a failed commit: the
+      // error still surfaces, and the repository is usable.
+      const initialized = await storage.call<Project>('project.setRepositoryRoot', {
+        projectId: project.id,
+        repositoryRoot: cwd,
+      });
       try {
         const identity = await resolveIdentity(cwd, project.workspaceId);
         await runCommit(cwd, { identity, message: 'Initial commit' }, gitExecutor);
@@ -324,7 +362,7 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
           throw error;
         }
       }
-      return storage.call<Project>('project.setRepositoryRoot', { projectId: project.id, repositoryRoot: cwd });
+      return initialized;
     });
   }
 
@@ -579,13 +617,48 @@ export function createGitHandlers(storage: StorageCaller, options: GitHandlersOp
   async function diffStats(input: GitProjectInput): Promise<GitDiffStats> {
     const project = await requireProject(input.projectId);
     const cwd = repoCwd(project);
-    const [unstagedResult, stagedResult] = await Promise.all([
+    const [unstagedResult, stagedResult, untrackedResult] = await Promise.all([
       gitExecutor(diffNumstatArgs(), { cwd }),
       gitExecutor(diffNumstatArgs({ cached: true }), { cwd }),
+      // A new file has no numstat on either side, so without this every
+      // untracked change reported "+0 −0" — the file showed up in the list
+      // but claimed to contain nothing. `--no-index` against /dev/null
+      // counts its lines the way git would once the file were added.
+      untrackedNumstat(cwd),
     ]);
     const toStats = (stdout: string, staged: boolean): GitFileDiffStat[] =>
       parseDiffNumstatOutput(stdout).map((entry) => ({ path: entry.path, added: entry.added, removed: entry.removed, staged }));
-    return { files: [...toStats(unstagedResult.stdout, false), ...toStats(stagedResult.stdout, true)] };
+    return {
+      files: [...toStats(unstagedResult.stdout, false), ...toStats(stagedResult.stdout, true), ...untrackedResult],
+    };
+  }
+
+  /** Per-file line counts for untracked files, which `git diff --numstat` never reports. */
+  async function untrackedNumstat(cwd: string): Promise<GitFileDiffStat[]> {
+    const statusResult = await gitExecutor(statusArgs({ untrackedFiles: 'all' }), { cwd });
+    if (statusResult.exitCode !== 0) {
+      return [];
+    }
+    const untracked = parseStatusOutput(statusResult.stdout)
+      .entries.filter((entry) => entry.kind === 'untracked')
+      .map((entry) => entry.path)
+      .slice(0, UNTRACKED_STAT_LIMIT);
+
+    const stats = await Promise.all(
+      untracked.map(async (filePath): Promise<GitFileDiffStat | null> => {
+        // `--no-index` exits 1 when the files differ, which is always true
+        // here; only a higher exit code is a real failure.
+        const result = await gitExecutor([...diffNumstatArgs(), '--no-index', '--', '/dev/null', filePath], { cwd });
+        if (result.exitCode !== null && result.exitCode > 1) {
+          return null;
+        }
+        const parsed = parseDiffNumstatOutput(result.stdout)[0];
+        return parsed
+          ? ({ path: filePath, added: parsed.added, removed: parsed.removed, staged: false, untracked: true } satisfies GitFileDiffStat)
+          : null;
+      }),
+    );
+    return stats.filter((entry): entry is GitFileDiffStat => entry !== null);
   }
 
   /** Read-only: one file's real unified patch text on one side of the index. */

@@ -208,6 +208,8 @@ function setup() {
     setApiKey: vi.fn(),
     reviewComments: vi.fn(),
     applyFix: vi.fn(),
+    generateCommitMessage: vi.fn(),
+    guideGitSync: vi.fn(),
   } as unknown as AiHandlers;
   const bootstrapHandlers = {
     getStatus: vi.fn(),
@@ -254,6 +256,7 @@ function setup() {
     gitHandlers,
     githubHandlers,
     agentHandlers,
+    aiHandlers,
     automationHandlers,
     environmentHandlers,
     systemHandlers,
@@ -336,6 +339,30 @@ describe('registerIpcHandlers', () => {
       const { agentHandlers } = setup();
       await handlerFor(IPC_CHANNELS.agentPermissionList)(validEvent, 'ws-1');
       expect(agentHandlers.listPermissions).toHaveBeenCalledWith('ws-1');
+    });
+  });
+
+  describe('AI guidance channels', () => {
+    it('routes validated safe-sync metadata to Gemini guidance', async () => {
+      const { aiHandlers } = setup();
+      const input = {
+        projectId: 'p-1',
+        phase: 'ready',
+        branch: 'main',
+        hasUpstream: true,
+        ahead: 0,
+        behind: 2,
+        localChangeCount: 3,
+        conflictCount: 0,
+        operationKind: 'none',
+        hasError: false,
+      };
+      (aiHandlers.guideGitSync as ReturnType<typeof vi.fn>).mockResolvedValue({ message: 'Safe to continue.' });
+
+      const result = await handlerFor(IPC_CHANNELS.aiGitSyncGuide)(validEvent, input);
+
+      expect(aiHandlers.guideGitSync).toHaveBeenCalledWith(input);
+      expect(result).toEqual({ message: 'Safe to continue.' });
     });
   });
 
@@ -553,9 +580,10 @@ describe('registerIpcHandlers', () => {
       });
 
       it('keeps the project and reports a warning when git init fails', async () => {
-        const { projectHandlers, gitHandlers } = setup();
+        const { projectHandlers, gitHandlers, storageCall } = setup();
         (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
         (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git not found'));
+        storageCall.mockImplementation((method: string) => (method === 'project.get' ? scaffolded : undefined));
 
         const result = (await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, baseInput)) as {
           project: unknown;
@@ -568,10 +596,36 @@ describe('registerIpcHandlers', () => {
         expect(result.warnings[0]).toMatch(/git not found/i);
       });
 
+      /**
+       * `initRepo` records the repository as soon as `git init` succeeds, so a
+       * later failure (the initial commit finding no author identity) still
+       * leaves a real repository on disk. Returning the pre-init copy claimed
+       * there was none, which stranded the project on "Not a Git repository"
+       * with no way back — re-reading is what makes that state recoverable.
+       */
+      it('reports the repository that init left behind even when init then failed', async () => {
+        const { projectHandlers, gitHandlers, storageCall } = setup();
+        const withRepo = { ...scaffolded, repositoryRoot: '/tmp/scaffolded' };
+        (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
+        (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('No Git author identity is configured'));
+        storageCall.mockImplementation((method: string) => (method === 'project.get' ? withRepo : undefined));
+
+        const result = (await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, baseInput)) as {
+          project: { repositoryRoot: string | null };
+          gitInitialized: boolean;
+          warnings: string[];
+        };
+
+        expect(result.project.repositoryRoot).toBe('/tmp/scaffolded');
+        expect(result.gitInitialized).toBe(true);
+        expect(result.warnings[0]).toMatch(/identity/i);
+      });
+
       it('does not attempt a publish when initialization failed', async () => {
-        const { projectHandlers, gitHandlers, githubHandlers } = setup();
+        const { projectHandlers, gitHandlers, githubHandlers, storageCall } = setup();
         (projectHandlers.createFromTemplate as ReturnType<typeof vi.fn>).mockResolvedValue(scaffolded);
         (gitHandlers.initRepo as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git not found'));
+        storageCall.mockImplementation((method: string) => (method === 'project.get' ? scaffolded : undefined));
 
         const result = (await handlerFor(IPC_CHANNELS.projectCreateFromTemplate)(validEvent, {
           ...baseInput,

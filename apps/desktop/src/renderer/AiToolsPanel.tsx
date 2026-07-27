@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, Download, FolderCode, Plug, PlugZap, Play, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Download, FolderCode, Plug, PlugZap, Play, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { AiToolConnection, AiToolId, AiToolsStatus, TerminalSessionInfo } from '@space/contracts';
 import { Badge, Button, Card, CardContent, CardHeader, CardRows, CardTitle, StatusDot, useToast } from '@space/ui';
 import { TerminalPanel } from './TerminalPanel';
-import { AI_TOOL_BRAND, BrandIcon } from './brand-icons';
+import { AiToolIcon } from './brand-icons';
 
 interface AiToolsPanelProps {
   readonly workspaceId: string | null;
   readonly projectId: string | null;
 }
 
-function AiToolIcon({ tool }: { readonly tool: AiToolConnection }) {
-  if (tool.iconDataUrl) {
-    return (
-      <span className="flex size-[17px] shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm">
-        <img src={tool.iconDataUrl} alt="" className="size-[15px] rounded-[3px]" />
-      </span>
-    );
-  }
-  const brand = AI_TOOL_BRAND[tool.id];
+function AiToolChip({ tool }: { readonly tool: AiToolConnection }) {
   return (
     <span className="flex size-[17px] shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm">
-      {brand ? <BrandIcon icon={brand} size={14} /> : <Bot size={13} className="text-neutral-800" />}
+      <AiToolIcon toolId={tool.id} iconDataUrl={tool.iconDataUrl} size={15} />
     </span>
   );
 }
@@ -239,7 +231,7 @@ export function AiToolsPanel({ workspaceId, projectId }: AiToolsPanelProps) {
           <div key={tool.id} className="flex flex-col gap-2 py-2.5">
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-1.5 text-sm text-fg">
-                <AiToolIcon tool={tool} />
+                <AiToolChip tool={tool} />
                 <span className="min-w-0 truncate">{tool.displayName}</span>
                 {tool.verified ? <Badge variant="success">ready</Badge> : tool.connected ? <Badge variant="warning">configured</Badge> : null}
               </div>

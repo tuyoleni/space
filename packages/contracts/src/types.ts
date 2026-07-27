@@ -852,6 +852,12 @@ export interface GitFileDiffStat {
   readonly added: number | null;
   readonly removed: number | null;
   readonly staged: boolean;
+  /**
+   * True for a file Git does not track yet. `git status` collapses a wholly
+   * untracked directory into one entry, so it cannot be counted per file;
+   * this flag carries the per-file truth the diff already had to compute.
+   */
+  readonly untracked?: boolean;
 }
 
 export interface GitDiffStats {
@@ -1718,6 +1724,29 @@ export interface AiGenerateCommitMessageResult {
   readonly excluded: readonly AiExcludedFile[];
 }
 
+export type AiGitSyncPhase = 'fetched' | 'ready' | 'integrating' | 'conflicts' | 'complete' | 'aborted' | 'error';
+
+/**
+ * Metadata-only state for the AI guide in the safe-sync modal. No source,
+ * diff, commit text, or file path is disclosed to the model.
+ */
+export interface AiGitSyncGuideInput {
+  readonly projectId: string;
+  readonly phase: AiGitSyncPhase;
+  readonly branch: string | null;
+  readonly hasUpstream: boolean;
+  readonly ahead: number | null;
+  readonly behind: number | null;
+  readonly localChangeCount: number;
+  readonly conflictCount: number;
+  readonly operationKind: GitOperationStateKind;
+  readonly hasError: boolean;
+}
+
+export interface AiGitSyncGuideResult {
+  readonly message: string;
+}
+
 // ---------------------------------------------------------------------------
 // First-run bootstrap/onboarding (spec section 8, ONB-001..008). Mirrors
 // @space/environment's BootstrapStatus/StepState/ReceiptOutcome and
@@ -1758,7 +1787,21 @@ export type BootstrapReceiptOutcome =
 
 export interface BootstrapStepSummary {
   readonly toolId: string | null;
-  readonly displayName: string;
+  /**
+   * Tool name for steps that install a tool. Null for steps that aren't about
+   * a specific tool (a prerequisite check, say) — those have nothing to say in
+   * a title that `humanExplanation` doesn't already say, and echoing the
+   * explanation into the title printed the same sentence twice.
+   */
+  readonly displayName: string | null;
+  /**
+   * Whether running this step actually modifies the machine. A plan always
+   * contains at least a passive prerequisite check, so step count alone can't
+   * tell "there is work to do" from "there is nothing to install" — the
+   * onboarding button used to offer to install tools on a fully set-up Mac.
+   * Null for rows persisted before migration 0009.
+   */
+  readonly changesMachineState: boolean | null;
   readonly state: BootstrapStepState;
   readonly humanExplanation: string;
   readonly outcome: BootstrapReceiptOutcome | null;

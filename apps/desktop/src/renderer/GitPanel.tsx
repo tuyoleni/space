@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, GitBranch, GitMerge, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownToLine, ArrowUp, GitBranch, GitMerge, Plus, RefreshCw } from 'lucide-react';
 import type { GitRefEntry, GitStatusSummary, Project } from '@space/contracts';
 import { Button, InlineBanner, Input, Select, Textarea, useToast } from '@space/ui';
 import { toErrorMessage } from './errors';
+import { GuidedSyncDialog } from './GuidedSyncDialog';
 
 /**
  * Minimal M5 Git surface (spec 36.5 exit criteria: "daily Git work can be
@@ -48,6 +49,7 @@ export function GitPanel({ project }: GitPanelProps) {
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [, forceTick] = useState(0);
 
   const refreshStatus = useCallback(async () => {
@@ -65,7 +67,7 @@ export function GitPanel({ project }: GitPanelProps) {
 
   // Best-effort: no upstream configured, no network, or auth failure should
   // not block the panel from showing local status, so errors are swallowed
-  // here. The explicit Fetch button (handleFetch below) still surfaces them.
+  // here. Opening the Safe sync journey still surfaces them.
   const backgroundFetch = useCallback(async () => {
     try {
       await window.space.git.fetch({ projectId: project.id });
@@ -165,21 +167,6 @@ export function GitPanel({ project }: GitPanelProps) {
     });
   }
 
-  function handleFetch(): void {
-    void guarded(async () => {
-      await window.space.git.fetch({ projectId: project.id });
-      setLastFetchedAt(Date.now());
-      await refreshStatus();
-    });
-  }
-
-  function handlePull(): void {
-    void guarded(async () => {
-      await window.space.git.pull({ projectId: project.id, mode: 'merge' });
-      await refreshStatus();
-    });
-  }
-
   function handlePush(): void {
     const branchName = status?.branch.branchName;
     if (!branchName) {
@@ -217,6 +204,7 @@ export function GitPanel({ project }: GitPanelProps) {
   );
 
   return (
+    <>
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm">
@@ -235,11 +223,8 @@ export function GitPanel({ project }: GitPanelProps) {
           <Button size="sm" variant="ghost" onClick={() => void refreshStatus()} disabled={busy}>
             <RefreshCw size={13} />
           </Button>
-          <Button size="sm" variant="secondary" onClick={handleFetch} disabled={busy}>
-            Fetch
-          </Button>
-          <Button size="sm" variant="secondary" onClick={handlePull} disabled={busy}>
-            <ArrowDown size={13} /> Pull
+          <Button size="sm" variant="secondary" onClick={() => setSyncOpen(true)} disabled={busy}>
+            <ArrowDownToLine size={13} /> Safe sync
           </Button>
           <Button size="sm" variant="primary" onClick={handlePush} disabled={busy || !status.branch.branchName}>
             <ArrowUp size={13} /> Push
@@ -355,5 +340,15 @@ export function GitPanel({ project }: GitPanelProps) {
         </Button>
       </div>
     </div>
+    <GuidedSyncDialog
+      open={syncOpen}
+      onOpenChange={setSyncOpen}
+      project={project}
+      onChanged={async () => {
+        setLastFetchedAt(Date.now());
+        await Promise.all([refreshStatus(), refreshBranches()]);
+      }}
+    />
+    </>
   );
 }

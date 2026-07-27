@@ -1,26 +1,14 @@
 import { useEffect, useState } from 'react';
-import { DownloadCloud, Download, Laptop2, Package, RefreshCw, Terminal, Zap } from 'lucide-react';
+import { DownloadCloud, Download, Laptop2, Package, RefreshCw, Terminal } from 'lucide-react';
 import type { EnvironmentScanResult, EnvironmentScanToolResult, GithubAuthReport } from '@space/contracts';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, StatusDot, useToast } from '@space/ui';
 import { AiToolsPanel } from '../AiToolsPanel';
-import { BrandIcon, TOOL_BRAND } from '../brand-icons';
+import { ToolIcon } from '../brand-icons';
 import { EnvironmentProjectPanel } from '../EnvironmentProjectPanel';
 import { EnvironmentServicesPanel } from '../EnvironmentServicesPanel';
 import { EnvironmentSuggestedActions } from '../EnvironmentSuggestedActions';
 import { PackagesPanel } from '../PackagesPanel';
 import { PackageUpdatesMenu } from '../PackageUpdatesMenu';
-
-/** Real brand icon for a toolchain entry, with a lucide fallback for the few (e.g. Volta) that have no Simple Icon. */
-function ToolIcon({ toolId }: { readonly toolId: string }) {
-  const brand = TOOL_BRAND[toolId];
-  if (brand) {
-    return <BrandIcon icon={brand} size={14} />;
-  }
-  if (toolId === 'volta') {
-    return <Zap size={14} className="text-accent" />;
-  }
-  return <Package size={14} className="text-fg-muted" />;
-}
 
 /** Small stat tile — mirrors the compact icon + label + value pattern used elsewhere (e.g. SystemView's CPU/Memory tiles). */
 function StatTile({
@@ -198,13 +186,13 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
                 secondary={scan.osVersion}
               />
               <StatTile
-                icon={<ToolIcon toolId="node" />}
+                icon={<ToolIcon size={14} toolId="node" />}
                 label="Active runtime"
                 value={nodeTool?.version ?? '—'}
                 secondary={nodeTool?.source ?? (nodeTool?.found ? undefined : 'not found')}
               />
               <StatTile
-                icon={scan.packageManager?.id === 'homebrew' ? <ToolIcon toolId="homebrew" /> : <Package size={14} className="text-fg-muted" />}
+                icon={scan.packageManager?.id === 'homebrew' ? <ToolIcon size={14} toolId="homebrew" /> : <Package size={14} className="text-fg-muted" />}
                 label="Package manager"
                 value={scan.packageManager ? (scan.packageManager.id === 'homebrew' ? 'Homebrew' : 'WinGet') : '—'}
                 secondary={scan.packageManager?.version ?? (scan.packageManager?.found ? undefined : 'not found')}
@@ -216,7 +204,7 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
                 secondary={scan.shellVersion ?? scan.shellPath ?? undefined}
               />
               <StatTile
-                icon={<ToolIcon toolId="gh" />}
+                icon={<ToolIcon size={14} toolId="gh" />}
                 label="GitHub CLI"
                 value={ghTool?.version ?? '—'}
                 secondary={ghTool?.source ?? (ghTool?.found ? undefined : 'not found')}
@@ -244,7 +232,7 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
                     const inFlight = inFlightToolIds.has(tool.toolId);
                     return (
                       <div key={tool.toolId} className="flex items-center justify-between gap-3 rounded-md bg-surface-hover px-3 py-2 text-sm">
-                        <span className="flex items-center gap-2 text-fg"><ToolIcon toolId={tool.toolId} /> {tool.displayName}</span>
+                        <span className="flex items-center gap-2 text-fg"><ToolIcon size={14} toolId={tool.toolId} /> {tool.displayName}</span>
                         {!tool.found && (
                           <Button size="sm" variant="secondary" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'install')}>
                             {inFlight ? <RefreshCw size={12} className="animate-spin" /> : null} Install
@@ -261,7 +249,7 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
                       const inFlight = inFlightToolIds.has(tool.toolId);
                       return (
                         <div key={tool.toolId} className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem] items-center gap-3 px-3.5 py-2 text-sm">
-                          <span className="flex min-w-0 items-center gap-2"><ToolIcon toolId={tool.toolId} /><span className="truncate text-fg">{tool.displayName}</span></span>
+                          <span className="flex min-w-0 items-center gap-2"><ToolIcon size={14} toolId={tool.toolId} /><span className="truncate text-fg">{tool.displayName}</span></span>
                           <span className="flex items-center gap-2 text-xs text-fg-muted"><StatusDot tone={status.tone} /><span className="truncate">{tool.version ?? status.label}</span></span>
                           <span className="flex justify-end">
                             {!tool.found && <Button size="sm" variant="ghost" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'install')}>Install</Button>}

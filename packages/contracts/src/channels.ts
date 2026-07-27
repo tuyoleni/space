@@ -134,6 +134,7 @@ export const IPC_CHANNELS = {
   aiReviewComments: 'ai:review:comments',
   aiApplyFix: 'ai:review:applyFix',
   aiGenerateCommitMessage: 'ai:generateCommitMessage',
+  aiGitSyncGuide: 'ai:gitSyncGuide',
 
   // First-run bootstrap/onboarding (spec section 8, ONB-001..008)
   bootstrapGetStatus: 'bootstrap:status',

@@ -52,7 +52,13 @@ export async function getFullRepositoryStatus(
     throw new Error(`"${cwd}" is not inside a Git working tree`);
   }
   const [statusResult, operationState] = await Promise.all([
-    executor(statusArgs(), { cwd }),
+    // Per-file untracked listing: Git otherwise collapses a wholly-untracked
+    // directory into a single entry, so a burst that created 32 files under
+    // src/ reported as one change everywhere this status is counted — the
+    // badge, the dashboard tiles, and the file list all shrank exactly when
+    // the change set grew large enough to matter. Ignored paths are still
+    // excluded, so this does not walk node_modules.
+    executor(statusArgs({ untrackedFiles: 'all' }), { cwd }),
     detectRepositoryOperationState(gitDir, gitDirFs),
   ]);
   if (statusResult.exitCode !== 0) {

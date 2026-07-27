@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { app } from 'electron';
 import type { AiToolId, PackageActionInput } from '@space/contracts';
+import { createAppIconResolver } from '../app-icon';
 
 export interface AiToolDesktopInfo {
   readonly appPath: string;
@@ -77,6 +77,9 @@ async function firstExisting(candidates: readonly DesktopCandidate[]): Promise<D
 }
 
 export function createAiToolDesktopAdapter(home: string, appData: string): AiToolDesktopAdapter {
+  // The installed app's own icon, read from its bundle (see app-icon.ts) —
+  // the renderer falls back to the product's brand mark when there is none.
+  const icons = createAppIconResolver();
   const candidates = (tool: AiToolId): readonly DesktopCandidate[] => {
     if (process.platform === 'darwin') return macCandidates(home, tool);
     if (process.platform === 'win32') return windowsCandidates(home, appData, tool);
@@ -87,9 +90,7 @@ export function createAiToolDesktopAdapter(home: string, appData: string): AiToo
     async describe(tool) {
       const candidate = await firstExisting(candidates(tool));
       if (!candidate) return null;
-      const iconDataUrl = await app.getFileIcon(candidate.appPath, { size: 'normal' })
-        .then((icon) => icon.toDataURL())
-        .catch(() => null);
+      const iconDataUrl = await icons.iconFor(candidate.appPath);
       return { appPath: candidate.appPath, iconDataUrl };
     },
     async openProject(tool, projectPath) {

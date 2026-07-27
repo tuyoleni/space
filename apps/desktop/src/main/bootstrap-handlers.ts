@@ -63,6 +63,8 @@ interface StepRow {
   readonly runId: string;
   readonly sequence: number;
   readonly toolId: string | null;
+  readonly displayName: string | null;
+  readonly changesMachineState: boolean | null;
   readonly state: StepState;
   readonly humanExplanation: string;
   readonly commandDisplayRedacted: string | null;
@@ -87,7 +89,12 @@ function toStepSummary(row: StepRow): BootstrapStepSummary {
   const manifestDisplayName = row.toolId ? TOOL_MANIFEST.entries.find((entry) => entry.id === row.toolId)?.displayName : undefined;
   return {
     toolId: row.toolId,
-    displayName: manifestDisplayName ?? row.humanExplanation,
+    // The manifest wins for tool steps; otherwise the plan's own label
+    // ("Homebrew", "Apple Command Line Tools"). Null only for rows persisted
+    // before migration 0009, which the renderer shows as explanation-only
+    // rather than repeating the sentence as its own title.
+    displayName: manifestDisplayName ?? row.displayName,
+    changesMachineState: row.changesMachineState,
     state: row.state,
     humanExplanation: row.humanExplanation,
     outcome: row.outcome,
@@ -194,6 +201,8 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
         runId: run.id,
         sequence,
         toolId: step.toolId,
+        displayName: step.displayName,
+        changesMachineState: step.changesMachineState,
         state: 'pending',
         humanExplanation: step.humanExplanation,
         commandDisplayRedacted: null,
@@ -330,6 +339,12 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
       runId: activeRun.id,
       sequence: nextIndex,
       toolId: record.toolId,
+      // This upsert replaces the whole row, so the plan-time metadata has to
+      // be carried over from the step being executed — dropping it here would
+      // blank out the label and the "does this change the machine" flag the
+      // moment a step ran, which is exactly when the UI needs them.
+      displayName: step.displayName,
+      changesMachineState: step.changesMachineState,
       state: record.state,
       humanExplanation: record.humanExplanation,
       commandDisplayRedacted: record.commandDisplay,

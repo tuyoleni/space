@@ -8,6 +8,7 @@ import { GithubPanel } from '../GithubPanel';
 import { AgentPanel } from '../AgentPanel';
 import { ActivityGrid } from '../ActivityGrid';
 import { TerminalPanel } from '../TerminalPanel';
+import { BrandIcon, ToolIcon, brandForDetectionFact } from '../brand-icons';
 
 interface ProjectDetailProps {
   readonly workspace: WorkspaceSummary;
@@ -92,20 +93,34 @@ export function ProjectDetail({ workspace, project, runtime, actions, busy }: Pr
 
             <div className="flex flex-wrap gap-1.5">
               {project.detectedTypes.map((type) => (
-                <Badge key={type}>{type}</Badge>
+                <Badge key={type} className="gap-1">
+                  <ToolIcon toolId={type} size={12} /> {type}
+                </Badge>
               ))}
-              {packageManager?.packageManager && <Badge variant="accent">{packageManager.packageManager}</Badge>}
+              {packageManager?.packageManager && (
+                <Badge variant="accent" className="gap-1">
+                  <ToolIcon toolId={packageManager.packageManager} size={12} /> {packageManager.packageManager}
+                </Badge>
+              )}
             </div>
 
             {detection && detection.facts.length > 0 && (
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-fg-faint">Detected facts</p>
                 <ul className="flex flex-col gap-1">
-                  {detection.facts.map((fact) => (
-                    <li key={fact.id} className="text-sm text-fg-muted">
-                      <span className="text-fg">{fact.label}</span> ({Math.round(fact.confidence * 100)}%) — {fact.evidence}
-                    </li>
-                  ))}
+                  {detection.facts.map((fact) => {
+                    // Runtimes, frameworks and lockfiles carry a real mark; an
+                    // env file or a build directory is not a product and gets none.
+                    const brand = brandForDetectionFact(fact.id);
+                    return (
+                      <li key={fact.id} className="flex items-center gap-1.5 text-sm text-fg-muted">
+                        {brand && <BrandIcon icon={brand} size={13} />}
+                        <span>
+                          <span className="text-fg">{fact.label}</span> ({Math.round(fact.confidence * 100)}%) — {fact.evidence}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

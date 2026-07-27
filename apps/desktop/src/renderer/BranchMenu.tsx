@@ -62,7 +62,9 @@ export function BranchMenu({
 
   return (
     <>
-      <RadixDropdownMenu.Root>
+      {/* Non-modal — see Sidebar.tsx: a modal menu whose item starts an async
+          action leaks `pointer-events: none` onto <body> and freezes input. */}
+      <RadixDropdownMenu.Root modal={false}>
         <RadixDropdownMenu.Trigger asChild disabled={disabled}>
           <button type="button" className={chipClasses} aria-label={`Branch: ${currentBranch}`}>
             <span className="text-[10px] font-medium uppercase tracking-wide text-fg-faint">Branch</span>
@@ -83,7 +85,7 @@ export function BranchMenu({
               <Plus size={13} /> New branch…
             </RadixDropdownMenu.Item>
             <RadixDropdownMenu.Item onSelect={onFetch} className={itemClasses}>
-              <ArrowDownToLine size={13} className="text-fg-muted" /> Fetch
+              <ArrowDownToLine size={13} className="text-fg-muted" /> Safe sync…
             </RadixDropdownMenu.Item>
             <RadixDropdownMenu.Item onSelect={onPush} className={itemClasses}>
               <ArrowUpFromLine size={13} className="text-fg-muted" /> Push current branch

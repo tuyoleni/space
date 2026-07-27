@@ -20,14 +20,14 @@
  *    its search isn't reliably scriptable either, so win32 here only ever
  *    returns npm-global entries, never a guessed WinGet inventory.
  *
- * Icons are real too: an installed Homebrew cask's own `.app` icon via
- * Electron's `app.getFileIcon` (same technique as system-handlers.ts), or a
+ * Icons are real too: an installed Homebrew cask's own `.app` icon read from
+ * the bundle (see app-icon.ts, same resolver system-handlers.ts uses), or a
  * fetched favicon for anything with a real homepage URL — `null` otherwise,
  * left for the renderer's own generic fallback glyph.
  */
 import https from 'node:https';
-import { app } from 'electron';
 import { nodeRunCommand, compareVersions, runHomebrewCommand } from '@space/environment';
+import { createAppIconResolver } from './app-icon';
 import type {
   PackageActionInput,
   PackageActionResult,
@@ -320,9 +320,9 @@ async function searchNpmRegistry(query: string): Promise<NpmRegistrySearchHit[]>
 }
 
 // ---------------------------------------------------------------------------
-// Icon resolution: real `.app` icon for installed casks (Electron's
-// getFileIcon, same technique as system-handlers.ts), else a real fetched
-// favicon for anything with a homepage — never a placeholder.
+// Icon resolution: an installed cask's real `.app` icon read from the bundle
+// itself (app-icon.ts, the resolver system-handlers.ts also uses), else a real
+// fetched favicon for anything with a homepage — never a placeholder.
 // ---------------------------------------------------------------------------
 
 function hostnameOf(homepage: string): string | null {
@@ -336,24 +336,8 @@ function hostnameOf(homepage: string): string | null {
 function createIconResolver() {
   // Cached by the key actually used to resolve it (app bundle path, or
   // favicon hostname) — repeated lookups for the same package are free.
-  const appIconCache = new Map<string, string | null>();
+  const appIcons = createAppIconResolver();
   const faviconCache = new Map<string, string | null>();
-
-  async function appIconFor(target: string): Promise<string | null> {
-    const cached = appIconCache.get(target);
-    if (cached !== undefined) {
-      return cached;
-    }
-    try {
-      const image = await app.getFileIcon(target, { size: 'small' });
-      const dataUrl = image.isEmpty() ? null : image.toDataURL();
-      appIconCache.set(target, dataUrl);
-      return dataUrl;
-    } catch {
-      appIconCache.set(target, null);
-      return null;
-    }
-  }
 
   async function faviconFor(homepage: string): Promise<string | null> {
     const hostname = hostnameOf(homepage);
@@ -372,7 +356,7 @@ function createIconResolver() {
   /** entry.homepage/appTarget already resolved by the caller; this is the shared fallback chain. */
   async function resolve(entry: PackageEntry, appTarget: string | null): Promise<string | null> {
     if (appTarget !== null) {
-      const appIcon = await appIconFor(appTarget);
+      const appIcon = await appIcons.iconFor(appTarget);
       if (appIcon !== null) {
         return appIcon;
       }
@@ -422,7 +406,7 @@ export function createPackageManagerHandlers(): PackageManagerHandlers {
       iconDataUrl: null,
     }));
 
-    // Icon resolution does real network/getFileIcon I/O — only for entries
+    // Icon resolution does real network and bundle-reading I/O — only for entries
     // that don't already have a cheaper resolvable source, run in parallel
     // as a manual "Rescan"-triggered action, not a hot path.
     const [formulaWithIcons, caskWithIcons, npmWithIcons] = await Promise.all([

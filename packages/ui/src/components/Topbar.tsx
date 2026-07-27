@@ -50,7 +50,9 @@ export function TopbarMenu({ label, value, icon, options, onSelect, disabled }: 
   }
 
   return (
-    <RadixDropdownMenu.Root>
+    // Non-modal: a modal menu locks `pointer-events: none` onto <body>, and an
+    // item whose onSelect starts an async action leaks that lock permanently.
+    <RadixDropdownMenu.Root modal={false}>
       <RadixDropdownMenu.Trigger asChild disabled={disabled}>
         <button type="button" className={triggerClasses} aria-label={`${label}: ${value}`}>
           {content}

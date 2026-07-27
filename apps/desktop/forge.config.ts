@@ -147,10 +147,56 @@ async function copyHoistedRuntimeDependencies(
   }
 }
 
+/**
+ * macOS code signing.
+ *
+ * electron-packager rewrites Info.plist (product name, bundle id, icon)
+ * *after* Electron's own ad-hoc signature, which breaks the bundle seal.
+ * Shipping without re-signing produced an app whose signature failed
+ * verification outright ("invalid Info.plist (plist or signature have been
+ * modified)"), so Gatekeeper refused a downloaded copy with "damaged and
+ * can't be opened" — the dead-end dialog with no "Open Anyway" escape — and
+ * the framework/executable Team ID mismatch stopped some builds from
+ * launching locally at all.
+ *
+ * With SPACE_APPLE_IDENTITY set (a "Developer ID Application" certificate in
+ * the keychain) this produces a hardened-runtime build ready to notarize.
+ * Without it, everything is re-signed ad-hoc: still not notarized, but the
+ * seal is valid, so users get the recoverable "unidentified developer"
+ * warning instead of a bundle macOS calls corrupt.
+ */
+const APPLE_IDENTITY = process.env.SPACE_APPLE_IDENTITY ?? '-';
+const HAS_DEVELOPER_ID = APPLE_IDENTITY !== '-';
+
+const osxSign = {
+  identity: APPLE_IDENTITY,
+  optionsForFile: () => ({
+    entitlements: path.join(__dirname, 'entitlements.plist'),
+    hardenedRuntime: HAS_DEVELOPER_ID,
+  }),
+};
+
+// Notarization only runs with a real Developer ID and App Store Connect API
+// key; ad-hoc builds have nothing Apple would accept.
+const osxNotarize =
+  HAS_DEVELOPER_ID && process.env.SPACE_APPLE_API_KEY
+    ? {
+        appleApiKey: process.env.SPACE_APPLE_API_KEY,
+        appleApiKeyId: process.env.SPACE_APPLE_API_KEY_ID ?? '',
+        appleApiIssuer: process.env.SPACE_APPLE_API_ISSUER ?? '',
+      }
+    : undefined;
+
 // Target platforms are macOS and Windows only (spec section 3.6: Linux
 // desktop is a non-goal for the first production release).
 const config: ForgeConfig = {
   packagerConfig: {
+    // Without this the bundle id defaults to Electron's own, which left the
+    // cask's `zap` stanza deleting preferences under a domain the app never
+    // wrote to.
+    appBundleId: 'com.tuyoleni.space',
+    ...(process.platform === 'darwin' ? { osxSign } : {}),
+    ...(osxNotarize ? { osxNotarize } : {}),
     // electron-packager appends the right extension per platform itself
     // (.icns on darwin, .ico on win32) when given an extension-less path —
     // both files live at assets/icons/icon.{icns,ico}.

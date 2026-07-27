@@ -25,7 +25,6 @@ import {
   Sunrise,
   Sunset,
   TerminalSquare,
-  Zap,
 } from 'lucide-react';
 import type {
   DependencyScanResult,
@@ -45,7 +44,7 @@ import type {
 import { Badge, Button, Card, CardContent, CardFooter, CardHeader, CardRows, CardTitle, StatusDot, formatRelativeTime } from '@space/ui';
 import type { NavView } from '../nav';
 import type { ProjectActions, ProjectRuntimeState } from '../AppShell';
-import { BrandIcon, TOOL_BRAND, brandForPackage } from '../brand-icons';
+import { PackageIcon, ToolIcon } from '../brand-icons';
 import { ProjectIcon } from '../ProjectIcon';
 
 const STATS_POLL_MS = 3_000;
@@ -88,18 +87,6 @@ function GreetingIcon() {
   if (hour < 8) return <Sunrise size={26} className="text-warning" />;
   if (hour < 18) return <Sun size={26} className="text-warning" />;
   return <Sunset size={26} className="text-warning" />;
-}
-
-/** Real brand icon for a toolchain entry, with a lucide fallback for the few (e.g. Volta) that have no Simple Icon. */
-function ToolIcon({ toolId }: { readonly toolId: string }) {
-  const brand = TOOL_BRAND[toolId];
-  if (brand) {
-    return <BrandIcon icon={brand} size={15} />;
-  }
-  if (toolId === 'volta') {
-    return <Zap size={15} className="text-accent" />;
-  }
-  return <Package size={15} className="text-fg-muted" />;
 }
 
 /** Tiny bar chart over the last N real samples — values are 0-100 percents. */
@@ -308,11 +295,46 @@ export function HomeView({
       setStats(nextStats);
       setProcesses(nextProcesses);
     }
-    void sample();
-    const timer = setInterval(() => void sample(), STATS_POLL_MS);
+    // Polling the machine every few seconds is only worth doing while
+    // someone is looking at it. Left running unconditionally, a hidden or
+    // backgrounded window kept shelling out to `ps` forever — the app burning
+    // CPU to report on CPU usage, which is the one thing this panel must not
+    // do. Sampling resumes, and refreshes immediately, when the page is
+    // visible again.
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const startSampling = () => {
+      if (timer !== null) {
+        return;
+      }
+      void sample();
+      timer = setInterval(() => void sample(), STATS_POLL_MS);
+    };
+
+    const stopSampling = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopSampling();
+      } else {
+        startSampling();
+      }
+    };
+
+    if (!document.hidden) {
+      startSampling();
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stopSampling();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 
@@ -719,20 +741,17 @@ export function HomeView({
                 {/* Every outdated package, scrollable — no "and N more" cutoff. */}
                 <CardRows className="max-h-56 flex-1 overflow-y-auto">
                   {(depScan.outdatedPackages ?? []).length === 0 && <p className="py-2 text-sm text-fg-faint">Everything is up to date.</p>}
-                  {(depScan.outdatedPackages ?? []).map((pkg) => {
-                    const brand = brandForPackage(pkg.name);
-                    return (
-                      <div key={pkg.name} className="flex items-center justify-between gap-2 py-1.5 text-sm">
-                        <span className="flex min-w-0 items-center gap-2">
-                          {brand ? <BrandIcon icon={brand} size={14} /> : <Package size={14} className="shrink-0 text-fg-faint" />}
-                          <span className="truncate text-fg">{pkg.name}</span>
-                        </span>
-                        <span className="shrink-0 text-xs text-fg-muted">
-                          {pkg.current ?? '?'} <span className="text-fg-faint">→</span> <span className="text-success">{pkg.latest ?? pkg.wanted ?? '?'}</span>
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {(depScan.outdatedPackages ?? []).map((pkg) => (
+                    <div key={pkg.name} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <PackageIcon name={pkg.name} />
+                        <span className="truncate text-fg">{pkg.name}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-fg-muted">
+                        {pkg.current ?? '?'} <span className="text-fg-faint">→</span> <span className="text-success">{pkg.latest ?? pkg.wanted ?? '?'}</span>
+                      </span>
+                    </div>
+                  ))}
                 </CardRows>
                 {depScan.vulnerabilities && depScan.vulnerabilities.total > 0 && (
                   <CardFooter>
