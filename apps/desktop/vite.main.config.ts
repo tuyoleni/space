@@ -1,4 +1,23 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+/**
+ * Electron Forge's Vite integration rebuilds main-process code, but its
+ * bundled restart hook is intentionally disabled upstream. That left a
+ * running Space process on old IPC/window code until someone quit it by
+ * hand. Forge already listens for `rs` on stdin, so send its documented
+ * restart command after each development rebuild. The initial build happens
+ * before Electron is launched and is harmless; subsequent saves relaunch
+ * the app with the newly-built main process.
+ */
+function restartElectronAfterMainBuild(): Plugin {
+  return {
+    name: 'space:restart-electron-on-main-change',
+    apply: 'serve',
+    closeBundle() {
+      process.stdin.emit('data', Buffer.from('rs\n'));
+    },
+  };
+}
 
 // https://vitejs.dev/config
 // Native-module packages ship compiled .node binaries loaded via dynamic
@@ -21,10 +40,14 @@ import { defineConfig } from 'vite';
 // the external CJS export combined with `getOwnPropertyDescriptor`, and
 // disagrees with itself on `ws`'s class-based export shape. Bundling `ws`
 // normally sidesteps that helper entirely.
-export default defineConfig({
+export default defineConfig((forgeEnv) => ({
+  // This config is shared by utility-process entries. Only the Electron
+  // main entry is allowed to request a relaunch; otherwise one source save
+  // could queue several restarts as every worker bundle finishes.
+  plugins: (forgeEnv as { forgeConfigSelf?: { entry?: string } }).forgeConfigSelf?.entry === 'src/main.ts' ? [restartElectronAfterMainBuild()] : [],
   build: {
     rollupOptions: {
       external: ['better-sqlite3', 'node-pty', 'bufferutil', 'utf-8-validate'],
     },
   },
-});
+}));

@@ -9,6 +9,7 @@ import { suggestionFor, useTerminalActivity } from '../useTerminalActivity';
 
 const STATS_POLL_MS = 3_000;
 const CD_PATTERN = /^cd(?:\s+(.+))?$/;
+const INSTALL_COMMAND_PATTERN = /(?:^|\s)(?:npm|pnpm|yarn|bun)\s+(?:install|i|add|update|upgrade)(?:\s|$)|(?:^|\s)(?:brew|winget)\s+(?:install|upgrade)(?:\s|$)|(?:^|\s)pip(?:3)?\s+install(?:\s|$)|(?:^|\s)cargo\s+install(?:\s|$)/;
 
 /** Best-effort, deterministic `cd` resolution from a real typed/sent command — never a guess beyond what the argument itself says. */
 function applyCd(current: string, arg: string | undefined): string {
@@ -169,6 +170,13 @@ export function TerminalsView({ workspace, projects, envScan, selectedProjectId 
   // History/Problems/suggestions and move the tracked cwd forward the same way.
   function recordExecuted(sessionId: string, command: string, timestamp: string, fallbackCwd: string): void {
     activity.recordCommand(sessionId, command, timestamp);
+    if (INSTALL_COMMAND_PATTERN.test(command)) {
+      window.dispatchEvent(
+        new CustomEvent('space:installation-activity', {
+          detail: { id: `terminal:${sessionId}:${timestamp}`, label: command.trim(), state: 'running' },
+        }),
+      );
+    }
     const cdMatch = CD_PATTERN.exec(command.trim());
     if (cdMatch) {
       setLiveCwd((prev) => ({ ...prev, [sessionId]: applyCd(prev[sessionId] ?? fallbackCwd, cdMatch[1]) }));

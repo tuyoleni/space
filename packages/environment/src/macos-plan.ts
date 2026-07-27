@@ -28,10 +28,6 @@ function chooseHomebrewStrategy(entry: ToolManifestEntry): InstallStrategy | nul
   return entry.installStrategies.find((s) => s.platform === 'darwin' && s.kind === 'package-manager') ?? null;
 }
 
-function chooseVoltaManagedStrategy(entry: ToolManifestEntry): InstallStrategy | null {
-  return entry.installStrategies.find((s) => s.platform === 'darwin' && s.kind === 'volta-managed') ?? null;
-}
-
 function chooseOfficialInstallerStrategy(entry: ToolManifestEntry): InstallStrategy | null {
   return entry.installStrategies.find((s) => s.platform === 'darwin' && s.kind === 'official-installer') ?? null;
 }
@@ -111,9 +107,7 @@ export async function buildMacOsBootstrapPlan(
   const darwinEntries = manifest.entries.filter((entry) => entry.required && entry.supportedPlatforms.includes('darwin'));
   const missing = darwinEntries.filter((entry) => !isSatisfied(entry, scan));
 
-  const homebrewStrategiesNeeded = missing
-    .filter((entry) => entry.id !== 'node') // node installs via volta, not homebrew
-    .map((entry) => chooseHomebrewStrategy(entry));
+  const homebrewStrategiesNeeded = missing.map((entry) => chooseHomebrewStrategy(entry));
 
   if (needsHomebrew(homebrewStrategiesNeeded) && scan.packageManager?.found !== true) {
     steps.push(buildHomebrewInstallStep(sequence++, scan.architecture));
@@ -125,7 +119,7 @@ export async function buildMacOsBootstrapPlan(
       continue;
     }
     if (entry.id === 'node') {
-      steps.push(buildToolStep(entry, sequence++, chooseVoltaManagedStrategy(entry)));
+      steps.push(buildToolStep(entry, sequence++, chooseHomebrewStrategy(entry)));
       continue;
     }
     const strategy = chooseHomebrewStrategy(entry) ?? chooseOfficialInstallerStrategy(entry);
@@ -140,30 +134,12 @@ export async function buildMacOsBootstrapPlan(
       toolId: 'npm',
       kind: 'verify-only',
       displayName: npmEntry.displayName,
-      humanExplanation: 'npm is installed alongside Node via Volta; verified after the Node step.',
+      humanExplanation: 'npm is installed alongside Node.js; verified after the Node step.',
       strategy: null,
       requiresElevation: false,
       interactive: false,
       changesMachineState: false,
       deferredImplementation: false,
-    });
-  }
-
-  if (!scan.spaceShellIntegrationDetected) {
-    steps.push({
-      id: 'space-shell-integration',
-      sequence: sequence++,
-      toolId: null,
-      kind: 'shell-integration',
-      displayName: 'Space terminal integration',
-      humanExplanation:
-        'Space terminal integration is not yet configured. Shell profile editing is owned by the terminal ' +
-        'package (spec section 15, later phase) — this step is surfaced for visibility but not executed yet.',
-      strategy: null,
-      requiresElevation: false,
-      interactive: false,
-      changesMachineState: true,
-      deferredImplementation: true,
     });
   }
 

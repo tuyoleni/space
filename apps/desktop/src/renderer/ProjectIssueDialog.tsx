@@ -23,11 +23,13 @@ interface ProjectIssueDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly issue: ProjectIssue | null;
   readonly projectId: string;
+  /** Opens the app-owned GitHub CLI auth modal for interactive sign-in remedies. */
+  readonly onGithubSignIn: () => void;
   /** Re-read project state after a remedy changes it. */
   readonly onResolved?: () => void | Promise<void>;
 }
 
-export function ProjectIssueDialog({ open, onOpenChange, issue, projectId, onResolved }: ProjectIssueDialogProps) {
+export function ProjectIssueDialog({ open, onOpenChange, issue, projectId, onGithubSignIn, onResolved }: ProjectIssueDialogProps) {
   const [applyingId, setApplyingId] = useState<string | null>(null);
   // Only `add-existing-remote` needs input; it appears inline rather than as
   // a second dialog, so the explanation stays visible while typing.
@@ -40,6 +42,13 @@ export function ProjectIssueDialog({ open, onOpenChange, issue, projectId, onRes
   }
 
   async function apply(remedy: ProjectRemedy): Promise<void> {
+    if (remedy.id === 'sign-in-to-github') {
+      // This remedy is interactive. Route it through the renderer-owned auth
+      // dialog so the PTY session always has a visible, contained home.
+      onOpenChange(false);
+      onGithubSignIn();
+      return;
+    }
     // A remedy that needs input reveals its field first rather than failing
     // on an empty value.
     if (remedy.id === 'add-existing-remote' && expandedRemedyId !== remedy.id) {
@@ -55,9 +64,7 @@ export function ProjectIssueDialog({ open, onOpenChange, issue, projectId, onRes
       });
       toast({ variant: 'success', message: result.message });
       await onResolved?.();
-      // Sign-in finishes in the browser, so the problem is not solved yet —
-      // keep the dialog open rather than implying it is.
-      if (remedy.id !== 'sign-in-to-github' && result.diagnosis.issues.every((next) => next.id !== issue?.id)) {
+      if (result.diagnosis.issues.every((next) => next.id !== issue?.id)) {
         onOpenChange(false);
       }
     } catch (caught) {

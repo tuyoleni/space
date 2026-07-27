@@ -6,10 +6,11 @@
  * takes a short real delay between them rather than reporting a
  * point-in-time counter as if it were a percentage.
  *
- * Each process also carries its real OS icon: macOS resolves the owning
- * `.app` bundle from the executable path and Electron's `app.getFileIcon`
- * reads the same icon Finder/Activity Monitor show. Icons are cached by
- * bundle path (they never change) so only the first sample pays for them.
+ * Each process also carries its real macOS application icon. `ps` reports
+ * helper executables for many apps (Electron included), so resolving an icon
+ * from that path produces Finder's generic document glyph. We instead ask
+ * Launch Services for the process's owning `.app` bundle, then read that
+ * bundle icon — the same source macOS uses for a running application.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -68,6 +69,21 @@ function bundlePathOf(execPath: string): string | null {
   return marker === -1 ? null : execPath.slice(0, marker + '.app'.length);
 }
 
+/**
+ * Launch Services knows the application that owns a PID even when `ps`
+ * exposes a framework helper rather than the application's executable.
+ * `lsappinfo` returns `bundlepath=\"…\"`; non-application daemons simply
+ * have no bundle and are deliberately omitted from the icon-led UI.
+ */
+async function bundlePathForPid(pid: number): Promise<string | null> {
+  const result = await nodeRunCommand('lsappinfo', ['info', '-only', 'bundlepath', '-pid', String(pid)], { timeoutMs: 1_000 }).catch(() => null);
+  if (!result || result.exitCode !== 0) {
+    return null;
+  }
+  const match = result.stdout.match(/bundlepath="([^"]+\.app)"/);
+  return match?.[1] ?? null;
+}
+
 /** A human name: the `.app` name when bundled, else the executable's basename. */
 function displayNameOf(execPath: string, bundlePath: string | null): string {
   if (bundlePath) {
@@ -86,18 +102,18 @@ export function createSystemHandlers(): SystemHandlers {
   // executable) — icons never change, so every poll after the first is free.
   const iconCache = new Map<string, string | null>();
 
-  async function iconFor(resolvePath: string): Promise<string | null> {
-    const cached = iconCache.get(resolvePath);
+  async function iconFor(bundlePath: string): Promise<string | null> {
+    const cached = iconCache.get(bundlePath);
     if (cached !== undefined) {
       return cached;
     }
     try {
-      const image = await app.getFileIcon(resolvePath, { size: 'small' });
+      const image = await app.getFileIcon(bundlePath, { size: 'small' });
       const dataUrl = image.isEmpty() ? null : image.toDataURL();
-      iconCache.set(resolvePath, dataUrl);
+      iconCache.set(bundlePath, dataUrl);
       return dataUrl;
     } catch {
-      iconCache.set(resolvePath, null);
+      iconCache.set(bundlePath, null);
       return null;
     }
   }
@@ -146,10 +162,19 @@ export function createSystemHandlers(): SystemHandlers {
       return [];
     }
     const raw = parsePsOutput(result.stdout);
-    return Promise.all(
+    const rows = await Promise.all(
       raw.map(async (proc) => {
-        const bundlePath = bundlePathOf(proc.execPath);
-        const iconDataUrl = await iconFor(bundlePath ?? proc.execPath);
+        // Prefer Launch Services (critical for Electron helper processes),
+        // then accept only an explicit `.app` path from `ps`. Never use an
+        // executable icon: that is the generic document icon the UI showed.
+        const bundlePath = (await bundlePathForPid(proc.pid)) ?? bundlePathOf(proc.execPath);
+        if (!bundlePath) {
+          return null;
+        }
+        const iconDataUrl = await iconFor(bundlePath);
+        if (!iconDataUrl) {
+          return null;
+        }
         return {
           pid: proc.pid,
           name: displayNameOf(proc.execPath, bundlePath),
@@ -159,6 +184,7 @@ export function createSystemHandlers(): SystemHandlers {
         };
       }),
     );
+    return rows.filter((row): row is Exclude<typeof row, null> => row !== null);
   }
 
   return { stats, processes };

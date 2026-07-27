@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "rebuild:node": "npm rebuild better-sqlite3",
-    "rebuild:electron": "electron-rebuild -v 43.1.0 -m . -f -w better-sqlite3"
+    "rebuild:electron": "electron-rebuild -m . -f -w better-sqlite3"
   },
   "license": "UNLICENSED",
   "devDependencies": {

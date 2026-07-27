@@ -35,7 +35,10 @@ function makeDeps() {
       return [{ id: 'ws-1', name: 'Demo', iconToken: 'a', active: true }];
     }
     if (method === 'project.list') {
-      return [{ id: 'proj-1', workspaceId: 'ws-1', name: 'app', canonicalPath: '/tmp/app' }];
+      return [{ id: 'proj-1', workspaceId: 'ws-1', name: 'app', canonicalPath: '/tmp/app', repositoryRoot: '/tmp/app' }];
+    }
+    if (method === 'devProcess.list') {
+      return [];
     }
     return undefined;
   }) as unknown as StorageCaller['call'];
@@ -46,6 +49,8 @@ function makeDeps() {
     } as GitHandlers,
     projectEnvironmentHandlers: {
       environmentInfo: (async () => ({})) as unknown as ProjectEnvironmentHandlers['environmentInfo'],
+      setRuntime: (async () => ({ filePath: '.nvmrc' })) as ProjectEnvironmentHandlers['setRuntime'],
+      openEnvFile: (async () => ({ filePath: '.env' })) as ProjectEnvironmentHandlers['openEnvFile'],
     },
   };
 }
@@ -101,6 +106,7 @@ describe('MCP HTTP server (end-to-end over a real socket)', () => {
     const body = await res.json();
     const names = (body.result.tools as Array<{ name: string; inputSchema: { type: string } }>).map((t) => t.name);
     expect(names).toContain('list_workspaces');
+    expect(names).toContain('get_project_context');
     expect(names).toContain('git_status');
     // Every advertised tool carries a JSON-Schema object, as MCP requires.
     for (const tool of body.result.tools) {
@@ -120,6 +126,23 @@ describe('MCP HTTP server (end-to-end over a real socket)', () => {
     expect(body.result.isError).toBeFalsy();
     const parsed = JSON.parse(body.result.content[0].text);
     expect(parsed[0].name).toBe('Demo');
+  });
+
+  it('routes a codebase path to its complete project context', async () => {
+    const token = await readToken(dataDir);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { ...MCP_HEADERS, Authorization: `Bearer ${token}` },
+      body: rpc('tools/call', { name: 'get_project_context', arguments: { path: '/tmp/app/src' } }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const parsed = JSON.parse(body.result.content[0].text);
+    expect(parsed.workspace.name).toBe('Demo');
+    expect(parsed.project.id).toBe('proj-1');
+    expect(parsed.gitStatus.branch).toBe('main');
+    expect(parsed.environment).toEqual({});
+    expect(parsed.devProcesses).toEqual([]);
   });
 
   it('reports a bad tool input as a tool error, not a transport failure', async () => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, DownloadCloud, Package, RefreshCw, Trash2 } from 'lucide-react';
 import type { PackageEntry, PackageSource } from '@space/contracts';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, EmptyState, Input, useToast } from '@space/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, EmptyState, Input, useToast } from '@space/ui';
 import { BrandIcon, SERVICE_BRAND, TOOL_BRAND, brandForPackage } from './brand-icons';
 
 const SEARCH_DEBOUNCE_MS = 350;
@@ -16,12 +16,12 @@ const SOURCE_LABEL: Record<PackageSource, string> = {
 /** Best-effort brand icon for a package entry — its own real icon first, then a known-brand guess, then a generic glyph. Never a broken image. */
 function PackageIcon({ entry }: { readonly entry: PackageEntry }) {
   if (entry.iconDataUrl) {
-    return <img src={entry.iconDataUrl} alt="" className="h-8 w-8 shrink-0 rounded-md object-contain" />;
+    return <img src={entry.iconDataUrl} alt="" className="h-6 w-6 shrink-0 rounded object-contain" />;
   }
   const brand = brandForPackage(entry.name) ?? TOOL_BRAND[entry.name] ?? SERVICE_BRAND[entry.name] ?? null;
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-hover">
-      {brand ? <BrandIcon icon={brand} size={16} /> : <Package size={16} className="text-fg-faint" />}
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-surface-hover">
+      {brand ? <BrandIcon icon={brand} size={14} /> : <Package size={14} className="text-fg-faint" />}
     </span>
   );
 }
@@ -32,63 +32,46 @@ interface PackageRowProps {
   readonly onInstall: () => void;
   readonly onUpdate: () => void;
   readonly onRequestUninstall: () => void;
+  readonly hideUpdateAction: boolean;
 }
 
-/** One tile in the package grid — a compact, self-contained card, not a full-width list row. */
-function PackageTile({ entry, busy, onInstall, onUpdate, onRequestUninstall }: PackageRowProps) {
+/** One compact inventory row. Descriptions are available as the native title tooltip, not permanently consuming vertical space. */
+function PackageTile({ entry, busy, onInstall, onUpdate, onRequestUninstall, hideUpdateAction }: PackageRowProps) {
   const installed = entry.installedVersion !== null;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-      <div className="flex items-start gap-2.5">
-        <PackageIcon entry={entry} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-fg">{entry.displayName}</p>
-          <Badge variant="neutral">{SOURCE_LABEL[entry.source]}</Badge>
-        </div>
+    <div className="flex min-h-11 items-center gap-2 px-3 py-2" title={entry.description ?? undefined}>
+      <PackageIcon entry={entry} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-fg">{entry.displayName}</p>
+        <p className="text-[11px] text-fg-faint">{SOURCE_LABEL[entry.source]}</p>
       </div>
-
-      {entry.description && <p className="line-clamp-2 text-xs text-fg-muted">{entry.description}</p>}
-
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        <span className="min-w-0 truncate text-xs text-fg-muted">
-          {installed ? (
-            <>
-              {entry.installedVersion}
-              {entry.updateAvailable === true && entry.latestVersion && (
-                <>
-                  {' '}
-                  <span className="text-fg-faint">→</span> <span className="text-success">{entry.latestVersion}</span>
-                </>
-              )}
-            </>
-          ) : (
-            '—'
-          )}
-        </span>
-        <span className="flex shrink-0 items-center gap-1">
-          {!installed ? (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={onInstall}>
-              {busy ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />} Install
-            </Button>
-          ) : (
-            <>
-              {entry.updateAvailable === true && (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={onUpdate}>
-                  {busy ? <RefreshCw size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Update
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" disabled={busy} onClick={onRequestUninstall} aria-label={`Remove ${entry.displayName}`}>
-                {busy ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+      <span className="shrink-0 text-xs text-fg-muted">
+        {installed ? entry.installedVersion : 'Not installed'}
+        {installed && entry.updateAvailable === true && entry.latestVersion && <span className="text-success"> → {entry.latestVersion}</span>}
+      </span>
+      <span className="flex shrink-0 items-center gap-1">
+        {!installed ? (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onInstall}>
+            {busy ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />} Install
+          </Button>
+        ) : (
+          <>
+            {!hideUpdateAction && entry.updateAvailable === true && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onUpdate} aria-label={`Update ${entry.displayName}`}>
+                {busy ? <RefreshCw size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Update
               </Button>
-            </>
-          )}
-        </span>
-      </div>
+            )}
+            <button type="button" className="rounded p-1.5 text-fg-muted hover:bg-surface-hover hover:text-fg disabled:opacity-50" disabled={busy} onClick={onRequestUninstall} aria-label={`Remove ${entry.displayName}`} title={`Remove ${entry.displayName}`}>
+              {busy ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+            </button>
+          </>
+        )}
+      </span>
     </div>
   );
 }
 
-export function PackagesPanel() {
+export function PackagesPanel({ hideUpdateActions = false }: { readonly hideUpdateActions?: boolean }) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [installed, setInstalled] = useState<readonly PackageEntry[] | null>(null);
@@ -128,6 +111,14 @@ export function PackagesPanel() {
     // Fetch the real installed inventory once on mount; searches and actions refresh it explicitly afterward.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const onPackagesChanged = () => void refreshCurrent();
+    window.addEventListener('space:packages-changed', onPackagesChanged);
+    return () => window.removeEventListener('space:packages-changed', onPackagesChanged);
+    // refreshCurrent is declared below and intentionally reads the current query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery]);
 
   useEffect(() => {
     if (debouncedQuery === '') {
@@ -179,17 +170,33 @@ export function PackagesPanel() {
       return;
     }
     setInFlightIds((prev) => new Set(prev).add(entry.id));
+    const activityId = `package:${entry.id}:${Date.now()}`;
+    const activityLabel = `${action === 'update' ? 'Updating' : action === 'install' ? 'Installing' : 'Removing'} ${entry.displayName}`;
+    if (action === 'update' || action === 'install') {
+      window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label: activityLabel, state: 'running' } }));
+    }
     try {
       const input = { source: entry.source, name: entry.name };
-      if (action === 'install') {
-        await window.space.packages.install(input);
-      } else if (action === 'update') {
-        await window.space.packages.update(input);
-      } else {
-        await window.space.packages.uninstall(input);
+      const result = action === 'install'
+        ? await window.space.packages.install(input)
+        : action === 'update'
+          ? await window.space.packages.update(input)
+          : await window.space.packages.uninstall(input);
+      if (!result.succeeded) {
+        throw new Error(result.message ?? `${action} failed for ${entry.displayName}.`);
+      }
+      if (action === 'update' || action === 'install') {
+        window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label: activityLabel, state: 'completed' } }));
       }
       await refreshCurrent();
     } catch (caught) {
+      if (action === 'update' || action === 'install') {
+        window.dispatchEvent(
+          new CustomEvent('space:installation-activity', {
+            detail: { id: activityId, label: activityLabel, state: 'failed', message: caught instanceof Error ? caught.message : String(caught) },
+          }),
+        );
+      }
       toast({ variant: 'error', message: caught instanceof Error ? caught.message : String(caught) });
     } finally {
       setInFlightIds((prev) => {
@@ -202,27 +209,23 @@ export function PackagesPanel() {
 
   return (
     <Card className="flex h-full flex-col">
-      <CardHeader>
-        <div>
-          <CardTitle>Packages</CardTitle>
-          <p className="mt-0.5 text-xs text-fg-muted">Search, install, and manage everything on this machine — Homebrew, npm, and WinGet in one place.</p>
-        </div>
-      </CardHeader>
-      <CardContent>
+      <CardHeader className="gap-4">
+        <CardTitle className="shrink-0">Packages</CardTitle>
         <Input
+          className="ml-auto max-w-sm"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search for any package or app…"
           aria-label="Search packages"
         />
-      </CardContent>
+      </CardHeader>
 
       {loading && list === null ? (
-        <CardContent className="pt-0">
+        <CardContent>
           <p className="text-sm text-fg-faint">Loading…</p>
         </CardContent>
       ) : list === null || list.length === 0 ? (
-        <CardContent className="pt-0">
+        <CardContent>
           <EmptyState
             icon={<Package size={20} />}
             title={isSearching ? `No packages found for "${debouncedQuery}".` : 'Nothing installed yet.'}
@@ -230,20 +233,19 @@ export function PackagesPanel() {
           />
         </CardContent>
       ) : (
-        <CardContent className="min-h-0 flex-1 overflow-y-auto pt-0">
-          <div className="grid grid-cols-1 gap-2">
-            {list.map((entry) => (
-              <PackageTile
-                key={entry.id}
-                entry={entry}
-                busy={inFlightIds.has(entry.id)}
-                onInstall={() => void runAction(entry, 'install')}
-                onUpdate={() => void runAction(entry, 'update')}
-                onRequestUninstall={() => setPendingRemoval(entry)}
-              />
-            ))}
-          </div>
-        </CardContent>
+        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+          {list.map((entry) => (
+            <PackageTile
+              key={entry.id}
+              entry={entry}
+              busy={inFlightIds.has(entry.id)}
+              onInstall={() => void runAction(entry, 'install')}
+              onUpdate={() => void runAction(entry, 'update')}
+              onRequestUninstall={() => setPendingRemoval(entry)}
+              hideUpdateAction={hideUpdateActions}
+            />
+          ))}
+        </div>
       )}
 
       <ConfirmDialog

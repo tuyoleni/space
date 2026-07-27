@@ -8,7 +8,7 @@
  * executable in tests/integration.
  *
  * Expected git invocation (constructed as executable + argument array):
- *   git log --all --topo-order --date-order --parents --decorate=full
+ *   git log --branches --remotes --tags --topo-order --date-order --parents --decorate=full
  *     --format=%x1e%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%ct%x1f%D%x1f%s%x1f%b
  */
 import type { CommitNode, RepositoryRef } from './types';
@@ -22,7 +22,13 @@ export const HISTORY_LOG_FORMAT =
 export function historyLogArgs(extra: readonly string[] = []): string[] {
   return [
     'log',
-    '--all',
+    // `--all` also walks refs/stash. A stash is implemented internally as
+    // one or more synthetic merge commits ("On …", "index on …"), which
+    // made the visible project history look fabricated. Stashes have their
+    // own real UI; the graph is strictly the branch/tag/remote commit DAG.
+    '--branches',
+    '--remotes',
+    '--tags',
     '--topo-order',
     '--date-order',
     '--parents',

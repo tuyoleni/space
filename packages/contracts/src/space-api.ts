@@ -6,6 +6,10 @@ import type {
   AiToolConnectResult,
   AiToolLaunchInput,
   AiToolLaunchResult,
+  AiToolOpenProjectInput,
+  AiToolOpenProjectResult,
+  AiToolTestConnectionInput,
+  AiToolTestConnectionResult,
   AiToolsStatus,
   McpSetEnabledInput,
   AgentCommitComposeInput,
@@ -102,6 +106,8 @@ import type {
   GithubAuthLogoutInput,
   GithubAuthReport,
   GithubAuthReportInput,
+  GithubContributionCalendar,
+  GithubContributionsInput,
   GithubAuthStartLoginInput,
   GithubAuthStartLoginResult,
   GithubChecksLoadInput,
@@ -154,6 +160,9 @@ import type {
   ProjectDetectionReport,
   ProjectEnvironmentInfo,
   ProjectEnvironmentInfoInput,
+  ProjectEnvironmentSetRuntimeInput,
+  ProjectEnvironmentOpenEnvFileInput,
+  ProjectEnvironmentActionResult,
   ProjectIconInput,
   ProjectIconResult,
   ProjectInspection,
@@ -228,6 +237,10 @@ export interface SpaceAPI {
     updateDependencies(input: InstallDependenciesInput): Promise<InstallDependenciesResult>;
     /** Real per-project runtime/package-manager/lockfile/scripts/env-var summary for the Environment screen's Project Environment panel. */
     environmentInfo(input: ProjectEnvironmentInfoInput): Promise<ProjectEnvironmentInfo>;
+    /** Pins the project's Node runtime by writing its .nvmrc. */
+    setEnvironmentRuntime(input: ProjectEnvironmentSetRuntimeInput): Promise<ProjectEnvironmentActionResult>;
+    /** Creates .env when missing and opens it in the operating system's text editor. */
+    openEnvironmentFile(input: ProjectEnvironmentOpenEnvFileInput): Promise<ProjectEnvironmentActionResult>;
     /** Opens the native folder picker for a create/clone destination parent. */
     pickParentDirectory(): Promise<string | null>;
     /** M8: fires the `project-opened` automation trigger (spec 18.2) — call once when the user actually opens a project's working view, not on every list render. */
@@ -312,6 +325,8 @@ export interface SpaceAPI {
   readonly github: {
     /** GH-001: CLI/auth state, active account, orgs, git protocol, token-source strategy — never the token itself. */
     authReport(input: GithubAuthReportInput): Promise<GithubAuthReport>;
+    /** The selected project's real Git contribution calendar; null when it has no repository/history. */
+    contributions(input: GithubContributionsInput): Promise<GithubContributionCalendar | null>;
     /** Starts `gh auth login` in a real PTY; subscribe to the returned sessionId via `terminal.subscribe` for live output. */
     authStartLogin(input: GithubAuthStartLoginInput): Promise<GithubAuthStartLoginResult>;
     authLogout(input: GithubAuthLogoutInput): Promise<void>;
@@ -406,6 +421,8 @@ export interface SpaceAPI {
     runNextStep(): Promise<BootstrapStatusResult>;
     /** Marks the run cancelled (ONB-001 user_cancelled) — steps already run stay recorded. */
     cancel(): Promise<BootstrapStatusResult>;
+    /** Opens the main Space window after required setup has completed. */
+    complete(): Promise<void>;
   };
   readonly automation: {
     /** spec 18.1: validated (workspaceId/project scope/trigger/conditions/ordered actions) before it is ever persisted. */
@@ -463,7 +480,7 @@ export interface SpaceAPI {
     processes(): Promise<readonly SystemProcessInfo[]>;
   };
   readonly aiTools: {
-    /** Local MCP server state plus every AI tool Space can wire to it, with real detection and real connected state. */
+    /** Local MCP server state plus every AI tool Space can configure, with real connected state. */
     status(): Promise<AiToolsStatus>;
     /** Starts/stops the loopback MCP server (same opt-in the Tools menu toggles). */
     setServerEnabled(input: McpSetEnabledInput): Promise<AiToolsStatus>;
@@ -481,6 +498,10 @@ export interface SpaceAPI {
      * instead of a raw shell. Subscribe to the returned sessionId for output.
      */
     launch(input: AiToolLaunchInput): Promise<AiToolLaunchResult>;
+    /** Opens the selected project's folder in the installed desktop application without relying on a PATH command. */
+    openProject(input: AiToolOpenProjectInput): Promise<AiToolOpenProjectResult>;
+    /** Performs a real MCP tool call and confirms the selected project routes to the expected Space workspace. */
+    testConnection(input: AiToolTestConnectionInput): Promise<AiToolTestConnectionResult>;
   };
   readonly dependencies: {
     /** Real `npm|pnpm audit --json` + `outdated --json` for one project's real package manager — read-only, never `audit fix`. Yarn reports `supported: false` with a reason instead of a guessed parse. */

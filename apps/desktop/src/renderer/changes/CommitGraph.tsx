@@ -134,22 +134,22 @@ function edgePath(from: number, to: number, y1: number, y2: number): string {
 function refBadge(ref: GitCommitRef, key: string): JSX.Element {
   if (ref.kind === 'HEAD') {
     return (
-      <Badge key={key} variant="accent">
-        HEAD
+      <Badge key={key} variant="accent" className="max-w-20">
+        <span className="truncate">HEAD</span>
       </Badge>
     );
   }
   if (ref.kind === 'tag') {
     return (
-      <Badge key={key} variant="warning">
-        {ref.name}
+      <Badge key={key} variant="warning" className="max-w-20">
+        <span className="truncate">{ref.name}</span>
       </Badge>
     );
   }
   // Remote branches read one notch quieter than local ones.
   return (
-    <Badge key={key} variant={ref.kind === 'remote-branch' ? 'neutral' : 'success'}>
-      {ref.name}
+    <Badge key={key} variant={ref.kind === 'remote-branch' ? 'neutral' : 'success'} className="max-w-24">
+      <span className="truncate">{ref.name}</span>
     </Badge>
   );
 }
@@ -168,14 +168,14 @@ export function CommitGraph({ commits }: CommitGraphProps) {
   const gutterWidth = layout.columns * LANE_WIDTH;
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-hidden">
       <ul className="min-w-full">
         {layout.rows.map((row) => {
           const when = formatRelativeTime(new Date(row.commit.committedAt).toISOString());
           const shortSha = row.commit.sha.slice(0, 7);
           const isMerge = row.commit.parents.length > 1;
           return (
-            <li key={row.commit.sha} className="flex items-stretch gap-3 rounded-md pr-2 hover:bg-surface-hover">
+            <li key={row.commit.sha} className="flex min-w-0 items-stretch gap-2 rounded-md pr-2 hover:bg-surface-hover">
               <svg width={gutterWidth} height={ROW_HEIGHT} className="shrink-0" aria-hidden>
                 {row.topEdges.map((edge, index) => (
                   <path
@@ -203,8 +203,9 @@ export function CommitGraph({ commits }: CommitGraphProps) {
               </svg>
 
               <div className="flex min-w-0 flex-1 flex-col justify-center py-1.5">
-                <div className="flex items-center gap-1.5">
-                  {row.commit.refs.map((ref, index) => refBadge(ref, `${row.commit.sha}-${index}`))}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {row.commit.refs.slice(0, 2).map((ref, index) => refBadge(ref, `${row.commit.sha}-${index}`))}
+                  {row.commit.refs.length > 2 && <Badge variant="neutral">+{row.commit.refs.length - 2}</Badge>}
                   <span className="truncate text-sm text-fg">{row.commit.subject}</span>
                 </div>
                 <div className="truncate text-[11px] text-fg-faint">

@@ -1,11 +1,10 @@
 import { Loader2, TriangleAlert } from 'lucide-react';
 import type { EnvironmentScanResult } from '@space/contracts';
-import { Button, Card, CardHeader, CardRows, CardTitle, EmptyState } from '@space/ui';
+import { Button, Card, CardHeader, CardRows, CardTitle } from '@space/ui';
 
 interface EnvironmentSuggestedActionsProps {
   readonly scan: EnvironmentScanResult | null;
   readonly onInstallTool: (toolId: string) => void;
-  readonly onUpdateTool: (toolId: string) => void;
   readonly busyToolIds: ReadonlySet<string>;
 }
 
@@ -23,12 +22,16 @@ interface Suggestion {
  * its own, so it can't drift from what the rest of the Environment screen
  * is showing.
  */
-export function EnvironmentSuggestedActions({ scan, onInstallTool, onUpdateTool, busyToolIds }: EnvironmentSuggestedActionsProps) {
+export function EnvironmentSuggestedActions({ scan, onInstallTool, busyToolIds }: EnvironmentSuggestedActionsProps) {
   const tools = scan?.tools ?? [];
+  // Environment is a readiness screen, not a software-update dashboard.
+  // Only blocked essentials earn a prominent action; optional tools and
+  // updates stay available in the compact details disclosure.
+  const requiredToolIds = new Set(['git', 'gh', 'node', 'npm']);
 
   const suggestions: Suggestion[] = [
     ...tools
-      .filter((tool) => !tool.found)
+      .filter((tool) => !tool.found && requiredToolIds.has(tool.toolId))
       .map((tool) => ({
         key: `install-${tool.toolId}`,
         toolId: tool.toolId,
@@ -36,43 +39,34 @@ export function EnvironmentSuggestedActions({ scan, onInstallTool, onUpdateTool,
         actionLabel: 'Install',
         onAction: onInstallTool,
       })),
-    ...tools
-      .filter((tool) => tool.updateAvailable === true)
-      .map((tool) => ({
-        key: `update-${tool.toolId}`,
-        toolId: tool.toolId,
-        message: `${tool.displayName} ${tool.version ?? '?'} → ${tool.latestVersion ?? '?'} available`,
-        actionLabel: 'Update',
-        onAction: onUpdateTool,
-      })),
   ];
+
+  if (suggestions.length === 0) {
+    return null;
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Suggested actions</CardTitle>
       </CardHeader>
-      {suggestions.length === 0 ? (
-        <EmptyState title="Everything looks good." className="border-none" />
-      ) : (
-        <CardRows>
-          {suggestions.map((suggestion) => {
-            const busy = busyToolIds.has(suggestion.toolId);
-            return (
-              <div key={suggestion.key} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <span className="flex min-w-0 items-center gap-2 text-fg">
-                  <TriangleAlert size={14} className="shrink-0 text-warning" />
-                  <span className="truncate">{suggestion.message}</span>
-                </span>
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => suggestion.onAction(suggestion.toolId)}>
-                  {busy ? <Loader2 size={12} className="animate-spin" /> : null}
-                  {busy ? 'Working…' : suggestion.actionLabel}
-                </Button>
-              </div>
-            );
-          })}
-        </CardRows>
-      )}
+      <CardRows>
+        {suggestions.map((suggestion) => {
+          const busy = busyToolIds.has(suggestion.toolId);
+          return (
+            <div key={suggestion.key} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2 text-fg">
+                <TriangleAlert size={14} className="shrink-0 text-warning" />
+                <span className="truncate">{suggestion.message}</span>
+              </span>
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => suggestion.onAction(suggestion.toolId)}>
+                {busy ? <Loader2 size={12} className="animate-spin" /> : null}
+                {busy ? 'Working…' : suggestion.actionLabel}
+              </Button>
+            </div>
+          );
+        })}
+      </CardRows>
     </Card>
   );
 }

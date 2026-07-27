@@ -1,7 +1,9 @@
-import { Hexagon, Layers, Loader2, MonitorDot } from 'lucide-react';
-import type { EnvironmentScanResult, GitRefEntry, GitStatusSummary, GithubAuthReport, Project, WorkspaceSummary } from '@space/contracts';
-import { StatusDot, TopbarMenu } from '@space/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { Bot, Hexagon, Layers, Loader2, MonitorDot, Plug, Unplug } from 'lucide-react';
+import type { AiToolConnection, AiToolsStatus, EnvironmentScanResult, GitRefEntry, GitStatusSummary, GithubAuthReport, Project, WorkspaceSummary } from '@space/contracts';
+import { StatusDot, TopbarMenu, useToast } from '@space/ui';
 import { BranchMenu } from './BranchMenu';
+import { AI_TOOL_BRAND, BrandIcon } from './brand-icons';
 
 interface AppTopbarProps {
   readonly workspaces: readonly WorkspaceSummary[];
@@ -88,6 +90,7 @@ export function AppTopbar({
           icon={<Hexagon size={13} className="text-success" />}
         />
         <TopbarMenu label="Environment" value="local" icon={<MonitorDot size={13} className="text-fg-muted" />} />
+        <AiToolsConnectionMenu />
         <TopbarMenu
           label="GitHub"
           value={githubConnected && githubReport?.activeAccount ? githubReport.activeAccount.account : 'Not connected'}
@@ -114,5 +117,119 @@ export function AppTopbar({
         )}
       </div>
     </header>
+  );
+}
+
+function DeveloperToolIcon({ tool, size = 14 }: { readonly tool: AiToolConnection; readonly size?: number }) {
+  if (tool.iconDataUrl) {
+    return (
+      <span className="flex shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm" style={{ width: size + 2, height: size + 2 }}>
+        <img src={tool.iconDataUrl} alt="" className="rounded-[3px]" style={{ width: size, height: size }} />
+      </span>
+    );
+  }
+  const brand = AI_TOOL_BRAND[tool.id];
+  return (
+    <span className="flex shrink-0 items-center justify-center rounded-[4px] bg-white p-px shadow-sm" style={{ width: size + 2, height: size + 2 }}>
+      {brand ? <BrandIcon icon={brand} size={size} /> : <Bot size={size} className="text-neutral-800" />}
+    </span>
+  );
+}
+
+function AiToolsConnectionMenu() {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<AiToolsStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setStatus(await window.space.aiTools.status());
+    } catch (caught) {
+      toast({ variant: 'error', message: caught instanceof Error ? caught.message : String(caught) });
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const tools = status?.tools ?? [];
+  const connectedTools = tools.filter((tool) => tool.connected);
+  const verifiedTools = tools.filter((tool) => tool.verified);
+  const serverEnabled = status?.server.enabled ?? false;
+  const allConnected = tools.length > 0 && verifiedTools.length === tools.length && serverEnabled;
+
+  async function handleAction(action: string): Promise<void> {
+    setBusy(true);
+    try {
+      if (action === 'connect-all') {
+        for (const tool of tools.filter((candidate) => !candidate.connected)) {
+          // The first connection may start the shared MCP server.
+          // eslint-disable-next-line no-await-in-loop
+          await window.space.aiTools.connect({ tool: tool.id });
+        }
+        toast({ variant: 'success', message: 'All developer tools are connected to Space. Restart open tools to load the Space tools.' });
+      } else if (action === 'enable') {
+        await window.space.aiTools.setServerEnabled({ enabled: true });
+        toast({ variant: 'success', message: 'Space MCP server is running.' });
+      } else {
+        const [operation, toolId] = action.split(':');
+        const tool = tools.find((candidate) => candidate.id === toolId);
+        if (!tool) {
+          throw new Error('That developer tool is no longer available.');
+        }
+        if (operation === 'connect') {
+          await window.space.aiTools.connect({ tool: tool.id });
+          toast({ variant: 'success', message: `${tool.displayName} connected to Space. Restart it to load the Space tools.` });
+        } else {
+          await window.space.aiTools.disconnect({ tool: tool.id });
+          toast({ variant: 'success', message: `${tool.displayName} disconnected from Space.` });
+        }
+      }
+      await refresh();
+    } catch (caught) {
+      toast({ variant: 'error', message: caught instanceof Error ? caught.message : String(caught) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const value = status === null
+    ? 'Checking…'
+    : connectedTools.length > 0 && !serverEnabled
+      ? 'Server off'
+      : `${verifiedTools.length}/${tools.length} ready`;
+  const options = [
+    ...(tools.some((tool) => !tool.connected) ? [{ value: 'connect-all', label: 'Connect all tools' }] : []),
+    ...(connectedTools.length > 0 && !serverEnabled ? [{ value: 'enable', label: 'Turn on Space MCP' }] : []),
+    ...tools.map((tool) => ({
+      value: `${tool.connected ? 'disconnect' : 'connect'}:${tool.id}`,
+      label: tool.displayName,
+      icon: <DeveloperToolIcon tool={tool} size={16} />,
+      trailingIcon: tool.connected
+        ? <Unplug size={14} className="text-fg-muted" aria-hidden />
+        : <Plug size={14} className="text-success" aria-hidden />,
+      ariaLabel: `${tool.connected ? 'Disconnect' : 'Connect'} ${tool.displayName}`,
+    })),
+  ];
+
+  const toolIcons = tools.slice(0, 4);
+
+  return (
+    <TopbarMenu
+      label="Developer tools"
+      value={busy ? 'Working…' : value}
+      icon={busy ? (
+        <Loader2 size={13} className="animate-spin text-fg-muted" />
+      ) : (
+        <span className="flex -space-x-1" aria-hidden>
+          {toolIcons.map((tool) => <DeveloperToolIcon key={tool.id} tool={tool} size={13} />)}
+          {toolIcons.length === 0 && <Bot size={13} className={allConnected ? 'text-success' : 'text-fg-muted'} />}
+        </span>
+      )}
+      options={options}
+      onSelect={(action) => void handleAction(action)}
+      disabled={busy || status === null}
+    />
   );
 }

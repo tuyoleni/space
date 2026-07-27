@@ -8,7 +8,7 @@ import { TOOL_MANIFEST, computeManifestFingerprint, verifyManifestFingerprint } 
  * guidance for any tool) changes this value — deliberately update the
  * constant below when that happens, so drift is never silent.
  */
-const PINNED_MANIFEST_FINGERPRINT = 'ec0c4086bf952a5bdda0655f49bbb97c1b265d3fa94c48f905804a050f4dddfd';
+const PINNED_MANIFEST_FINGERPRINT = '71e40d1a9a9404e5d4e36c95f77845bdbdeb3530bb47da8baa7b8fd815afaa8b';
 
 describe('TOOL_MANIFEST (spec section 8.3, ONB-003)', () => {
   it('declares exactly the default essential set (spec section 8.9)', () => {
@@ -33,11 +33,11 @@ describe('TOOL_MANIFEST (spec section 8.3, ONB-003)', () => {
     }
   });
 
-  it('git, gh, volta, node, and npm are the required essential tools; pnpm/Bun/Python are optional', () => {
+  it('git, gh, node, and npm are the required essentials; Volta and extra runtimes are optional', () => {
     const requiredIds = TOOL_MANIFEST.entries.filter((entry) => entry.required).map((entry) => entry.id);
     const optionalIds = TOOL_MANIFEST.entries.filter((entry) => !entry.required).map((entry) => entry.id);
-    expect(requiredIds).toEqual(['git', 'gh', 'volta', 'node', 'npm']);
-    expect(optionalIds).toEqual(['pnpm', 'bun', 'python']);
+    expect(requiredIds).toEqual(['git', 'gh', 'node', 'npm']);
+    expect(optionalIds).toEqual(['volta', 'pnpm', 'bun', 'python']);
   });
 
   it('every install strategy declares its official source, never a bare shell pipe', () => {
@@ -49,7 +49,7 @@ describe('TOOL_MANIFEST (spec section 8.3, ONB-003)', () => {
     }
   });
 
-  it('npm has no independent install strategy (bundled with Node via Volta)', () => {
+  it('npm has no independent install strategy (bundled with Node.js)', () => {
     const npm = TOOL_MANIFEST.entries.find((entry) => entry.id === 'npm');
     expect(npm?.installStrategies).toEqual([]);
   });
@@ -62,9 +62,10 @@ describe('TOOL_MANIFEST (spec section 8.3, ONB-003)', () => {
     }
   });
 
-  it('node is installed exclusively through Volta on both platforms (spec section 16.3)', () => {
+  it('node uses Homebrew on macOS and WinGet on Windows', () => {
     const node = TOOL_MANIFEST.entries.find((entry) => entry.id === 'node')!;
-    expect(node.installStrategies.every((strategy) => strategy.kind === 'volta-managed')).toBe(true);
+    expect(node.installStrategies.some((strategy) => strategy.platform === 'darwin' && strategy.packageManagerId === 'homebrew')).toBe(true);
+    expect(node.installStrategies.some((strategy) => strategy.platform === 'win32' && strategy.packageManagerId === 'winget')).toBe(true);
   });
 
   it('has a stable content fingerprint that changes if the manifest changes (integrity check, spec 8.3)', () => {

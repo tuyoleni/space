@@ -292,6 +292,10 @@ export const githubAuthReportInputSchema = z.object({
   host: z.string().min(1).optional(),
 });
 
+export const githubContributionsInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
 export const githubAuthStartLoginInputSchema = z.object({
   workspaceId: z.string().min(1),
   host: z.string().min(1).optional(),
@@ -706,7 +710,7 @@ export const packageActionInputSchema = z.object({
   name: z.string().trim().min(1).max(200),
 });
 
-const aiToolIdSchema = z.enum(['claude-code', 'cursor', 'vscode']);
+const aiToolIdSchema = z.enum(['claude-code', 'codex', 'cursor', 'vscode']);
 
 export const mcpSetEnabledInputSchema = z.object({ enabled: z.boolean() });
 
@@ -717,3 +721,10 @@ export const aiToolLaunchInputSchema = z.object({
   workspaceId: z.string().min(1),
   projectId: z.string().min(1),
 });
+
+export const projectEnvironmentSetRuntimeInputSchema = z.object({
+  projectId: z.string().min(1),
+  version: z.string().trim().regex(/^v?(?:\d+)(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/, 'Enter a Node version such as 24 or 24.4.1'),
+});
+
+export const projectEnvironmentOpenEnvFileInputSchema = z.object({ projectId: z.string().min(1) });

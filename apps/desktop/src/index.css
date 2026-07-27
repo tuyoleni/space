@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 @source '../../../packages/ui/src';
 
-/* Dark-theme design tokens, derived from designs/*.png. No light variant is
-   authored (none of the reference mockups show one) — color-scheme stays
-   `dark` so native form controls (scrollbars, checkboxes) match rather than
-   defaulting to a light UA style that would clash with every surface here.
+/* Theme tokens. Dark remains the default, while the light palette below
+   follows the operating system. Both variants use the same semantic names,
+   so a screen cannot accidentally retain a dark card or muted dark text when
+   the system appearance changes.
 
    The window itself is translucent (main.ts: macOS `vibrancy:
    'under-window'` / Windows Mica over a fully transparent backgroundColor),
@@ -44,6 +44,24 @@
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, sans-serif;
+
+  /* Space type scale — every screen maps onto these roles. The app is
+     intentionally compact: 12px is the primary reading/row size, 11px is
+     supporting copy, 10px is metadata, and headings step up only when the
+     hierarchy needs it. Keeping line heights here prevents a browser/default control
+     from quietly changing the rhythm on one screen. */
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.75rem;
+  --text-sm--line-height: 1rem;
+  --text-base: 0.8125rem;
+  --text-base--line-height: 1.125rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.25rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.375rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.625rem;
 }
 
 :root {
@@ -52,6 +70,33 @@
      element in the app gets a consistent, always-visible ring, never left
      to the platform's (sometimes-suppressed) default. */
   --space-focus-ring: var(--color-focus);
+}
+
+/* The app window uses macOS vibrancy / Windows Mica, so light surfaces need
+   enough opacity to remain legible over the desktop without turning into a
+   flat sheet of grey. Keeping this at the token layer fixes every card,
+   sidebar, input, popover and border consistently. */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-app-bg: rgb(248 250 252 / 0.82);
+    --color-sidebar: rgb(241 245 249 / 0.76);
+    --color-surface: rgb(255 255 255 / 0.88);
+    --color-surface-hover: rgb(226 232 240 / 0.9);
+    --color-border: rgb(15 23 42 / 0.12);
+    --color-border-strong: rgb(15 23 42 / 0.2);
+    --color-popover: rgb(255 255 255 / 0.98);
+    --color-fg: #172033;
+    --color-fg-muted: #536176;
+    --color-fg-faint: #7c899b;
+    --color-accent: #2563eb;
+    --color-accent-hover: #1d4ed8;
+    --color-accent-fg: #ffffff;
+    --color-success: #15803d;
+    --color-warning: #a16207;
+    --color-danger: #dc2626;
+    --color-focus: #2563eb;
+  }
 }
 
 html,
@@ -63,8 +108,42 @@ body,
 
 body {
   font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-synthesis: none;
+  letter-spacing: -0.01em;
   background: var(--color-app-bg);
   color: var(--color-fg);
+}
+
+/* Native controls otherwise retain platform-specific font metrics, which
+   made the same input/menu text appear larger than adjacent app controls. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+/* The three non-content roles used throughout the app. These are named so
+   new work does not introduce one-off 10px/11px/12px variations. */
+.space-type-label {
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.space-type-meta {
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+}
+
+.space-type-body {
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 /* Hide the native scrollbars on every scroll container in the app — the

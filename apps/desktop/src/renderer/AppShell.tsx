@@ -28,10 +28,9 @@ import { ProjectsView } from './views/ProjectsView';
 import { SystemView } from './views/SystemView';
 import { ProjectIssueDialog } from './ProjectIssueDialog';
 import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } from './views/ProjectDialogs';
-import { OnboardingWizard } from './OnboardingWizard';
 import { GithubSetupPrompt } from './GithubSetupPrompt';
 import { useGithubAuth } from './useGithubAuth';
-import { GithubAuthControls } from './GithubAuthControls';
+import { GithubAuthDialog } from './GithubAuthDialog';
 
 export interface ProjectRuntimeState {
   readonly detections: Record<string, ProjectDetectionReport>;
@@ -50,6 +49,7 @@ export interface ProjectActions {
   readonly stopDevServer: (project: Project, devProcessId: string) => void;
   readonly stopService: (project: Project, service: ServiceInfo) => void;
   readonly openTerminal: (project: Project) => void;
+  readonly runScript: (project: Project, scriptName: string) => void;
   readonly closeTerminal: (project: Project) => void;
 }
 
@@ -66,6 +66,7 @@ export function AppShell() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [templates, setTemplates] = useState<ProjectTemplateSummary[]>([]);
   const [busy, setBusy] = useState(false);
+  const [busyMessage, setBusyMessage] = useState('Working…');
   const { toast } = useToast();
   const [envScan, setEnvScan] = useState<EnvironmentScanResult | null>(null);
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
@@ -82,7 +83,6 @@ export function AppShell() {
   const [projectIssue, setProjectIssue] = useState<ProjectIssue | null>(null);
   const [projectPendingRemoval, setProjectPendingRemoval] = useState<Project | null>(null);
   const [cloneOpen, setCloneOpen] = useState(false);
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -90,11 +90,6 @@ export function AppShell() {
   }, []);
 
   const [storageDegraded, setStorageDegraded] = useState(false);
-  // Distinct from `workspaces.length === 0`: that's also true for a split
-  // second on every launch before the real list arrives. The onboarding
-  // wizard must only ever judge "zero workspaces" once this is true —
-  // otherwise every returning user would see it flash on startup.
-  const [workspacesLoaded, setWorkspacesLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +103,6 @@ export function AppShell() {
           await refreshWorkspaces();
           setTemplates(await window.space.project.listTemplates());
           setStorageDegraded(false);
-          setWorkspacesLoaded(true);
           return;
         } catch {
           if (attempt >= 1) {
@@ -201,7 +195,8 @@ export function AppShell() {
     }
   }, [activeWorkspaceId, refreshTerminalCount, view]);
 
-  async function runGuarded(action: () => Promise<void>): Promise<void> {
+  async function runGuarded(message: string, action: () => Promise<void>): Promise<void> {
+    setBusyMessage(message);
     setBusy(true);
     try {
       await action();
@@ -209,6 +204,7 @@ export function AppShell() {
       toast({ variant: 'error', message: toErrorMessage(caught) });
     } finally {
       setBusy(false);
+      setBusyMessage('Working…');
     }
   }
 
@@ -218,14 +214,14 @@ export function AppShell() {
   }
 
   function handleCreateWorkspace(name: string): void {
-    void runGuarded(async () => {
+    void runGuarded('Creating workspace…', async () => {
       await window.space.workspace.create({ name });
       await refreshWorkspaces();
     });
   }
 
   function handleActivateWorkspace(workspaceId: string): void {
-    void runGuarded(async () => {
+    void runGuarded('Switching workspace…', async () => {
       await window.space.workspace.activate(workspaceId);
       await refreshWorkspaces();
     });
@@ -236,7 +232,7 @@ export function AppShell() {
       return;
     }
     const projectId = selectedProject.id;
-    void runGuarded(async () => {
+    void runGuarded('Switching branch…', async () => {
       // `branchName` is a full refname (refs/heads/… or refs/remotes/…);
       // the engine normalizes it to the switch target (and DWIMs a tracking
       // branch for a remote), so it is passed through as-is here.
@@ -250,7 +246,7 @@ export function AppShell() {
       return;
     }
     const projectId = selectedProject.id;
-    void runGuarded(async () => {
+    void runGuarded('Creating branch…', async () => {
       await window.space.git.createBranch({ projectId, name: name.trim() });
       await window.space.git.switchBranch({ projectId, name: name.trim() });
       await refreshGitContext();
@@ -263,7 +259,7 @@ export function AppShell() {
       return;
     }
     const projectId = selectedProject.id;
-    void runGuarded(async () => {
+    void runGuarded('Fetching from remote…', async () => {
       await window.space.git.fetch({ projectId });
       await refreshGitContext();
       toast({ variant: 'success', message: 'Fetched from remote.' });
@@ -284,7 +280,7 @@ export function AppShell() {
     const projectId = selectedProject.id;
     const branch = gitStatus.branch.branchName;
     const setUpstream = !gitStatus.branch.upstream;
-    void runGuarded(async () => {
+    void runGuarded('Pushing to remote…', async () => {
       const diagnosis = await window.space.project.diagnose({ projectId, action: 'push' });
       if (diagnosis.blocking) {
         setProjectIssue(diagnosis.blocking);
@@ -320,7 +316,7 @@ export function AppShell() {
       return;
     }
     const workspaceId = activeWorkspace.id;
-    void runGuarded(async () => {
+    void runGuarded('Adding folder…', async () => {
       const picked = await window.space.project.pickFolder();
       if (!picked) {
         return;
@@ -344,7 +340,7 @@ export function AppShell() {
       return;
     }
     const workspaceId = activeWorkspace.id;
-    void runGuarded(async () => {
+    void runGuarded('Removing project from Space…', async () => {
       const result = await window.space.project.remove({ projectId: project.id });
       setProjectPendingRemoval(null);
       await refreshProjects(workspaceId);
@@ -361,7 +357,7 @@ export function AppShell() {
     }
     const workspaceId = activeWorkspace.id;
     const template = templates.find((candidate) => candidate.id === request.templateId);
-    void runGuarded(async () => {
+    void runGuarded(`Creating ${request.name.trim()}…`, async () => {
       const destinationParentDirectory = await window.space.project.pickParentDirectory();
       if (!destinationParentDirectory) {
         return;
@@ -402,7 +398,7 @@ export function AppShell() {
       return;
     }
     const workspaceId = activeWorkspace.id;
-    void runGuarded(async () => {
+    void runGuarded('Cloning repository…', async () => {
       const destinationParentDirectory = await window.space.project.pickParentDirectory();
       if (!destinationParentDirectory) {
         return;
@@ -423,13 +419,13 @@ export function AppShell() {
       selectProject(project.id);
     },
     detect(project) {
-      void runGuarded(async () => {
+      void runGuarded(`Inspecting ${project.name}…`, async () => {
         const report = await window.space.project.detect({ canonicalPath: project.canonicalPath });
         setRuntime((prev) => ({ ...prev, detections: { ...prev.detections, [project.id]: report } }));
       });
     },
     trustDecision(project, decision) {
-      void runGuarded(async () => {
+      void runGuarded(`Updating trust for ${project.name}…`, async () => {
         await window.space.project.trustDecision({ projectId: project.id, decision });
         if (activeWorkspaceId) {
           await refreshProjects(activeWorkspaceId);
@@ -437,7 +433,7 @@ export function AppShell() {
       });
     },
     install(project, allowOnce) {
-      void runGuarded(async () => {
+      void runGuarded(`Installing dependencies for ${project.name}…`, async () => {
         const result = await window.space.project.installDependencies({ projectId: project.id, allowOnce });
         toast(
           result.succeeded
@@ -447,7 +443,7 @@ export function AppShell() {
       });
     },
     update(project, allowOnce) {
-      void runGuarded(async () => {
+      void runGuarded(`Updating dependencies for ${project.name}…`, async () => {
         const result = await window.space.project.updateDependencies({ projectId: project.id, allowOnce });
         toast(
           result.succeeded
@@ -457,7 +453,7 @@ export function AppShell() {
       });
     },
     startDevServer(project, allowOnce) {
-      void runGuarded(async () => {
+      void runGuarded(`Starting ${project.name}…`, async () => {
         await window.space.devServer.start({ projectId: project.id, allowOnce });
         const [list, services] = await Promise.all([window.space.devServer.list(project.id), window.space.services.list(project.id)]);
         setRuntime((prev) => ({
@@ -468,7 +464,7 @@ export function AppShell() {
       });
     },
     stopDevServer(project, devProcessId) {
-      void runGuarded(async () => {
+      void runGuarded(`Stopping ${project.name}…`, async () => {
         await window.space.devServer.stop({ devProcessId });
         const [list, services] = await Promise.all([window.space.devServer.list(project.id), window.space.services.list(project.id)]);
         setRuntime((prev) => ({
@@ -479,7 +475,7 @@ export function AppShell() {
       });
     },
     stopService(project, service) {
-      void runGuarded(async () => {
+      void runGuarded(`Stopping ${service.label}…`, async () => {
         await window.space.services.stop({ id: service.id, kind: service.kind });
         const [list, services] = await Promise.all([window.space.devServer.list(project.id), window.space.services.list(project.id)]);
         setRuntime((prev) => ({
@@ -494,10 +490,28 @@ export function AppShell() {
         return;
       }
       const workspaceId = activeWorkspace.id;
-      void runGuarded(async () => {
+      void runGuarded(`Opening terminal for ${project.name}…`, async () => {
         const session = await window.space.terminal.create({ workspaceId, projectId: project.id, cols: 100, rows: 28 });
         setRuntime((prev) => ({ ...prev, openTerminal: { ...prev.openTerminal, [project.id]: session } }));
         await refreshTerminalCount(workspaceId);
+      });
+    },
+    runScript(project, scriptName) {
+      if (!activeWorkspace) {
+        return;
+      }
+      const workspaceId = activeWorkspace.id;
+      void runGuarded(`Running ${scriptName}…`, async () => {
+        const environment = await window.space.project.environmentInfo({ projectId: project.id });
+        if (!environment.scriptNames.includes(scriptName)) {
+          throw new Error(`The script "${scriptName}" is no longer available in ${project.name}.`);
+        }
+        const packageManager = environment.packageManager ?? 'npm';
+        const session = await window.space.terminal.create({ workspaceId, projectId: project.id, cols: 100, rows: 28 });
+        await window.space.terminal.write({ sessionId: session.id, data: `${packageManager} run ${scriptName}\r` });
+        setRuntime((prev) => ({ ...prev, openTerminal: { ...prev.openTerminal, [project.id]: session } }));
+        await refreshTerminalCount(workspaceId);
+        setView('terminal');
       });
     },
     closeTerminal(project) {
@@ -506,7 +520,7 @@ export function AppShell() {
         return;
       }
       const workspaceId = activeWorkspaceId;
-      void runGuarded(async () => {
+      void runGuarded(`Closing terminal for ${project.name}…`, async () => {
         await window.space.terminal.dispose({ sessionId: session.id });
         setRuntime((prev) => {
           const next = { ...prev.openTerminal };
@@ -659,6 +673,7 @@ export function AppShell() {
                   selectedProjectId={selectedProject?.id ?? null}
                   activeWorkspaceId={activeWorkspace?.id ?? null}
                   githubReport={githubAuth.report}
+                  {...(selectedProject ? { onRunScript: (scriptName: string) => actions.runScript(selectedProject, scriptName) } : {})}
                 />
               </div>
             )}
@@ -721,33 +736,30 @@ export function AppShell() {
         </div>
       </div>
 
-      {/*
-        Removing a project is about Space's own record of it, never the
-        user's files — the confirmation says so explicitly and names the
-        exact path being left behind, because "Remove" next to a project
-        name reads as "delete my work" to most people.
-      */}
       <Dialog
         open={projectPendingRemoval !== null}
         onOpenChange={(next) => !next && setProjectPendingRemoval(null)}
-        title={`Remove "${projectPendingRemoval?.name ?? ''}" from Space?`}
+        title="Remove project?"
         footer={
           <>
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => setProjectPendingRemoval(null)}>
               Cancel
             </Button>
-            <Button variant="primary" size="sm" disabled={busy} onClick={handleRemoveProject}>
-              Remove from Space
+            <Button variant="danger" size="sm" disabled={busy} onClick={handleRemoveProject}>
+              Remove project
             </Button>
           </>
         }
       >
-        <p className="text-sm text-fg-muted">
-          This only removes it from your Space workspace. Nothing on disk is touched — the folder, its Git history, and every
-          file stay exactly where they are, at{' '}
-          <code className="text-fg">{projectPendingRemoval?.canonicalPath}</code>. You can add it back at any time with Add
-          Folder.
-        </p>
+        <div className="space-y-3">
+          <p className="text-sm text-fg-muted">
+            Removes <span className="font-medium text-fg">{projectPendingRemoval?.name}</span> from Space only. Your files and Git history stay on this Mac.
+          </p>
+          <div className="rounded-md bg-surface px-3 py-2" title={projectPendingRemoval?.canonicalPath}>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-fg-faint">Folder</p>
+            <code className="block truncate pt-0.5 text-xs text-fg-muted">{projectPendingRemoval?.canonicalPath}</code>
+          </div>
+        </div>
       </Dialog>
 
       <ProjectIssueDialog
@@ -755,6 +767,7 @@ export function AppShell() {
         onOpenChange={(next) => !next && setProjectIssue(null)}
         issue={projectIssue}
         projectId={selectedProject?.id ?? ''}
+        onGithubSignIn={githubAuth.signIn}
         onResolved={async () => {
           if (activeWorkspace) {
             await refreshProjects(activeWorkspace.id);
@@ -771,29 +784,21 @@ export function AppShell() {
       />
       <CloneProjectDialog open={cloneOpen} onOpenChange={setCloneOpen} onClone={handleCloneProject} />
 
-      <Dialog
-        open={Boolean(githubAuth.loginSession)}
-        onOpenChange={(open) => !open && githubAuth.dismissLogin()}
-        title="Sign in to GitHub"
-        size="lg"
-      >
-        <GithubAuthControls
-          report={githubAuth.report}
-          loginSession={githubAuth.loginSession}
-          busy={githubAuth.busy}
-          onRefresh={() => void githubAuth.refreshReport()}
-          onSignIn={githubAuth.signIn}
-          onSignOut={githubAuth.signOut}
-        />
+      <Dialog open={busy} onOpenChange={() => undefined} title={busyMessage} dismissible={false}>
+        <div className="flex items-center gap-3 text-sm text-fg-muted" role="status" aria-live="polite">
+          <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-fg-faint border-t-accent" aria-hidden="true" />
+          This can take a moment. Space is still working.
+        </div>
       </Dialog>
 
-      {/* First-run only: the real workspace list has loaded (not just the
-          pre-load empty array) and it's genuinely zero — never flash this
-          on a normal launch, and never layer it over the "storage is
-          starting up" retry banner above. */}
-      {workspacesLoaded && workspaces.length === 0 && !storageDegraded && !onboardingDismissed && (
-        <OnboardingWizard onCreateWorkspace={handleCreateWorkspace} onDismiss={() => setOnboardingDismissed(true)} />
-      )}
+      <GithubAuthDialog
+        open={githubAuth.loginOpen}
+        report={githubAuth.report}
+        session={githubAuth.loginSession}
+        busy={githubAuth.busy}
+        onClose={githubAuth.dismissLogin}
+        onRefresh={githubAuth.refreshReport}
+      />
 
       {githubSetupProject && activeWorkspaceId && (
         <GithubSetupPrompt

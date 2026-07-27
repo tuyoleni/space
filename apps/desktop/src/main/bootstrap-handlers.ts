@@ -17,6 +17,8 @@
  */
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
   TOOL_MANIFEST,
   buildMacOsBootstrapPlan,
@@ -110,6 +112,28 @@ async function toStatusResult(storage: StorageCaller, run: RunRow | null): Promi
 /** Picks the tool manifest entry a planned step targets — every install/verify-only step has one; prerequisite/shell-integration steps may not. */
 function manifestEntryFor(step: PlannedStep) {
   return step.toolId ? TOOL_MANIFEST.entries.find((entry) => entry.id === step.toolId) ?? null : null;
+}
+
+/**
+ * Volta intentionally updates the user's shell profile, not Space's already
+ * running process. Its documented shim location is therefore a real fallback
+ * for this bootstrap run, while every other command still resolves from PATH.
+ */
+async function resolveBootstrapExecutable(executable: string): Promise<string | null> {
+  const fromPath = await nodeResolveOnPath(executable);
+  if (fromPath) {
+    return fromPath;
+  }
+  if (!['volta', 'node', 'npm'].includes(executable)) {
+    return null;
+  }
+  const voltaShim = path.join(os.homedir(), '.volta', 'bin', executable);
+  try {
+    await fs.access(voltaShim);
+    return voltaShim;
+  } catch {
+    return null;
+  }
 }
 
 export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandlers {
@@ -228,6 +252,15 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
     if (nextIndex === -1) {
       // Nothing pending: either already terminal, or this is the call that
       // discovers the last step just finished — settle the run either way.
+      if (run.status === 'plan_ready') {
+        const installing = transition(run.status, { type: 'start_installing' });
+        const active = await storage.call<RunRow>('bootstrap.updateStatus', {
+          id: run.id,
+          status: installing.status,
+          updatedAt: new Date().toISOString(),
+        });
+        return finishInstalling(active, rows);
+      }
       return run.status === 'installing' ? finishInstalling(run, rows) : toStatusResult(storage, run);
     }
 
@@ -246,7 +279,7 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
     // Re-derive from the real, current machine state rather than trusting
     // the scan taken when the plan was built — time may have passed, and
     // spec 39 forbids treating a stale/cached signal as "already present".
-    const alreadyResolved = entry ? await nodeResolveOnPath(entry.detection[0]?.executable ?? entry.id) : null;
+    const alreadyResolved = entry ? await resolveBootstrapExecutable(entry.detection[0]?.executable ?? entry.id) : null;
     const priorScan = entry ? { toolId: entry.id, found: alreadyResolved !== null, path: alreadyResolved, version: null, meetsMinimumVersion: null } : undefined;
 
     const record: StepExecutionRecord = await executeStep(step, priorScan, {
@@ -262,7 +295,8 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
         // uses — otherwise executeStep never gets to record the step as
         // `failed` and the raw Node error leaks to the caller instead of a
         // real, upserted (and therefore retryable) step outcome.
-        return nodeRunCommand(plannedStep.strategy.executable, plannedStep.strategy.args, { timeoutMs: 180_000 }).catch(
+        const executable = (await resolveBootstrapExecutable(plannedStep.strategy.executable)) ?? plannedStep.strategy.executable;
+        return nodeRunCommand(executable, plannedStep.strategy.args, { timeoutMs: 180_000 }).catch(
           (error: unknown) => ({ exitCode: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) }),
         );
       },
@@ -283,7 +317,7 @@ export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandle
             failureReason: `"${toolId}" is not a known manifest entry.`,
           };
         }
-        return verifyTool(verifyEntry, { resolveOnPath: nodeResolveOnPath, runCommand: nodeRunCommand, architecture: nodeOsInfoPort.architecture() });
+        return verifyTool(verifyEntry, { resolveOnPath: resolveBootstrapExecutable, runCommand: nodeRunCommand, architecture: nodeOsInfoPort.architecture() });
       },
     });
 

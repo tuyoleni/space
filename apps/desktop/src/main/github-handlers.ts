@@ -95,7 +95,7 @@ import {
 } from '@space/git-engine';
 import type { CredentialStorePort } from '@space/security';
 import { RedactionRegistry } from '@space/workspace-runner';
-import type { GithubAuthReport, Project } from '@space/contracts';
+import type { GithubAuthReport, GithubContributionCalendar, Project } from '@space/contracts';
 import type { TerminalWorkerEvent, TerminalWorkerMethod } from '@space/terminal';
 import { buildSpaceEnvironment } from './environment-policy';
 import { recordOperation, type StorageCaller } from './project-handlers';
@@ -242,6 +242,44 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
     const { gh } = await scopedExecutors(workspaceId, host);
     const tokenSourceStrategy: TokenSourceStrategy = connection?.secretRefId ? 'space-managed-os-keychain' : 'gh-default';
     return loadGithubAuthReport(gh, { tokenSourceStrategy, host });
+  }
+
+  /** Real project-scoped activity: reads this repository's commit dates, never the signed-in account's global calendar. */
+  async function contributions(projectId: string): Promise<GithubContributionCalendar | null> {
+    const project = await requireProject(projectId);
+    if (!project.repositoryRoot) return null;
+    const result = await baseGitExecutor(['log', '--all', '--format=%ad', '--date=short'], { cwd: project.repositoryRoot });
+    if (result.exitCode !== 0) return null;
+    const countByDate = new Map<string, number>();
+    for (const date of result.stdout.split(/\r?\n/)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) countByDate.set(date, (countByDate.get(date) ?? 0) + 1);
+    }
+    if (countByDate.size === 0) return null;
+    const totalContributions = [...countByDate.values()].reduce((total, count) => total + count, 0);
+    const maxCount = Math.max(1, ...countByDate.values());
+    const nowDate = new Date(now());
+    const today = new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate()));
+    const firstCommitDate = [...countByDate.keys()].sort()[0];
+    if (!firstCommitDate) return null;
+    const start = new Date(`${firstCommitDate}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+    const weekCount = Math.floor((today.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+    const levelFor = (count: number): GithubContributionCalendar['weeks'][number][number]['level'] => {
+      if (count === 0) return 'NONE';
+      const ratio = count / maxCount;
+      return ratio <= 0.25 ? 'FIRST_QUARTILE' : ratio <= 0.5 ? 'SECOND_QUARTILE' : ratio <= 0.75 ? 'THIRD_QUARTILE' : 'FOURTH_QUARTILE';
+    };
+    return {
+      projectName: project.name,
+      totalContributions,
+      weeks: Array.from({ length: weekCount }, (_, weekIndex) => Array.from({ length: 7 }, (_, dayIndex) => {
+        const date = new Date(start);
+        date.setUTCDate(start.getUTCDate() + weekIndex * 7 + dayIndex);
+        const isoDate = date.toISOString().slice(0, 10);
+        const count = date > today ? 0 : (countByDate.get(isoDate) ?? 0);
+        return { date: isoDate, count, level: levelFor(count) };
+      })),
+    };
   }
 
   /**
@@ -743,6 +781,7 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
 
   return {
     authReport,
+    contributions,
     resolveFallbackIdentity,
     startAuthLogin,
     logout,

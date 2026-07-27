@@ -7,9 +7,11 @@
  * Two rules shape this file:
  *
  *  1. **Only tools whose config Space can write for real.** Every entry here
- *     is either driven by the tool's own CLI (which owns its config file) or
- *     by a documented user-level JSON config whose exact shape is encoded
- *     below. A tool whose format Space would have to guess at is left out
+ *     is either driven by the tool's own CLI or uses a documented user-level
+ *     config whose exact shape is encoded below. Config-file connections do
+ *     not require the app or CLI to be running: Space can prepare the config
+ *     now and the tool will load it on its next launch. A tool whose format
+ *     Space would have to guess at is left out
  *     rather than half-supported — the same "never fabricate" rule the
  *     connected-services panel follows for un-deployable services.
  *  2. **User scope, not project scope.** Space's MCP tools are already
@@ -32,6 +34,10 @@ export const SPACE_MCP_SERVER_NAME = 'space';
 
 /** The JSON key a tool nests its MCP servers under — VS Code uses `servers`, the others `mcpServers`. */
 type McpConfigRootKey = 'mcpServers' | 'servers';
+
+/** A block Space owns inside Codex's TOML config. It lets disconnect be lossless. */
+const CODEX_BLOCK_START = '# BEGIN Space MCP (managed by Space)';
+const CODEX_BLOCK_END = '# END Space MCP (managed by Space)';
 
 export interface AiToolPaths {
   /** `os.homedir()`. */
@@ -61,13 +67,27 @@ function authHeaders(token: string): Record<string, string> {
 
 export const AI_TOOLS: readonly AiToolDefinition[] = [
   {
+    id: 'codex',
+    displayName: 'Codex',
+    mechanism: 'config-file',
+    launchExecutable: null,
+    cli: null,
+    configFile: (paths) => path.join(paths.homeDirectory, '.codex', 'config.toml'),
+    // Codex uses TOML rather than this JSON format; its connection is handled
+    // by the dedicated helpers below.
+    rootKey: 'mcpServers',
+    entry: () => ({}),
+  },
+  {
     id: 'claude-code',
     displayName: 'Claude Code',
-    mechanism: 'cli',
+    mechanism: 'config-file',
     launchExecutable: 'claude',
-    cli: 'claude',
-    configFile: null,
-    // Unused for CLI-driven tools — `claude mcp add` builds its own entry.
+    cli: null,
+    // This is the same user-scope config owned by `claude mcp add --scope
+    // user`. Writing it directly keeps connection available when Claude Code
+    // is bundled in a desktop app or otherwise absent from Electron's PATH.
+    configFile: (paths) => path.join(paths.homeDirectory, '.claude.json'),
     rootKey: 'mcpServers',
     entry: (url, token) => ({ type: 'http', url, headers: authHeaders(token) }),
   },
@@ -158,12 +178,58 @@ export async function writeJsonConfig(filePath: string, config: Record<string, u
   await fs.writeFile(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
-export async function pathExists(target: string): Promise<boolean> {
+function codexBlock(url: string, token: string): string {
+  // JSON string escaping is also valid TOML basic-string escaping.
+  return `${CODEX_BLOCK_START}\n[mcp_servers.${SPACE_MCP_SERVER_NAME}]\nurl = ${JSON.stringify(url)}\nhttp_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }\n${CODEX_BLOCK_END}\n`;
+}
+
+function codexBlockPattern(): RegExp {
+  return /\n?# BEGIN Space MCP \(managed by Space\)\r?\n[\s\S]*?# END Space MCP \(managed by Space\)\r?\n?/g;
+}
+
+/** True only for the entry Space itself has written; a user's Codex MCP server is never claimed as ours. */
+export async function hasManagedCodexServer(filePath: string): Promise<boolean> {
   try {
-    await fs.stat(target);
-    return true;
+    return (await fs.readFile(filePath, 'utf8')).includes(CODEX_BLOCK_START);
   } catch {
     return false;
+  }
+}
+
+/**
+ * Add Space's local HTTP MCP server to Codex's user config without parsing or
+ * reserializing the rest of the user's TOML. A pre-existing `space` entry is
+ * deliberately treated as a conflict rather than overwritten.
+ */
+export async function connectCodexServer(filePath: string, url: string, token: string): Promise<boolean> {
+  let current = '';
+  try {
+    current = await fs.readFile(filePath, 'utf8');
+  } catch {
+    // The parent directory is created below for a first-time Codex setup.
+  }
+  if (current.includes(CODEX_BLOCK_START)) {
+    return false;
+  }
+  if (/^\s*\[mcp_servers\.space\]\s*$/m.test(current)) {
+    throw new Error("Codex already has an MCP server named 'space' that Space did not create. Rename or remove it in ~/.codex/config.toml before connecting from Space.");
+  }
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.appendFile(filePath, `${current && !current.endsWith('\n') ? '\n' : ''}\n${codexBlock(url, token)}`, { encoding: 'utf8', mode: 0o600 });
+  return true;
+}
+
+/** Remove only the exact marker-delimited block Space created. */
+export async function disconnectCodexServer(filePath: string): Promise<void> {
+  let current: string;
+  try {
+    current = await fs.readFile(filePath, 'utf8');
+  } catch {
+    return;
+  }
+  const next = current.replace(codexBlockPattern(), '');
+  if (next !== current) {
+    await fs.writeFile(filePath, next, 'utf8');
   }
 }
 

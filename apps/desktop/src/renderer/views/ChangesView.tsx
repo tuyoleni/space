@@ -29,6 +29,7 @@ import { CommitGraph } from '../changes/CommitGraph';
 import { RecentActivityCard, type ActivityEvent as ActivityFeedEvent, type ActivityKind } from '../changes/RecentActivityCard';
 import { StashesCard } from '../changes/StashesCard';
 import { ActivePullRequestsCard, type PullRequestRow, type PullRequestState } from '../changes/ActivePullRequestsCard';
+import { GithubContributionCalendar } from '../changes/GithubContributionCalendar';
 
 /**
  * The unified "GitHub" screen (formerly "Changes"). It folds the former
@@ -696,7 +697,7 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
 
   if (!project) {
     return (
-      <div className="p-6">
+      <div className="p-2">
         <EmptyState title="No project selected" description="Pick a project in the sidebar to review and stage its changes." />
       </div>
     );
@@ -706,7 +707,7 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
     // carries the fix, since `git init` is the whole remedy and Space can
     // run it directly.
     return (
-      <div className="p-6">
+      <div className="p-2">
         <EmptyState
           title="Not a Git repository"
           description={`"${project.name}" has no repository yet. Initializing one creates it in place and makes an initial commit — nothing already in the folder is moved or removed.`}
@@ -759,7 +760,7 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-6 pb-4">
+      <div className="flex-1 space-y-2 overflow-y-auto p-2">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-xl font-semibold text-fg">GitHub</h1>
@@ -799,10 +800,49 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
           onGroupByChange={setGroupBy}
         />
 
-        {/* Three columns: change list · commit graph · conflict resolver / diff. */}
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)]">
+        {/* Match the workspace hierarchy: contribution activity above the
+            change/diff panes, with commit history held in a fixed right
+            column. Nothing is off-canvas and each area stays visible. */}
+        <div className="grid gap-2 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(20rem,0.95fr)] xl:grid-rows-[auto_minmax(0,1fr)]">
+          <div className="min-w-0 xl:col-span-2">
+            <GithubContributionCalendar projectId={project.id} />
+          </div>
+
+          <Card className="flex min-w-0 flex-col xl:col-start-3 xl:row-span-2">
+          <CardHeader>
+            <CardTitle className="truncate">
+              {project.name} <span className="font-normal text-fg-faint">({branchName})</span>
+              <span className="ml-2 text-xs font-normal text-fg-faint">{plural(commits.length, 'commit')}</span>
+            </CardTitle>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {upstream && behind > 0 && <Badge>{behind} behind</Badge>}
+              {upstream && ahead > 0 && <Badge variant="accent">{ahead} ahead</Badge>}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void loadHistory(commits.length || HISTORY_PAGE_SIZE)}
+                disabled={historyBusy}
+                aria-label="Refresh history"
+              >
+                <RefreshCw size={13} className={historyBusy ? 'animate-spin' : undefined} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 pt-2.5">
+            <div className="max-h-[32rem] overflow-y-auto">
+              <CommitGraph commits={commits} />
+            </div>
+            {!fullyLoaded && commits.length > 0 && (
+              <Button size="sm" variant="ghost" onClick={() => void loadHistory(commits.length + HISTORY_PAGE_SIZE)} disabled={historyBusy}>
+                Load more
+              </Button>
+            )}
+          </CardContent>
+          </Card>
+
+          {/* The active working panes stay side-by-side below activity. */}
           {/* Column 1 — the change list, headed by the current repo's summary. */}
-          <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2 xl:col-start-1 xl:row-start-2">
             <div className="flex items-center justify-between gap-2 px-1 text-[11px]">
               <span className="truncate font-semibold uppercase tracking-wide text-fg-muted">
                 {project.name} <span className="font-normal text-fg-faint">(current)</span>
@@ -843,10 +883,8 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
             )}
           </div>
 
-          {/* Column 2 — conflict resolver while mid-conflict, else the selected item's diff. This
-              is the pane that changes with the selection, so it sits next to the change list;
-              the commit graph (column 3) stays fixed regardless of what's selected. */}
-          <div className="min-w-0">
+          {/* Column 2 — conflict resolver while mid-conflict, else the selected item's diff. */}
+          <div className="min-w-0 xl:col-start-2 xl:row-start-2">
             {hasConflicts ? (
               <ConflictResolverPanel
                 conflictedFiles={conflictedFiles}
@@ -868,7 +906,7 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
                     {includedGroupIds.has(selectedGroup.id) ? 'Included' : 'Excluded'}
                   </Badge>
                 </CardHeader>
-                <CardContent className="flex flex-1 flex-col gap-3 pt-3">
+                <CardContent className="flex flex-1 flex-col gap-2 pt-2.5">
                   <div>
                     <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">
                       Changed files ({selectedGroupFiles.length})
@@ -920,7 +958,7 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
                 <CardHeader>
                   <CardTitle className="truncate">{activePreview.filePath.split('/').pop()}</CardTitle>
                 </CardHeader>
-                <CardContent className="pt-3">
+                <CardContent className="pt-2.5">
                   {previewPatch === null ? (
                     <p className="text-xs text-fg-faint">Loading diff&hellip;</p>
                   ) : previewPatch.trim() === '' ? (
@@ -935,51 +973,18 @@ export function ChangesView({ workspace, project, onProjectChanged }: ChangesVie
             )}
           </div>
 
-          {/* Column 3 — the commit graph (the merged-in History), with its own header. Doesn't
-              change with the selection, so it's pinned on the far right. */}
-          <Card className="flex min-w-0 flex-col">
-            <CardHeader>
-              <CardTitle className="truncate">
-                {project.name} <span className="font-normal text-fg-faint">({branchName})</span>
-                <span className="ml-2 text-xs font-normal text-fg-faint">{plural(commits.length, 'commit')}</span>
-              </CardTitle>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {upstream && behind > 0 && <Badge>{behind} behind</Badge>}
-                {upstream && ahead > 0 && <Badge variant="accent">{ahead} ahead</Badge>}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void loadHistory(commits.length || HISTORY_PAGE_SIZE)}
-                  disabled={historyBusy}
-                  aria-label="Refresh history"
-                >
-                  <RefreshCw size={13} className={historyBusy ? 'animate-spin' : undefined} />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-1 flex-col gap-3 pt-3">
-              <div className="max-h-[32rem] overflow-y-auto">
-                <CommitGraph commits={commits} />
-              </div>
-              {!fullyLoaded && commits.length > 0 && (
-                <Button size="sm" variant="ghost" onClick={() => void loadHistory(commits.length + HISTORY_PAGE_SIZE)} disabled={historyBusy}>
-                  Load more
-                </Button>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
         {/* Bottom row — recent activity, stashes, and open pull requests. */}
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-2 lg:grid-cols-3">
           <RecentActivityCard events={activityEvents} />
           <StashesCard stashes={stashes} onApply={handleApplyStash} onDrop={setDropTarget} busy={busy} />
           <ActivePullRequestsCard prs={prs} />
+          </div>
         </div>
-      </div>
 
       {/* Commit footer */}
-      <div className="flex shrink-0 items-center gap-3 border-t border-border bg-sidebar px-6 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-t border-border bg-sidebar px-2 py-2">
         <span className="text-sm text-fg-muted">
           {includedGroups.length} group{includedGroups.length === 1 ? '' : 's'} selected
         </span>

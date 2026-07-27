@@ -152,7 +152,7 @@ const GH: ToolManifestEntry = {
 const VOLTA: ToolManifestEntry = {
   id: 'volta',
   displayName: 'Volta',
-  required: true,
+  required: false,
   supportedPlatforms: ['darwin', 'win32'],
   architectures: ['arm64', 'x64'],
   detection: [
@@ -164,8 +164,8 @@ const VOLTA: ToolManifestEntry = {
       id: 'volta-official-installer-mac',
       platform: 'darwin',
       kind: 'official-installer',
-      executable: 'volta-install-sh',
-      args: ['--skip-setup'],
+      executable: '/bin/bash',
+      args: ['-lc', 'curl --fail --silent --show-error https://get.volta.sh | bash -s -- --skip-setup'],
       requiresElevation: false,
       interactive: true,
       sourceDescription: 'Volta official installer script (https://get.volta.sh)',
@@ -208,7 +208,7 @@ const VOLTA: ToolManifestEntry = {
 
 const NODE: ToolManifestEntry = {
   id: 'node',
-  displayName: 'Node.js (via Volta)',
+  displayName: 'Node.js',
   required: true,
   supportedPlatforms: ['darwin', 'win32'],
   architectures: ['arm64', 'x64'],
@@ -218,25 +218,29 @@ const NODE: ToolManifestEntry = {
   ],
   installStrategies: [
     {
-      id: 'node-volta-mac',
+      id: 'node-homebrew-mac',
       platform: 'darwin',
-      kind: 'volta-managed',
-      executable: 'volta',
-      args: ['install', 'node@lts'],
+      kind: 'package-manager',
+      packageManagerId: 'homebrew',
+      packageId: 'node',
+      executable: 'brew',
+      args: ['install', 'node'],
       requiresElevation: false,
       interactive: false,
-      sourceDescription: 'Volta (installs the current Node LTS)',
+      sourceDescription: 'Homebrew (Node.js)',
       officialSourceUrl: 'https://nodejs.org',
     },
     {
-      id: 'node-volta-win',
+      id: 'node-winget-win',
       platform: 'win32',
-      kind: 'volta-managed',
-      executable: 'volta',
-      args: ['install', 'node@lts'],
+      kind: 'package-manager',
+      packageManagerId: 'winget',
+      packageId: 'OpenJS.NodeJS.LTS',
+      executable: 'winget',
+      args: ['install', '--id', 'OpenJS.NodeJS.LTS', '-e', '--accept-package-agreements', '--accept-source-agreements'],
       requiresElevation: false,
       interactive: false,
-      sourceDescription: 'Volta (installs the current Node LTS)',
+      sourceDescription: 'WinGet (Node.js LTS)',
       officialSourceUrl: 'https://nodejs.org',
     },
   ],
@@ -246,7 +250,7 @@ const NODE: ToolManifestEntry = {
   ],
   minimumVersion: '18.18.0',
   recommendedVersionPolicy: 'lts',
-  uninstallGuidance: '`volta uninstall node` (Volta continues to manage per-project pins).',
+  uninstallGuidance: 'macOS: `brew uninstall node`. Windows: uninstall Node.js from Settings > Apps.',
 };
 
 const NPM: ToolManifestEntry = {
@@ -259,13 +263,12 @@ const NPM: ToolManifestEntry = {
     { kind: 'command-on-path', executable: 'npm' },
     { kind: 'version-command', executable: 'npm', versionArgs: ['--version'], versionPattern: '(\\d+\\.\\d+\\.\\d+)' },
   ],
-  // npm is bundled with Node and installed transitively by the "node" entry's
-  // Volta strategy — it has no independent install strategy of its own.
+  // npm is bundled with Node and installed transitively by the Node.js step.
   installStrategies: [],
   verify: [{ kind: 'version-output', executable: 'npm', args: ['--version'], expectedPattern: '\\d+\\.\\d+\\.\\d+' }],
   minimumVersion: '9.0.0',
   recommendedVersionPolicy: 'latest-supported',
-  uninstallGuidance: 'npm is removed alongside its Volta-managed Node install.',
+  uninstallGuidance: 'npm is removed alongside Node.js.',
 };
 
 const PNPM: ToolManifestEntry = {

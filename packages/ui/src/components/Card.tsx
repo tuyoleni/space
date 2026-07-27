@@ -19,7 +19,7 @@ export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElemen
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn('text-sm font-semibold text-fg', className)} {...props} />;
+  return <h3 className={cn('text-base font-semibold text-fg', className)} {...props} />;
 }
 
 /** Free-form body (grids, single blocks). Use `CardRows` for lined lists. */

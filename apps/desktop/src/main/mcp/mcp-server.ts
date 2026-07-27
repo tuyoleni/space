@@ -96,7 +96,14 @@ async function writeConnectionFile(dataDir: string, url: string, token: string):
 }
 
 function buildProtocolServer(deps: McpToolDeps, appVersion: string): Server {
-  const server = new Server({ name: 'space', version: appVersion }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: 'space', version: appVersion },
+    {
+      capabilities: { tools: {} },
+      instructions:
+        'Space routes context by codebase path, never by whichever workspace is visible in the Space window. At the start of every coding session, call get_project_context with the absolute current working-directory path. If the working directory or codebase changes, call get_project_context again before any other Space tool and use only the projectId returned for that path. Do not reuse a projectId across codebases.',
+    },
+  );
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: MCP_TOOLS.map((tool) => ({
       name: tool.name,

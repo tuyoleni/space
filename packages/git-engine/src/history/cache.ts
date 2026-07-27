@@ -10,6 +10,8 @@
 import type { CommitNode } from './types';
 
 export interface HistoryCacheEntry {
+  /** Changes when the set of Git refs that define visible history changes. */
+  readonly scope: 'branch-refs-v1';
   readonly headSha: string;
   readonly commits: readonly CommitNode[];
 }

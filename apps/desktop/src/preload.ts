@@ -38,6 +38,8 @@ const spaceAPI: SpaceAPI = {
     installDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectInstallDependencies, input),
     updateDependencies: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectUpdateDependencies, input),
     environmentInfo: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentInfo, input),
+    setEnvironmentRuntime: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentSetRuntime, input),
+    openEnvironmentFile: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentOpenEnvFile, input),
     pickParentDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickParentDirectory),
     opened: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.projectOpened, projectId),
     icon: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectIcon, input),
@@ -100,6 +102,7 @@ const spaceAPI: SpaceAPI = {
   },
   github: {
     authReport: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubAuthReport, input),
+    contributions: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubContributions, input),
     authStartLogin: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubAuthStartLogin, input),
     authLogout: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubAuthLogout, input),
     setupGit: (input) => ipcRenderer.invoke(IPC_CHANNELS.githubSetupGit, input),
@@ -160,6 +163,7 @@ const spaceAPI: SpaceAPI = {
     buildPlan: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapBuildPlan),
     runNextStep: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapRunNextStep),
     cancel: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapCancel),
+    complete: () => ipcRenderer.invoke(IPC_CHANNELS.bootstrapComplete),
   },
   automation: {
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationCreate, input),
@@ -191,6 +195,8 @@ const spaceAPI: SpaceAPI = {
     connect: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsConnect, input),
     disconnect: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsDisconnect, input),
     launch: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsLaunch, input),
+    openProject: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsOpenProject, input),
+    testConnection: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiToolsTestConnection, input),
   },
   packages: {
     listInstalled: () => ipcRenderer.invoke(IPC_CHANNELS.packagesListInstalled),

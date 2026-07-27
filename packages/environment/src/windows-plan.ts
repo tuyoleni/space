@@ -23,10 +23,6 @@ function chooseWinGetStrategy(entry: ToolManifestEntry): InstallStrategy | null 
   return entry.installStrategies.find((s) => s.platform === 'win32' && s.kind === 'package-manager') ?? null;
 }
 
-function chooseVoltaManagedStrategy(entry: ToolManifestEntry): InstallStrategy | null {
-  return entry.installStrategies.find((s) => s.platform === 'win32' && s.kind === 'volta-managed') ?? null;
-}
-
 function chooseOfficialInstallerStrategy(entry: ToolManifestEntry): InstallStrategy | null {
   return entry.installStrategies.find((s) => s.platform === 'win32' && s.kind === 'official-installer') ?? null;
 }
@@ -131,7 +127,7 @@ export async function buildWindowsBootstrapPlan(scan: ScanResult, manifest: Tool
       continue;
     }
     if (entry.id === 'node') {
-      steps.push(buildToolStep(entry, sequence++, chooseVoltaManagedStrategy(entry)));
+      steps.push(buildToolStep(entry, sequence++, selectWindowsStrategy(entry, winGetAvailable)));
       continue;
     }
     steps.push(buildToolStep(entry, sequence++, selectWindowsStrategy(entry, winGetAvailable)));
@@ -145,30 +141,12 @@ export async function buildWindowsBootstrapPlan(scan: ScanResult, manifest: Tool
       toolId: 'npm',
       kind: 'verify-only',
       displayName: npmEntry.displayName,
-      humanExplanation: 'npm is installed alongside Node via Volta; verified after the Node step.',
+      humanExplanation: 'npm is installed alongside Node.js; verified after the Node step.',
       strategy: null,
       requiresElevation: false,
       interactive: false,
       changesMachineState: false,
       deferredImplementation: false,
-    });
-  }
-
-  if (!scan.spaceShellIntegrationDetected) {
-    steps.push({
-      id: 'space-shell-integration',
-      sequence: sequence++,
-      toolId: null,
-      kind: 'shell-integration',
-      displayName: 'Space terminal integration (PowerShell)',
-      humanExplanation:
-        'Space terminal integration (PowerShell profile, spec 8.5) is not yet configured. Shell profile ' +
-        'editing is owned by the terminal package (spec section 15, later phase) — surfaced for visibility only.',
-      strategy: null,
-      requiresElevation: false,
-      interactive: false,
-      changesMachineState: true,
-      deferredImplementation: true,
     });
   }
 

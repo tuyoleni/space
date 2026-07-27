@@ -75,7 +75,7 @@ describe('buildMacOsBootstrapPlan (spec section 8.4, ONB-004)', () => {
     expect(plan.steps.some((s) => s.id === 'homebrew-install')).toBe(false);
   });
 
-  it('plans Volta first and Node via Volta when both are missing, and skips npm as its own step', async () => {
+  it('plans Node.js via Homebrew and skips optional Volta when both are missing', async () => {
     const scan = baseScan({
       tools: [
         { toolId: 'git', found: true, path: '/x/git', version: '2.45.0', meetsMinimumVersion: true },
@@ -87,9 +87,9 @@ describe('buildMacOsBootstrapPlan (spec section 8.4, ONB-004)', () => {
     });
     const plan = await buildMacOsBootstrapPlan(scan, TOOL_MANIFEST, { appleCommandLineToolsInstalled: true });
     const ids = plan.steps.map((s) => s.id);
-    expect(ids.indexOf('install-volta')).toBeLessThan(ids.indexOf('install-node'));
+    expect(ids).not.toContain('install-volta');
     expect(ids).toContain('verify-npm');
-    expect(plan.steps.find((s) => s.id === 'install-node')?.strategy?.kind).toBe('volta-managed');
+    expect(plan.steps.find((s) => s.id === 'install-node')?.strategy?.packageManagerId).toBe('homebrew');
   });
 
   it('flags a below-minimum-version tool as needing (re)install', async () => {
@@ -106,12 +106,11 @@ describe('buildMacOsBootstrapPlan (spec section 8.4, ONB-004)', () => {
     expect(plan.steps.some((s) => s.id === 'install-git')).toBe(true);
   });
 
-  it('adds a deferred shell-integration step when Space integration is not detected', async () => {
+  it('does not add an unimplemented shell-integration placeholder to required onboarding', async () => {
     const plan = await buildMacOsBootstrapPlan(baseScan({ spaceShellIntegrationDetected: false }), TOOL_MANIFEST, {
       appleCommandLineToolsInstalled: true,
     });
-    const step = plan.steps.find((s) => s.kind === 'shell-integration');
-    expect(step?.deferredImplementation).toBe(true);
+    expect(plan.steps.some((step) => step.kind === 'shell-integration')).toBe(false);
   });
 
   it('never installs optional tools like pnpm/Docker (spec section 39, 8.9)', async () => {

@@ -338,6 +338,20 @@ export interface ProjectEnvironmentInfoInput {
   readonly projectId: string;
 }
 
+export interface ProjectEnvironmentSetRuntimeInput {
+  readonly projectId: string;
+  /** Node version written to the project's .nvmrc (for example 24 or 24.4.1). */
+  readonly version: string;
+}
+
+export interface ProjectEnvironmentOpenEnvFileInput {
+  readonly projectId: string;
+}
+
+export interface ProjectEnvironmentActionResult {
+  readonly filePath: string;
+}
+
 // ---------------------------------------------------------------------------
 // Connected services — real, read-only presence/auth checks for CLIs that
 // are project-triggered rather than part of the bootstrap toolchain manifest
@@ -1110,6 +1124,23 @@ export interface GithubAuthReportInput {
   readonly host?: string;
 }
 
+/** A real contribution calendar derived from the selected project's Git history. */
+export interface GithubContributionDay {
+  readonly date: string;
+  readonly count: number;
+  readonly level: 'NONE' | 'FIRST_QUARTILE' | 'SECOND_QUARTILE' | 'THIRD_QUARTILE' | 'FOURTH_QUARTILE';
+}
+
+export interface GithubContributionCalendar {
+  readonly projectName: string;
+  readonly totalContributions: number;
+  readonly weeks: readonly (readonly GithubContributionDay[])[];
+}
+
+export interface GithubContributionsInput {
+  readonly projectId: string;
+}
+
 export interface GithubAuthStartLoginInput {
   readonly workspaceId: string;
   readonly host?: string;
@@ -1813,7 +1844,7 @@ export interface AutomationSettingsSetInput {
  * configure for real — never a tool whose config format Space would have to
  * guess at.
  */
-export type AiToolId = 'claude-code' | 'cursor' | 'vscode';
+export type AiToolId = 'claude-code' | 'codex' | 'cursor' | 'vscode';
 
 export interface McpServerStatus {
   readonly enabled: boolean;
@@ -1832,15 +1863,25 @@ export type AiToolConnectMechanism = 'cli' | 'config-file';
 export interface AiToolConnection {
   readonly id: AiToolId;
   readonly displayName: string;
-  /** Real detection — the tool's CLI answers, or its config directory exists. */
+  /** Whether Space can configure this tool; independent of whether Space can launch it. */
   readonly detected: boolean;
   readonly mechanism: AiToolConnectMechanism;
   /** The config Space writes: a file path, or the CLI command that owns it. */
   readonly configPath: string;
   /** Space's MCP server is already registered there. */
   readonly connected: boolean;
+  /** Space's config exists and its endpoint is live; client-specific health is checked where the client exposes it. */
+  readonly verified: boolean;
+  /** Human-readable distinction between configured, reachable, and restart-required states. */
+  readonly verificationMessage: string;
   /** Space can launch this tool inside a project's workspace terminal. */
   readonly launchable: boolean;
+  /** The desktop application is installed and Space can open a project in it directly. */
+  readonly openable: boolean;
+  /** Native application icon, when the installed application exposes one. */
+  readonly iconDataUrl: string | null;
+  /** Package-manager action Space can offer when the desktop application is missing. */
+  readonly installPackage: PackageActionInput | null;
   /** Null when connecting is possible; otherwise why it isn't. */
   readonly unavailableReason: string | null;
 }
@@ -1874,4 +1915,19 @@ export interface AiToolLaunchInput {
 export interface AiToolLaunchResult {
   /** Subscribe via `terminal.subscribe`; the session is bound to the workspace + project. */
   readonly sessionId: string;
+}
+
+export type AiToolOpenProjectInput = AiToolLaunchInput;
+
+export interface AiToolOpenProjectResult {
+  readonly opened: true;
+}
+
+export type AiToolTestConnectionInput = AiToolLaunchInput;
+
+export interface AiToolTestConnectionResult {
+  readonly tool: AiToolId;
+  readonly workspaceName: string;
+  readonly projectName: string;
+  readonly projectPath: string;
 }

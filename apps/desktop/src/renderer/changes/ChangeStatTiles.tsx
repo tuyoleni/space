@@ -39,20 +39,20 @@ const TONE_ICON: Record<StatTileTone, string> = {
  */
 export function ChangeStatTiles({ tiles }: ChangeStatTilesProps) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       {tiles.map((tile) => {
         const tone = tile.tone ?? 'default';
         return (
           <Card key={tile.label}>
-            <CardContent className="py-3.5">
+            <CardContent>
               <div className="flex items-start justify-between gap-2">
                 <p className="text-xs text-fg-muted">{tile.label}</p>
                 {tile.icon && (
                   <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md', TONE_ICON[tone])}>{tile.icon}</span>
                 )}
               </div>
-              <p className={cn('mt-2 text-2xl font-semibold leading-none', TONE_TEXT[tone])}>{tile.value}</p>
-              {tile.sub && <p className="mt-1.5 text-[11px] text-fg-faint">{tile.sub}</p>}
+              <p className={cn('mt-1.5 text-2xl font-semibold leading-none', TONE_TEXT[tone])}>{tile.value}</p>
+              {tile.sub && <p className="mt-1 text-[11px] text-fg-faint">{tile.sub}</p>}
             </CardContent>
           </Card>
         );

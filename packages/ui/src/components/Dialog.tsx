@@ -13,14 +13,23 @@ export interface DialogProps {
   readonly footer?: ReactNode;
   /** 'md' (default) fits forms/confirmations; 'lg' is for content that needs room, e.g. an embedded terminal. */
   readonly size?: 'md' | 'lg';
+  /** Use for an in-flight operation that must finish before the next screen can be shown. */
+  readonly dismissible?: boolean;
 }
 
 const SIZE_CLASSES: Record<'md' | 'lg', string> = {
-  md: 'max-w-md',
-  lg: 'max-w-2xl',
+  md: 'max-w-[28rem]',
+  lg: 'max-w-[42rem]',
 };
 
-export function Dialog({ open, onOpenChange, title, description, children, footer, size = 'md' }: DialogProps) {
+const SIZE_WIDTHS: Record<'md' | 'lg', string> = {
+  // Keep modal geometry reliable even when utility generation is unavailable
+  // in a packaged renderer. A dialog must never silently become viewport-wide.
+  md: 'min(28rem, calc(100vw - 2rem))',
+  lg: 'min(46rem, calc(100vw - 2rem))',
+};
+
+export function Dialog({ open, onOpenChange, title, description, children, footer, size = 'md', dismissible = true }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -32,23 +41,26 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
             'rounded-lg border border-border bg-popover shadow-2xl backdrop-blur-2xl',
             'focus-visible:outline-none',
           )}
+          style={{ width: SIZE_WIDTHS[size], maxHeight: 'calc(100vh - 2rem)' }}
         >
           <div className="flex items-start justify-between gap-3 px-5 pt-4">
             <div>
-              <RadixDialog.Title className="text-sm font-semibold text-fg">{title}</RadixDialog.Title>
+              <RadixDialog.Title className="text-base font-semibold text-fg">{title}</RadixDialog.Title>
               {description && (
                 <RadixDialog.Description className="mt-1 text-xs text-fg-muted">{description}</RadixDialog.Description>
               )}
             </div>
-            <RadixDialog.Close asChild>
-              <button
-                type="button"
-                aria-label="Close"
-                className="rounded-md p-1 text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                <X size={16} />
-              </button>
-            </RadixDialog.Close>
+            {dismissible && (
+              <RadixDialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="rounded-md p-1 text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <X size={16} />
+                </button>
+              </RadixDialog.Close>
+            )}
           </div>
           {children && <div className="px-5 py-4">{children}</div>}
           {footer && <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}

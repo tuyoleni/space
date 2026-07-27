@@ -1,4 +1,4 @@
-import { Cpu, Download, Eraser, Package, Plus, Search, Zap } from 'lucide-react';
+import { Download, Eraser, Package, Plus, Search, Zap } from 'lucide-react';
 import type { EnvironmentScanResult, SystemProcessInfo, SystemStatsResult, TerminalSessionInfo } from '@space/contracts';
 import { Badge, Card, CardContent, CardHeader, CardRows, CardTitle, EmptyState, formatRelativeTime } from '@space/ui';
 import { BrandIcon, TOOL_BRAND } from './brand-icons';
@@ -118,11 +118,7 @@ export function TerminalSidebar({ session, envScan, stats, processes, onNewTermi
             {topProcesses.map((proc) => (
               <div key={proc.pid} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <span className="flex min-w-0 items-center gap-2">
-                  {proc.iconDataUrl ? (
-                    <img src={proc.iconDataUrl} alt="" className="h-4 w-4 shrink-0" />
-                  ) : (
-                    <Cpu size={14} className="shrink-0 text-fg-faint" />
-                  )}
+                  {proc.iconDataUrl && <img src={proc.iconDataUrl} alt="" className="h-4 w-4 shrink-0" />}
                   <span className="truncate text-fg">{proc.name}</span>
                 </span>
                 <span className="flex shrink-0 gap-4 text-xs text-fg-muted">

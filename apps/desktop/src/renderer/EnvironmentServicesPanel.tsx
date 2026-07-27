@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink, Rocket } from 'lucide-react';
 import type { ConnectedServiceDeployResult, ConnectedServiceId, ConnectedServicesResult, GithubAuthReport, TerminalSessionInfo } from '@space/contracts';
-import { Badge, Button, Card, CardHeader, CardRows, CardTitle, StatusDot, useToast } from '@space/ui';
+import { Badge, Button, Card, CardHeader, CardRows, CardTitle, Dialog, StatusDot, useToast } from '@space/ui';
 import { BrandIcon, SERVICE_BRAND } from './brand-icons';
 import { TerminalPanel } from './TerminalPanel';
 
@@ -32,6 +32,7 @@ export function EnvironmentServicesPanel({ workspaceId, projectId, githubReport 
   const [result, setResult] = useState<ConnectedServicesResult | null>(null);
   const [connectingId, setConnectingId] = useState<ConnectedServiceId | null>(null);
   const [loginSession, setLoginSession] = useState<TerminalSessionInfo | null>(null);
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false);
   const [deployingId, setDeployingId] = useState<ConnectedServiceId | null>(null);
   const [deployResult, setDeployResult] = useState<{ readonly id: ConnectedServiceId; readonly result: ConnectedServiceDeployResult } | null>(null);
 
@@ -51,6 +52,8 @@ export function EnvironmentServicesPanel({ workspaceId, projectId, githubReport 
     if (!workspaceId) {
       return;
     }
+    setLoginDialogOpen(true);
+    setLoginSession(null);
     setConnectingId(service);
     void window.space.connectedServices
       .startLogin({ workspaceId, service })
@@ -128,16 +131,16 @@ export function EnvironmentServicesPanel({ workspaceId, projectId, githubReport 
           const brand = SERVICE_BRAND[id];
           return (
             <div key={id} className="flex flex-col gap-2 py-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-fg">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="flex min-w-0 items-center gap-2 text-fg">
                   {brand && <BrandIcon icon={brand} size={15} />}
-                  {service.displayName}
+                  <span className="truncate">{service.displayName}</span>
                 </span>
                 {service.connected ? (
-                  <span className="flex items-center gap-2">
-                    <span className="flex items-center gap-1.5 text-xs text-fg-muted">
+                  <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
                       <StatusDot tone="success" />
-                      {service.account ?? service.detail ?? 'Connected'}
+                      <span className="truncate">{service.account ?? service.detail ?? 'Connected'}</span>
                     </span>
                     {service.deployable && (
                       <Button
@@ -194,26 +197,34 @@ export function EnvironmentServicesPanel({ workspaceId, projectId, githubReport 
         </div>
       )}
 
-      {loginSession && (
-        <div className="border-t border-border p-3">
-          <p className="mb-1.5 text-xs text-fg-muted">Follow the instructions below to finish signing in, then reconnect.</p>
-          <div className="overflow-hidden rounded-md border border-border">
+      <Dialog
+        open={loginDialogOpen}
+        onOpenChange={(open) => {
+          setLoginDialogOpen(open);
+          if (!open) {
+            setLoginSession(null);
+            void refresh();
+          }
+        }}
+        title={connectingId ? `Connect ${services.find((service) => service.id === connectingId)?.displayName ?? 'service'}` : 'Connect service'}
+        description="Complete the CLI sign-in here. Space will refresh the connection when you close this window."
+        size="lg"
+        footer={
+          <Button size="sm" variant="secondary" onClick={() => { setLoginDialogOpen(false); setLoginSession(null); void refresh(); }}>
+            Done
+          </Button>
+        }
+      >
+        {loginSession ? (
+          <div className="h-80 overflow-hidden rounded-md border border-border">
             <TerminalPanel session={loginSession} />
           </div>
-          <div className="mt-2 flex justify-end">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setLoginSession(null);
-                void refresh();
-              }}
-            >
-              Done
-            </Button>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-fg-muted" role="status" aria-live="polite">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-fg-faint border-t-accent" /> Starting secure sign-in…
           </div>
-        </div>
-      )}
+        )}
+      </Dialog>
     </Card>
   );
 }

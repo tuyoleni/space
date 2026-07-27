@@ -116,6 +116,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     // rendering), so it is read here rather than relying on the
     // stylesheet-level media query in index.css.
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const prefersLightAppearance = window.matchMedia('(prefers-color-scheme: light)').matches;
     // xterm paints its own canvas background regardless of the container's
     // CSS — 'theme.background' has to be transparent too, or the card
     // behind it (and its glassy alpha) gets covered by an opaque rectangle.
@@ -124,7 +125,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       cursorBlink: !prefersReducedMotion,
       fontSize: 13,
       allowTransparency: true,
-      theme: { background: '#00000000', foreground: '#f2f2f2' },
+      theme: { background: '#00000000', foreground: prefersLightAppearance ? '#172033' : '#f2f2f2' },
     });
     const searchAddon = new SearchAddon();
     const fitAddon = new FitAddon();

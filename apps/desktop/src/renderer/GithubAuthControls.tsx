@@ -1,25 +1,17 @@
 import { LogIn, LogOut, RefreshCw } from 'lucide-react';
-import type { GithubAuthReport, TerminalSessionInfo } from '@space/contracts';
+import type { GithubAuthReport } from '@space/contracts';
 import { Button, InlineBanner, StatusDot } from '@space/ui';
-import { TerminalPanel } from './TerminalPanel';
 
 interface GithubAuthControlsProps {
   readonly report: GithubAuthReport | null;
-  readonly loginSession: TerminalSessionInfo | null;
   readonly busy: boolean;
   readonly onRefresh: () => void;
   readonly onSignIn: () => void;
   readonly onSignOut: () => void;
 }
 
-/**
- * Sign-in status, sign in/out, and the interactive `gh auth login` PTY. The
- * PTY reuses TerminalPanel verbatim: the session it renders was created
- * through the exact same PTY host and `terminal:*` IPC channels a regular
- * shell uses (spec 14.3), so no second terminal-rendering implementation is
- * needed here.
- */
-export function GithubAuthControls({ report, loginSession, busy, onRefresh, onSignIn, onSignOut }: GithubAuthControlsProps) {
+/** GitHub account status and actions. Interactive login is rendered only by GithubAuthDialog. */
+export function GithubAuthControls({ report, busy, onRefresh, onSignIn, onSignOut }: GithubAuthControlsProps) {
   const authenticated = report?.authenticated ?? false;
 
   return (
@@ -50,15 +42,6 @@ export function GithubAuthControls({ report, loginSession, busy, onRefresh, onSi
           <span className="text-fg">{report.gitProtocol ?? 'unknown'}</span>
           <span className="text-fg-muted">Token source</span>
           <span className="text-fg">{report.tokenSourceStrategy}</span>
-        </div>
-      )}
-
-      {loginSession && (
-        <div>
-          <p className="mb-1.5 text-xs text-fg-muted">Follow the instructions below to finish signing in, then refresh auth status.</p>
-          <div className="overflow-hidden rounded-md border border-border">
-            <TerminalPanel session={loginSession} />
-          </div>
         </div>
       )}
 

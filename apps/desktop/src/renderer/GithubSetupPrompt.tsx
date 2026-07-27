@@ -5,7 +5,7 @@ import type { Project } from '@space/contracts';
 import { Button, useToast } from '@space/ui';
 import { BrandIcon } from './brand-icons';
 import { useGithubAuth } from './useGithubAuth';
-import { TerminalPanel } from './TerminalPanel';
+import { GithubAuthDialog } from './GithubAuthDialog';
 import { friendlyGithubErrorMessage } from './errors';
 
 interface GithubSetupPromptProps {
@@ -91,20 +91,21 @@ export function GithubSetupPrompt({ project, workspaceId, onDismiss }: GithubSet
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="flex w-full max-w-lg max-h-[85vh] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-            <BrandIcon icon={siGithub} size={15} monochrome /> Set up GitHub for "{project.name}"
-          </span>
-          {stage !== 'working' && (
-            <button type="button" aria-label="Not now" onClick={onDismiss} className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg">
-              <X size={15} />
-            </button>
-          )}
-        </div>
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="flex w-full max-w-lg max-h-[85vh] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
+          <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+            <span className="flex items-center gap-2 text-sm font-semibold text-fg">
+              <BrandIcon icon={siGithub} size={15} monochrome /> Set up GitHub for "{project.name}"
+            </span>
+            {stage !== 'working' && (
+              <button type="button" aria-label="Not now" onClick={onDismiss} className="rounded p-1 text-fg-muted hover:bg-surface-hover hover:text-fg">
+                <X size={15} />
+              </button>
+            )}
+          </div>
 
-        <div className="flex flex-col gap-4 overflow-y-auto px-5 py-5">
+          <div className="flex flex-col gap-4 overflow-y-auto px-5 py-5">
           {stage === 'confirm' && (
             <>
               <p className="text-sm text-fg-muted">
@@ -125,12 +126,7 @@ export function GithubSetupPrompt({ project, workspaceId, onDismiss }: GithubSet
 
           {stage === 'signing-in' && (
             <>
-              <p className="text-sm text-fg-muted">Sign in to GitHub, then continue.</p>
-              {auth.loginSession && (
-                <div className="overflow-hidden rounded-md border border-border">
-                  <TerminalPanel session={auth.loginSession} />
-                </div>
-              )}
+              <p className="text-sm text-fg-muted">Complete sign-in in the GitHub authentication window, then continue.</p>
               <div className="flex items-center gap-2">
                 <Button variant="primary" size="sm" onClick={() => void handleSignedIn()} disabled={auth.busy}>
                   I've signed in — Continue
@@ -161,8 +157,17 @@ export function GithubSetupPrompt({ project, workspaceId, onDismiss }: GithubSet
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
-    </div>
+      <GithubAuthDialog
+        open={auth.loginOpen}
+        report={auth.report}
+        session={auth.loginSession}
+        busy={auth.busy}
+        onClose={auth.dismissLogin}
+        onRefresh={auth.refreshReport}
+      />
+    </>
   );
 }

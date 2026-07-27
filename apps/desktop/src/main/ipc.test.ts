@@ -221,6 +221,8 @@ function setup() {
     disconnect: vi.fn(),
     launch: vi.fn(),
     setMcpEnabled: vi.fn(),
+    syncProjectInstructions: vi.fn(),
+    syncAllProjectInstructions: vi.fn(),
   } as unknown as Parameters<typeof registerIpcHandlers>[17];
   registerIpcHandlers(
     trusted,

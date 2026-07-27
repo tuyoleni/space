@@ -15,7 +15,7 @@ interface StatusBarProps {
 export function StatusBar({ workspaceName, project, gitStatus, changedFileCount, terminalCount, envScan }: StatusBarProps) {
   const nodeTool = envScan?.tools.find((tool) => tool.toolId === 'node');
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-sidebar px-3 text-[11px] text-fg-muted">
+    <footer className="space-type-meta flex h-7 shrink-0 items-center justify-between border-t border-border bg-sidebar px-3 text-fg-muted">
       <div className="flex items-center gap-3">
         {workspaceName && (
           <span className="flex items-center gap-1.5">

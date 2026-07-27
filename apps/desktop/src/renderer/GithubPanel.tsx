@@ -5,6 +5,7 @@ import { Badge, Button, Input, useToast } from '@space/ui';
 import { friendlyGithubErrorMessage } from './errors';
 import { useGithubAuth } from './useGithubAuth';
 import { GithubAuthControls } from './GithubAuthControls';
+import { GithubAuthDialog } from './GithubAuthDialog';
 
 /**
  * Minimal M6 GitHub surface (spec 36.6 exit criteria: publish, PR,
@@ -36,7 +37,7 @@ interface GithubPanelProps {
 }
 
 export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
-  const { report, loginSession, busy: authBusy, refreshReport, signIn, signOut } = useGithubAuth(workspaceId);
+  const { report, loginSession, loginOpen, busy: authBusy, refreshReport, signIn, signOut, dismissLogin } = useGithubAuth(workspaceId);
   const [prs, setPrs] = useState<GithubPullRequestSummary[]>([]);
   const [issues, setIssues] = useState<GithubIssueSummary[]>([]);
   const [prTitle, setPrTitle] = useState('');
@@ -114,7 +115,6 @@ export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
     <div className="flex flex-col gap-4">
       <GithubAuthControls
         report={report}
-        loginSession={loginSession}
         busy={authBusy}
         onRefresh={() => void refreshReport()}
         onSignIn={signIn}
@@ -181,6 +181,15 @@ export function GithubPanel({ workspaceId, projectId }: GithubPanelProps) {
           </fieldset>
         </div>
       </div>
+
+      <GithubAuthDialog
+        open={loginOpen}
+        report={report}
+        session={loginSession}
+        busy={authBusy}
+        onClose={dismissLogin}
+        onRefresh={refreshReport}
+      />
     </div>
   );
 }

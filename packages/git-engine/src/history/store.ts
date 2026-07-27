@@ -43,6 +43,7 @@ export interface HistoryStoreOptions {
 }
 
 const DEFAULT_PAGE_SIZE = 500;
+const HISTORY_CACHE_SCOPE = 'branch-refs-v1' as const;
 
 export class HistoryStore {
   private commits: CommitNode[] = [];
@@ -84,7 +85,7 @@ export class HistoryStore {
   async loadInitial(visibleCount: number = this.pageSize): Promise<HistoryPage> {
     const headSha = await this.currentHeadSha();
     const cached = this.options.cache ? await this.options.cache.read(this.options.repoKey) : null;
-    if (cached && headSha !== null && cached.headSha === headSha) {
+    if (cached && cached.scope === HISTORY_CACHE_SCOPE && headSha !== null && cached.headSha === headSha) {
       this.applyFullCommitList(cached.commits);
     } else {
       await this.ensureIndexedThrough(Math.max(visibleCount, this.pageSize));
@@ -170,7 +171,7 @@ export class HistoryStore {
     }
     const headSha = await this.currentHeadSha();
     if (headSha !== null) {
-      await this.options.cache.write(this.options.repoKey, { headSha, commits: this.commits });
+      await this.options.cache.write(this.options.repoKey, { scope: HISTORY_CACHE_SCOPE, headSha, commits: this.commits });
     }
   }
 }

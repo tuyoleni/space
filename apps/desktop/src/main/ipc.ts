@@ -58,6 +58,7 @@ import {
   githubActionsWorkflowInputsInputSchema,
   githubAuthLogoutInputSchema,
   githubAuthReportInputSchema,
+  githubContributionsInputSchema,
   githubAuthStartLoginInputSchema,
   githubChecksLoadInputSchema,
   githubIssueCloseInputSchema,
@@ -89,6 +90,8 @@ import {
   environmentToolActionInputSchema,
   environmentExportReportInputSchema,
   projectEnvironmentInfoInputSchema,
+  projectEnvironmentSetRuntimeInputSchema,
+  projectEnvironmentOpenEnvFileInputSchema,
   connectedServiceLoginInputSchema,
   connectedServiceDeployInputSchema,
   aiSetApiKeyInputSchema,
@@ -106,6 +109,7 @@ import {
   type EnvironmentScanInput,
   type EnvironmentScanResult,
   type ConnectedServicesResult,
+  type Project,
   type TerminalEvent,
 } from '@space/contracts';
 import { createLogger, type Logger } from '@space/logging';
@@ -221,6 +225,7 @@ export function registerIpcHandlers(
   aiToolHandlers: AiToolHandlers,
   bootstrapHandlers: BootstrapHandlers,
   logger: Logger = consoleLogger,
+  onboardingComplete: () => Promise<void> | void = () => undefined,
 ): void {
   ipcMain.handle(IPC_CHANNELS.bootstrapGetStatus, async (event) => {
     assertIpcSender(event, trusted);
@@ -240,6 +245,15 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.bootstrapCancel, async (event) => {
     assertIpcSender(event, trusted);
     return bootstrapHandlers.cancel();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.bootstrapComplete, async (event) => {
+    assertIpcSender(event, trusted);
+    const status = await bootstrapHandlers.getStatus();
+    if (status.status !== 'complete') {
+      throw new Error('Required setup is not complete yet. Finish every required toolchain step before opening Space.');
+    }
+    await onboardingComplete();
   });
 
   ipcMain.handle(IPC_CHANNELS.workspaceList, async (event) => {
@@ -274,7 +288,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.projectAdd, async (event, input) => {
     assertIpcSender(event, trusted);
-    return storage.call('project.add', addProjectInputSchema.parse(input));
+    const project = await storage.call<Project>('project.add', addProjectInputSchema.parse(input));
+    await aiToolHandlers.syncProjectInstructions(project);
+    return project;
   });
 
   /**
@@ -376,6 +392,7 @@ export function registerIpcHandlers(
       name: parsed.name,
       ...(parsed.options !== undefined ? { options: parsed.options } : {}),
     });
+    await aiToolHandlers.syncProjectInstructions(project);
 
     const warnings: string[] = [];
     // A GitHub publish is meaningless without a repository to publish.
@@ -429,13 +446,15 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.projectClone, async (event, input) => {
     assertIpcSender(event, trusted);
     const parsed = cloneProjectInputSchema.parse(input);
-    return projectHandlers.clone({
+    const project = await projectHandlers.clone({
       workspaceId: parsed.workspaceId,
       remoteUrl: parsed.remoteUrl,
       destinationParentDirectory: parsed.destinationParentDirectory,
       ...(parsed.name !== undefined ? { name: parsed.name } : {}),
       ...(parsed.branch !== undefined ? { branch: parsed.branch } : {}),
     });
+    await aiToolHandlers.syncProjectInstructions(project);
+    return project;
   });
 
   ipcMain.handle(IPC_CHANNELS.projectInstallDependencies, async (event, input) => {
@@ -452,6 +471,16 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = projectEnvironmentInfoInputSchema.parse(input);
     return projectEnvironmentHandlers.environmentInfo(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectEnvironmentSetRuntime, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return projectEnvironmentHandlers.setRuntime(projectEnvironmentSetRuntimeInputSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.projectEnvironmentOpenEnvFile, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return projectEnvironmentHandlers.openEnvFile(projectEnvironmentOpenEnvFileInputSchema.parse(input));
   });
 
   ipcMain.handle(IPC_CHANNELS.projectPickParentDirectory, async (event) => {
@@ -768,6 +797,12 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = githubAuthReportInputSchema.parse(input);
     return githubHandlers.authReport(parsed.workspaceId, parsed.host);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.githubContributions, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = githubContributionsInputSchema.parse(input);
+    return githubHandlers.contributions(parsed.projectId);
   });
 
   ipcMain.handle(IPC_CHANNELS.githubAuthStartLogin, async (event, input) => {
@@ -1314,6 +1349,17 @@ export function registerIpcHandlers(
     assertIpcSender(event, trusted);
     const parsed = aiToolLaunchInputSchema.parse(input);
     return aiToolHandlers.launch(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsOpenProject, async (event, input) => {
+    assertIpcSender(event, trusted);
+    const parsed = aiToolLaunchInputSchema.parse(input);
+    return aiToolHandlers.openProject(parsed);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.aiToolsTestConnection, async (event, input) => {
+    assertIpcSender(event, trusted);
+    return aiToolHandlers.testConnection(aiToolLaunchInputSchema.parse(input));
   });
 
   // ---------------------------------------------------------------------

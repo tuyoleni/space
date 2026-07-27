@@ -23,6 +23,7 @@ import { fireAutomationTrigger, registerIpcHandlers } from './main/ipc';
 import { createAppLogger } from './main/logging';
 import { ensureMcpToken, startMcpServer, type McpServerHandle } from './main/mcp/mcp-server';
 import { createAiToolHandlers, type AiToolHandlers } from './main/mcp/ai-tool-handlers';
+import { createAiToolDesktopAdapter } from './main/mcp/ai-tool-desktop';
 import { MCP_TOOLS } from './main/mcp/tool-registry';
 import { createPackageManagerHandlers, type PackageManagerHandlers } from './main/package-manager-handlers';
 import { createProjectEnvironmentHandlers, type ProjectEnvironmentHandlers } from './main/project-environment-handlers';
@@ -94,6 +95,7 @@ const packageManagerHandlers: PackageManagerHandlers = createPackageManagerHandl
 let handlersRegistered = false;
 let scheduledAutomationTimer: ReturnType<typeof setInterval> | null = null;
 let mcpServerHandle: McpServerHandle | null = null;
+let onboardingWindow: BrowserWindow | null = null;
 
 /**
  * M8: how often the `scheduled` automation trigger (spec 18.2) is checked
@@ -142,12 +144,12 @@ function startTerminalWorker(): TerminalClient {
  * The renderer never receives Node integration, unrestricted filesystem
  * access, or a generic execute/command channel.
  */
-const createWindow = () => {
+const createWindow = (kind: 'main' | 'onboarding' = 'main'): BrowserWindow => {
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 860,
-    minHeight: 560,
+    width: kind === 'onboarding' ? 580 : 1200,
+    height: kind === 'onboarding' ? 440 : 800,
+    minWidth: kind === 'onboarding' ? 520 : 860,
+    minHeight: kind === 'onboarding' ? 380 : 560,
     // Packaged builds get their icon from forge.config.ts's packagerConfig.icon;
     // this only matters for `npm start`'s Windows/Linux taskbar icon in dev
     // (macOS dev Dock icon is set separately via app.dock.setIcon above).
@@ -211,15 +213,17 @@ const createWindow = () => {
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    mainWindow.loadURL(kind === 'onboarding' ? `${MAIN_WINDOW_VITE_DEV_SERVER_URL}?onboarding=1` : MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
     mainWindow.loadFile(
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      kind === 'onboarding' ? { query: { onboarding: '1' } } : undefined,
     );
   }
 
   // DevTools no longer auto-opens in dev — the docked panel hides half the
   // translucent shell on every launch; open it manually (View menu / ⌥⌘I).
+  return mainWindow;
 };
 
 async function openExternalIfSafe(url: string): Promise<void> {
@@ -433,6 +437,7 @@ app.on('ready', () => {
   aiToolHandlers = createAiToolHandlers(storage, {
     terminal,
     paths: { homeDirectory: app.getPath('home'), appDataDirectory: app.getPath('appData') },
+    desktop: createAiToolDesktopAdapter(app.getPath('home'), app.getPath('appData')),
     server: {
       isEnabled: () => mcpServerHandle !== null,
       url: () => mcpServerHandle?.url ?? null,
@@ -440,6 +445,11 @@ app.on('ready', () => {
       toolCount: MCP_TOOLS.length,
       token: () => ensureMcpToken(mcpDataDir),
     },
+  });
+  void aiToolHandlers.syncAllProjectInstructions().catch((error: unknown) => {
+    logger.error('Could not synchronize Space project instructions', {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
   });
 
   if (!handlersRegistered) {
@@ -464,6 +474,15 @@ app.on('ready', () => {
       aiToolHandlers,
       bootstrapHandlers,
       logger,
+      async () => {
+        const onboarding = onboardingWindow;
+        const main = createWindow('main');
+        onboardingWindow = null;
+        if (onboarding && !onboarding.isDestroyed()) {
+          onboarding.close();
+        }
+        main.show();
+      },
     );
     handlersRegistered = true;
   }
@@ -494,7 +513,17 @@ app.on('ready', () => {
     }
   })();
 
-  createWindow();
+  void (async () => {
+    const status = await (bootstrapHandlers as BootstrapHandlers).getStatus();
+    if (status.status === 'complete') {
+      createWindow('main');
+    } else {
+      onboardingWindow = createWindow('onboarding');
+      onboardingWindow.on('closed', () => {
+        onboardingWindow = null;
+      });
+    }
+  })();
 });
 
 app.on('before-quit', () => {
@@ -532,7 +561,17 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+    void (async () => {
+      const status = await bootstrapHandlers?.getStatus();
+      if (status?.status === 'complete') {
+        createWindow('main');
+      } else {
+        onboardingWindow = createWindow('onboarding');
+        onboardingWindow.on('closed', () => {
+          onboardingWindow = null;
+        });
+      }
+    })();
   }
 });
 

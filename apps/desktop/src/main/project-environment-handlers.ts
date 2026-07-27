@@ -13,7 +13,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { detectPackageManager, nodeProjectDetectionFs, nodeRunCommand } from '@space/environment';
-import type { Project, ProjectEnvironmentInfo, ProjectEnvironmentInfoInput } from '@space/contracts';
+import type {
+  Project,
+  ProjectEnvironmentActionResult,
+  ProjectEnvironmentInfo,
+  ProjectEnvironmentInfoInput,
+  ProjectEnvironmentOpenEnvFileInput,
+  ProjectEnvironmentSetRuntimeInput,
+} from '@space/contracts';
 import type { StorageCaller } from './project-handlers';
 
 const NODE_VERSION_TIMEOUT_MS = 5_000;
@@ -106,11 +113,27 @@ async function readEnvFile(canonicalPath: string): Promise<{ envFileName: string
 
 export interface ProjectEnvironmentHandlers {
   environmentInfo(input: ProjectEnvironmentInfoInput): Promise<ProjectEnvironmentInfo>;
+  setRuntime(input: ProjectEnvironmentSetRuntimeInput): Promise<ProjectEnvironmentActionResult>;
+  openEnvFile(input: ProjectEnvironmentOpenEnvFileInput): Promise<ProjectEnvironmentActionResult>;
 }
 
-export function createProjectEnvironmentHandlers(storage: StorageCaller): ProjectEnvironmentHandlers {
+export interface ProjectEnvironmentHandlerOptions {
+  readonly openTextFile?: (filePath: string) => Promise<void>;
+}
+
+async function openSystemTextFile(filePath: string): Promise<void> {
+  const command = process.platform === 'darwin' ? ['open', ['-t', filePath]] as const : ['xdg-open', [filePath]] as const;
+  const result = await nodeRunCommand(command[0], [...command[1]], { timeoutMs: 5_000 }).catch(() => null);
+  if (!result || result.exitCode !== 0) throw new Error(`Created ${filePath}, but could not open the system text editor.`);
+}
+
+export function createProjectEnvironmentHandlers(storage: StorageCaller, options: ProjectEnvironmentHandlerOptions = {}): ProjectEnvironmentHandlers {
+  async function requireProject(projectId: string): Promise<Project> {
+    return storage.call<Project>('project.get', { projectId });
+  }
+
   async function environmentInfo(input: ProjectEnvironmentInfoInput): Promise<ProjectEnvironmentInfo> {
-    const project = await storage.call<Project>('project.get', { projectId: input.projectId });
+    const project = await requireProject(input.projectId);
     const canonicalPath = project.canonicalPath;
 
     const [detection, packageJson, envFile] = await Promise.all([
@@ -156,5 +179,28 @@ export function createProjectEnvironmentHandlers(storage: StorageCaller): Projec
     };
   }
 
-  return { environmentInfo };
+  async function setRuntime(input: ProjectEnvironmentSetRuntimeInput): Promise<ProjectEnvironmentActionResult> {
+    const project = await requireProject(input.projectId);
+    const normalized = input.version.trim().replace(/^v/, '');
+    if (!/^(?:\d+)(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/.test(normalized)) {
+      throw new Error('Enter a Node version such as 24 or 24.4.1.');
+    }
+    const filePath = path.join(project.canonicalPath, '.nvmrc');
+    await fs.writeFile(filePath, `${normalized}\n`, { encoding: 'utf8', mode: 0o644 });
+    return { filePath };
+  }
+
+  async function openEnvFile(input: ProjectEnvironmentOpenEnvFileInput): Promise<ProjectEnvironmentActionResult> {
+    const project = await requireProject(input.projectId);
+    const filePath = path.join(project.canonicalPath, '.env');
+    try {
+      await fs.writeFile(filePath, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    } catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) throw error;
+    }
+    await (options.openTextFile ?? openSystemTextFile)(filePath);
+    return { filePath };
+  }
+
+  return { environmentInfo, setRuntime, openEnvFile };
 }

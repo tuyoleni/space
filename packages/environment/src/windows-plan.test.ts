@@ -78,7 +78,7 @@ describe('buildWindowsBootstrapPlan (spec section 8.5, ONB-005)', () => {
     expect(plan).not.toHaveProperty('requiresElevation');
   });
 
-  it('plans Node via Volta and skips npm as an independent step', async () => {
+  it('plans Node via WinGet and skips optional Volta', async () => {
     const scan = baseScan({
       tools: [
         { toolId: 'git', found: true, path: 'C:\\Git\\git.exe', version: '2.45.0', meetsMinimumVersion: true },
@@ -90,16 +90,14 @@ describe('buildWindowsBootstrapPlan (spec section 8.5, ONB-005)', () => {
     });
     const plan = await buildWindowsBootstrapPlan(scan, TOOL_MANIFEST);
     const ids = plan.steps.map((s) => s.id);
-    expect(ids.indexOf('install-volta')).toBeLessThan(ids.indexOf('install-node'));
+    expect(ids).not.toContain('install-volta');
     expect(ids).toContain('verify-npm');
-    expect(plan.steps.find((s) => s.id === 'install-node')?.strategy?.kind).toBe('volta-managed');
+    expect(plan.steps.find((s) => s.id === 'install-node')?.strategy?.packageManagerId).toBe('winget');
   });
 
-  it('adds a deferred PowerShell shell-integration step when Space integration is not detected', async () => {
+  it('does not add an unimplemented PowerShell placeholder to required onboarding', async () => {
     const plan = await buildWindowsBootstrapPlan(baseScan({ spaceShellIntegrationDetected: false }), TOOL_MANIFEST);
-    const step = plan.steps.find((s) => s.kind === 'shell-integration');
-    expect(step?.deferredImplementation).toBe(true);
-    expect(step?.displayName).toContain('PowerShell');
+    expect(plan.steps.some((step) => step.kind === 'shell-integration')).toBe(false);
   });
 });
 

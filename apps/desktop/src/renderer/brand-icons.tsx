@@ -1,5 +1,7 @@
 import {
   siBun,
+  siClaudecode,
+  siCursor,
   siDocker,
   siEslint,
   siGit,
@@ -17,11 +19,13 @@ import {
   siTypescript,
   siVercel,
   siVite,
+  siVscodium,
   siVuedotjs,
   siWebpack,
   siYarn,
   type SimpleIcon,
 } from 'simple-icons';
+import type { AiToolId } from '@space/contracts';
 
 /**
  * Real brand logos (official Simple Icons SVG paths + brand colors) for the
@@ -64,6 +68,13 @@ export const SERVICE_BRAND: Record<string, SimpleIcon> = {
   supabase: siSupabase,
   gcloud: siGoogle,
   github: siGithub,
+};
+
+/** AI coding products with canonical marks. Installed apps use their native OS icon instead. */
+export const AI_TOOL_BRAND: Partial<Record<AiToolId, SimpleIcon>> = {
+  'claude-code': siClaudecode,
+  cursor: siCursor,
+  vscode: { ...siVscodium, title: 'Visual Studio Code', hex: '007ACC' },
 };
 
 /**

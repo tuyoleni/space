@@ -110,6 +110,34 @@ interface ResolvedProjectContext {
   readonly matchedOn: 'canonicalPath' | 'repositoryRoot';
 }
 
+async function resolveProjectContext(deps: McpToolDeps, candidatePath: string): Promise<ResolvedProjectContext | null> {
+  const workspaces = await deps.storage.call<WorkspaceSummary[]>('workspace.list', undefined);
+  const candidates: ResolvedProjectContext[] = [];
+  for (const workspace of workspaces) {
+    // Workspace/project membership is the routing authority. The active
+    // workspace in the UI is deliberately irrelevant: two coding sessions
+    // can work in different workspaces at the same time.
+    // eslint-disable-next-line no-await-in-loop
+    const projects = await deps.storage.call<Project[]>('project.list', { workspaceId: workspace.id });
+    for (const project of projects) {
+      if (containsPath(project.canonicalPath, candidatePath)) {
+        candidates.push({ workspace, project, matchedOn: 'canonicalPath' });
+      } else if (project.repositoryRoot && containsPath(project.repositoryRoot, candidatePath)) {
+        candidates.push({ workspace, project, matchedOn: 'repositoryRoot' });
+      }
+    }
+  }
+  // Nested registrations are legal (a monorepo folder and a package inside
+  // it), so the deepest matching root is the answer, not the first found.
+  return (
+    candidates.sort(
+      (a, b) =>
+        (b.matchedOn === 'canonicalPath' ? b.project.canonicalPath : (b.project.repositoryRoot ?? '')).length -
+        (a.matchedOn === 'canonicalPath' ? a.project.canonicalPath : (a.project.repositoryRoot ?? '')).length,
+    )[0] ?? null
+  );
+}
+
 export const MCP_TOOLS: readonly McpToolDefinition[] = [
   tool({
     name: 'list_workspaces',
@@ -139,28 +167,25 @@ export const MCP_TOOLS: readonly McpToolDefinition[] = [
     description:
       "Map a filesystem path (normally your own working directory) to the Space workspace and project that owns it — call this first so the rest of these tools, and any work you do on disk, are scoped to the right workspace instead of a bare folder. Returns null when the path isn't inside any registered project. When Space launched you, the same context is also in the SPACE_WORKSPACE_ID / SPACE_PROJECT_ID environment variables.",
     inputSchema: resolveProjectInputSchema,
+    run: (deps, input) => resolveProjectContext(deps, input.path),
+  }),
+  tool({
+    name: 'get_project_context',
+    description:
+      "Resolve the current codebase path to its owning Space project and return the complete routing context in one call: workspace, project, Git status, runtime/package environment, and Space-managed dev processes. Call this first in every new coding session and call it again whenever the working codebase changes. Never reuse a projectId from a different path. Returns null when the path is not registered in Space.",
+    inputSchema: resolveProjectInputSchema,
     run: async (deps, input) => {
-      const workspaces = await deps.storage.call<WorkspaceSummary[]>('workspace.list', undefined);
-      const candidates: ResolvedProjectContext[] = [];
-      for (const workspace of workspaces) {
-        const projects = await deps.storage.call<Project[]>('project.list', { workspaceId: workspace.id });
-        for (const project of projects) {
-          if (containsPath(project.canonicalPath, input.path)) {
-            candidates.push({ workspace, project, matchedOn: 'canonicalPath' });
-          } else if (project.repositoryRoot && containsPath(project.repositoryRoot, input.path)) {
-            candidates.push({ workspace, project, matchedOn: 'repositoryRoot' });
-          }
-        }
+      const resolved = await resolveProjectContext(deps, input.path);
+      if (!resolved) {
+        return null;
       }
-      // Nested registrations are legal (a monorepo folder and a package inside
-      // it), so the deepest matching root is the answer, not the first found.
-      return (
-        candidates.sort(
-          (a, b) =>
-            (b.matchedOn === 'canonicalPath' ? b.project.canonicalPath : (b.project.repositoryRoot ?? '')).length -
-            (a.matchedOn === 'canonicalPath' ? a.project.canonicalPath : (a.project.repositoryRoot ?? '')).length,
-        )[0] ?? null
-      );
+      const projectId = resolved.project.id;
+      const [environment, devProcesses, gitStatus] = await Promise.all([
+        deps.projectEnvironmentHandlers.environmentInfo({ projectId }),
+        deps.storage.call<DevProcessInfo[]>('devProcess.list', { projectId }),
+        resolved.project.repositoryRoot ? deps.gitHandlers.status({ projectId }) : Promise.resolve(null),
+      ]);
+      return { ...resolved, environment, gitStatus, devProcesses };
     },
   }),
   tool({

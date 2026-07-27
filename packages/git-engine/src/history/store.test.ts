@@ -106,7 +106,7 @@ describe('HistoryStore cache hydration (ADR-007)', () => {
 
   it('falls back to a real git log when the cached HEAD SHA is stale', async () => {
     const cache = createInMemoryHistoryCache();
-    await cache.write('repo-cache-2', { headSha: 'stale-sha', commits: [] });
+    await cache.write('repo-cache-2', { scope: 'branch-refs-v1', headSha: 'stale-sha', commits: [] });
     const store = new HistoryStore({ cwd: '/repo', repoKey: 'repo-cache-2', executor: makeFakeExecutor(), cache, pageSize: 10 });
     const page = await store.loadInitial(5);
     expect(page.commits[0]?.sha).toBe('c0000');

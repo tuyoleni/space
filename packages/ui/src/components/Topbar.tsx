@@ -6,6 +6,9 @@ import { cn } from '../cn';
 export interface TopbarSegmentOption {
   readonly value: string;
   readonly label: string;
+  readonly icon?: ReactNode;
+  readonly trailingIcon?: ReactNode;
+  readonly ariaLabel?: string;
 }
 
 export interface TopbarMenuProps {
@@ -29,7 +32,7 @@ const triggerClasses = cn(
 export function TopbarMenu({ label, value, icon, options, onSelect, disabled }: TopbarMenuProps) {
   const content = (
     <>
-      <span className="text-[10px] font-medium uppercase tracking-wide text-fg-faint">{label}</span>
+      <span className="space-type-label text-fg-faint">{label}</span>
       <span className="flex items-center gap-1.5 text-sm text-fg">
         {icon}
         <span className="truncate">{value}</span>
@@ -63,12 +66,15 @@ export function TopbarMenu({ label, value, icon, options, onSelect, disabled }: 
             <RadixDropdownMenu.Item
               key={option.value}
               onSelect={() => onSelect(option.value)}
+              aria-label={option.ariaLabel ?? option.label}
               className={cn(
                 'flex h-8 cursor-pointer select-none items-center rounded px-2 text-sm text-fg outline-none',
                 'data-[highlighted]:bg-surface-hover',
               )}
             >
-              {option.label}
+              {option.icon && <span className="mr-2 flex size-4 shrink-0 items-center justify-center">{option.icon}</span>}
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {option.trailingIcon && <span className="ml-4 flex size-4 shrink-0 items-center justify-center">{option.trailingIcon}</span>}
             </RadixDropdownMenu.Item>
           ))}
         </RadixDropdownMenu.Content>

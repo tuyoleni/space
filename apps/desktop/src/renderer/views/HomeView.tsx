@@ -189,6 +189,7 @@ export function HomeView({
   const [issues, setIssues] = useState<readonly GithubIssueSummary[] | null>(null);
   const [depScan, setDepScan] = useState<DependencyScanResult | null>(null);
   const [packageManager, setPackageManager] = useState<JsPackageManagerId | null>(null);
+  const [projectScripts, setProjectScripts] = useState<readonly string[]>([]);
   const [depsBusy, setDepsBusy] = useState(false);
   const [stats, setStats] = useState<SystemStatsResult | null>(null);
   const [processes, setProcesses] = useState<readonly SystemProcessInfo[]>([]);
@@ -220,6 +221,25 @@ export function HomeView({
     void window.space.github.prList({ workspaceId: workspace.id, projectId, state: 'open' }).then(setPrs, () => setPrs(null));
     void window.space.github.issueList({ workspaceId: workspace.id, projectId, state: 'open' }).then(setIssues, () => setIssues(null));
   }, [workspace.id, selectedProject, githubReport?.authenticated]);
+
+  useEffect(() => {
+    setProjectScripts([]);
+    if (!selectedProject) {
+      return;
+    }
+    let cancelled = false;
+    void window.space.project.environmentInfo({ projectId: selectedProject.id }).then(
+      (info) => {
+        if (!cancelled) {
+          setProjectScripts(info.scriptNames);
+        }
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProject]);
 
   const prCount = prs?.length ?? null;
   const issueCount = issues?.length ?? null;
@@ -310,9 +330,9 @@ export function HomeView({
   const memoryUsedGb = stats ? (stats.memoryTotalBytes - stats.memoryFreeBytes) / 1024 ** 3 : null;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0 overflow-hidden">
       {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <GreetingIcon />
@@ -339,9 +359,10 @@ export function HomeView({
           </div>
         </div>
 
-        {/* Environment / GitHub / Recent Projects / Terminals / Services / Quick Actions —
-            one grid with equal rows so every block is the same size. */}
-        <div className="grid auto-rows-fr grid-cols-3 gap-2">
+        {/* Two compact dashboard rows. GitHub fills the final slot in row two;
+            each row sizes from its own content instead of every row inheriting
+            the height of the tallest card in the entire grid. */}
+        <div className="grid grid-cols-3 gap-2">
           <Card className="flex h-full flex-col">
             <CardHeader>
               <CardTitle>Environment</CardTitle>
@@ -382,7 +403,7 @@ export function HomeView({
             </CardFooter>
           </Card>
 
-          <Card className="flex h-full flex-col">
+          <Card className="col-start-3 row-start-2 flex h-full flex-col">
             <CardHeader>
               <CardTitle>GitHub</CardTitle>
               {githubReport?.authenticated ? <Badge variant="success">Connected</Badge> : <Badge>Offline</Badge>}
@@ -622,6 +643,25 @@ export function HomeView({
                   </span>
                 </button>
               )}
+              {selectedProject && projectScripts
+                .filter((script) => ['dev', 'start', 'test', 'build', 'lint', 'typecheck'].includes(script))
+                .slice(0, 3)
+                .map((script) => (
+                  <button
+                    key={script}
+                    type="button"
+                    onClick={() => actions.runScript(selectedProject, script)}
+                    disabled={busy}
+                    className="flex items-center justify-between py-1.5 text-sm text-fg hover:text-accent-hover disabled:opacity-50"
+                  >
+                    <span className="flex items-center gap-2 whitespace-nowrap">
+                      <Play size={14} className="text-fg-muted" /> Run {script}
+                    </span>
+                    <span className="flex items-center gap-1.5 text-xs text-fg-faint">
+                      {packageManager ?? 'npm'} run {script} <ArrowRight size={13} className="text-fg-muted" />
+                    </span>
+                  </button>
+                ))}
             </CardRows>
           </Card>
         </div>
@@ -710,7 +750,7 @@ export function HomeView({
             )}
           </Card>
 
-          <Card className="flex h-full flex-col">
+          <Card className="col-start-2 row-start-1 flex h-full flex-col">
             <CardHeader>
               <CardTitle>Git Status</CardTitle>
               {gitStatus && (
@@ -795,7 +835,7 @@ export function HomeView({
       </div>
 
       {/* Right rail */}
-      <div className="flex w-80 shrink-0 flex-col gap-2 overflow-y-auto border-l border-border p-2">
+      <div className="flex min-h-0 w-80 shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain border-l border-border p-2 [scrollbar-gutter:stable] [&>*]:shrink-0">
         <Card>
           <CardHeader>
             <CardTitle>Developer Activity</CardTitle>
@@ -858,11 +898,7 @@ export function HomeView({
               {processes.map((proc) => (
                 <div key={proc.pid} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                   <span className="flex min-w-0 items-center gap-2">
-                    {proc.iconDataUrl ? (
-                      <img src={proc.iconDataUrl} alt="" className="h-4 w-4 shrink-0" />
-                    ) : (
-                      <Cpu size={14} className="shrink-0 text-fg-faint" />
-                    )}
+                    {proc.iconDataUrl && <img src={proc.iconDataUrl} alt="" className="h-4 w-4 shrink-0" />}
                     <span className="truncate text-fg">{proc.name}</span>
                   </span>
                   <span className="flex shrink-0 gap-4 text-xs text-fg-muted">

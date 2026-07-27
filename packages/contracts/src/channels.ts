@@ -79,6 +79,7 @@ export const IPC_CHANNELS = {
 
   // M6: GitHub (spec section 14, GH-001..009)
   githubAuthReport: 'github:auth:report',
+  githubContributions: 'github:contributions',
   githubAuthStartLogin: 'github:auth:startLogin',
   githubAuthLogout: 'github:auth:logout',
   githubSetupGit: 'github:setupGit',
@@ -139,6 +140,7 @@ export const IPC_CHANNELS = {
   bootstrapBuildPlan: 'bootstrap:buildPlan',
   bootstrapRunNextStep: 'bootstrap:runNextStep',
   bootstrapCancel: 'bootstrap:cancel',
+  bootstrapComplete: 'bootstrap:complete',
 
   // M8: automation (spec section 18)
   automationList: 'automation:list',
@@ -163,6 +165,8 @@ export const IPC_CHANNELS = {
 
   // Real per-project runtime/package-manager/lockfile/scripts/env-var summary
   projectEnvironmentInfo: 'project:environmentInfo',
+  projectEnvironmentSetRuntime: 'project:environmentSetRuntime',
+  projectEnvironmentOpenEnvFile: 'project:environmentOpenEnvFile',
 
   // Real, read-only Docker/Vercel/Supabase/gcloud presence+auth checks; startLogin opens a real login PTY
   connectedServicesStatus: 'connectedServices:status',
@@ -195,6 +199,8 @@ export const IPC_CHANNELS = {
   aiToolsConnect: 'aiTools:connect',
   aiToolsDisconnect: 'aiTools:disconnect',
   aiToolsLaunch: 'aiTools:launch',
+  aiToolsOpenProject: 'aiTools:openProject',
+  aiToolsTestConnection: 'aiTools:testConnection',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

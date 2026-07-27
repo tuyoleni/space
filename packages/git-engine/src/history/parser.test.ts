@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseHistoryOutput } from './parser';
+import { historyLogArgs, parseHistoryOutput } from './parser';
 
 const RS = '\x1e';
 const FS = '\x1f';
@@ -19,6 +19,14 @@ function record(
 }
 
 describe('parseHistoryOutput', () => {
+  it('loads branch history without pulling synthetic stash commits into the graph', () => {
+    const args = historyLogArgs();
+    expect(args).toContain('--branches');
+    expect(args).toContain('--remotes');
+    expect(args).toContain('--tags');
+    expect(args).not.toContain('--all');
+  });
+
   it('parses a single linear commit with no parents', () => {
     const output = record('aaa111', '', 'Ada Lovelace', 'ada@example.com', '1600000000', '1600000001', '', 'initial commit');
     const [commit] = parseHistoryOutput(output);

@@ -47,6 +47,7 @@
     "@gitgraph/core": "^1.5.0",
     "@gitgraph/react": "^1.6.0",
     "@google/genai": "^2.11.0",
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "@space/activity": "^0.1.0",
     "@space/agent": "^0.1.0",
     "@space/automation": "^0.1.0",

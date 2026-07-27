@@ -12,6 +12,7 @@ import { friendlyGithubErrorMessage } from './errors';
 export function useGithubAuth(workspaceId: string) {
   const [report, setReport] = useState<GithubAuthReport | null>(null);
   const [loginSession, setLoginSession] = useState<TerminalSessionInfo | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
 
@@ -42,6 +43,10 @@ export function useGithubAuth(workspaceId: string) {
   }
 
   function signIn(): void {
+    // Open a dedicated surface before starting the CLI. `gh auth login`
+    // writes interactively and must never fall through into a page panel.
+    setLoginOpen(true);
+    setLoginSession(null);
     void guarded(async () => {
       const { sessionId } = await window.space.github.authStartLogin({ workspaceId, webFlow: true });
       setLoginSession({
@@ -68,10 +73,11 @@ export function useGithubAuth(workspaceId: string) {
     });
   }
 
-  /** Dismiss the login PTY view (e.g. closing its dialog) without ending the underlying `gh auth login` session — the user can reopen it via signIn's returned session id, or just re-check status with refreshReport. */
+  /** Dismiss the login dialog without ending the underlying `gh auth login` process. */
   function dismissLogin(): void {
+    setLoginOpen(false);
     setLoginSession(null);
   }
 
-  return { report, loginSession, busy, refreshReport, signIn, signOut, dismissLogin, guarded };
+  return { report, loginSession, loginOpen, busy, refreshReport, signIn, signOut, dismissLogin, guarded };
 }

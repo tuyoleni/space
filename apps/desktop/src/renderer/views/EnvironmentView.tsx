@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, DownloadCloud, Download, Laptop2, Package, RefreshCw, Terminal, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { DownloadCloud, Download, Laptop2, Package, RefreshCw, Terminal, Zap } from 'lucide-react';
 import type { EnvironmentScanResult, EnvironmentScanToolResult, GithubAuthReport } from '@space/contracts';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, StatusDot, useToast } from '@space/ui';
 import { AiToolsPanel } from '../AiToolsPanel';
@@ -8,6 +8,7 @@ import { EnvironmentProjectPanel } from '../EnvironmentProjectPanel';
 import { EnvironmentServicesPanel } from '../EnvironmentServicesPanel';
 import { EnvironmentSuggestedActions } from '../EnvironmentSuggestedActions';
 import { PackagesPanel } from '../PackagesPanel';
+import { PackageUpdatesMenu } from '../PackageUpdatesMenu';
 
 /** Real brand icon for a toolchain entry, with a lucide fallback for the few (e.g. Volta) that have no Simple Icon. */
 function ToolIcon({ toolId }: { readonly toolId: string }) {
@@ -35,7 +36,7 @@ function StatTile({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-2.5 py-3">
+      <CardContent className="flex items-center gap-2.5 py-2.5">
         <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-hover">
           {icon}
         </span>
@@ -63,13 +64,13 @@ interface EnvironmentViewProps {
   readonly selectedProjectId: string | null;
   readonly activeWorkspaceId: string | null;
   readonly githubReport: GithubAuthReport | null;
+  readonly onRunScript?: (scriptName: string) => void;
 }
 
-export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubReport }: EnvironmentViewProps) {
+export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubReport, onRunScript }: EnvironmentViewProps) {
   const { toast } = useToast();
   const [scan, setScan] = useState<EnvironmentScanResult | null>(null);
   const [busy, setBusy] = useState(false);
-  const [expandedToolId, setExpandedToolId] = useState<string | null>(null);
   const [inFlightToolIds, setInFlightToolIds] = useState<ReadonlySet<string>>(new Set());
 
   async function refresh(): Promise<void> {
@@ -111,8 +112,16 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
     setBusy(true);
     try {
       for (const tool of missingTools) {
+        const activityId = `tool:${tool.toolId}:${Date.now()}`;
+        window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label: `Installing ${tool.displayName}`, state: 'running' } }));
         // eslint-disable-next-line no-await-in-loop -- installs must run one at a time, never race.
-        await window.space.environment.installTool({ toolId: tool.toolId });
+        try {
+          await window.space.environment.installTool({ toolId: tool.toolId });
+          window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label: `Installing ${tool.displayName}`, state: 'completed' } }));
+        } catch (error) {
+          window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label: `Installing ${tool.displayName}`, state: 'failed', message: error instanceof Error ? error.message : String(error) } }));
+          throw error;
+        }
       }
       await refresh();
     } catch (caught) {
@@ -127,14 +136,20 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
       return;
     }
     setInFlightToolIds((prev) => new Set(prev).add(toolId));
+    const tool = scan?.tools.find((candidate) => candidate.toolId === toolId);
+    const activityId = `tool:${toolId}:${Date.now()}`;
+    const label = `${action === 'install' ? 'Installing' : 'Updating'} ${tool?.displayName ?? toolId}`;
+    window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label, state: 'running' } }));
     try {
       if (action === 'install') {
         await window.space.environment.installTool({ toolId });
       } else {
         await window.space.environment.updateTool({ toolId });
       }
+      window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label, state: 'completed' } }));
       await refresh();
     } catch (caught) {
+      window.dispatchEvent(new CustomEvent('space:installation-activity', { detail: { id: activityId, label, state: 'failed', message: caught instanceof Error ? caught.message : String(caught) } }));
       toast({ variant: 'error', message: caught instanceof Error ? caught.message : String(caught) });
     } finally {
       setInFlightToolIds((prev) => {
@@ -147,11 +162,14 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
 
   const nodeTool = scan?.tools.find((tool) => tool.toolId === 'node') ?? null;
   const ghTool = scan?.tools.find((tool) => tool.toolId === 'gh') ?? null;
+  const essentialToolIds = new Set(['git', 'gh', 'node', 'npm']);
+  const essentialTools = scan?.tools.filter((tool) => essentialToolIds.has(tool.toolId)) ?? [];
+  const essentialIssues = essentialTools.filter((tool) => !tool.found || tool.meetsMinimumVersion === false);
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0 overflow-hidden">
       {/* Main column — scrolls independently of the right rail, same as HomeView. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-fg">Environment</h1>
@@ -166,12 +184,13 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
             <Button size="sm" variant="primary" onClick={() => void installMissing()} disabled={busy || missingTools.length === 0}>
               <DownloadCloud size={13} /> Install missing
             </Button>
+            <PackageUpdatesMenu />
           </div>
         </div>
 
         {scan && (
           <>
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-5 gap-2">
               <StatTile
                 icon={<Laptop2 size={16} className="text-fg-muted" />}
                 label="Machine"
@@ -204,87 +223,52 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
               />
             </div>
 
-            <div className="flex min-h-0 flex-1 items-start gap-4">
+            <div className="flex min-h-0 flex-1 items-start gap-2">
             <div className="h-full flex-1 self-stretch">
               <PackagesPanel />
             </div>
 
-            <Card className="flex-1">
+            <Card className="flex flex-1 flex-col">
               <CardHeader>
-                <CardTitle>Core toolchain</CardTitle>
-                <Badge variant="neutral">{scan.tools.length} tools</Badge>
+                <div>
+                  <CardTitle>Toolchain</CardTitle>
+                  <p className="mt-0.5 text-xs text-fg-muted">
+                    {essentialIssues.length === 0 ? 'Ready for project work.' : 'A required tool needs attention.'}
+                  </p>
+                </div>
+                <Badge variant={essentialIssues.length === 0 ? 'success' : 'warning'}>{essentialIssues.length === 0 ? 'Ready' : 'Action needed'}</Badge>
               </CardHeader>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-[10px] font-medium uppercase tracking-wide text-fg-faint">
-                      <th className="px-3.5 py-2 text-left">Tool</th>
-                      <th className="px-3.5 py-2 text-left">Status</th>
-                      <th className="px-3.5 py-2 text-left">Version</th>
-                      <th className="px-3.5 py-2 text-left">Source</th>
-                      <th className="px-3.5 py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {scan.tools.map((tool) => {
-                      const status = toolStatus(tool);
-                      const expanded = expandedToolId === tool.toolId;
+              {essentialIssues.length > 0 && (
+                <div className="space-y-1.5 border-b border-border px-3.5 py-2.5">
+                  {essentialIssues.map((tool) => {
+                    const inFlight = inFlightToolIds.has(tool.toolId);
+                    return (
+                      <div key={tool.toolId} className="flex items-center justify-between gap-3 rounded-md bg-surface-hover px-3 py-2 text-sm">
+                        <span className="flex items-center gap-2 text-fg"><ToolIcon toolId={tool.toolId} /> {tool.displayName}</span>
+                        {!tool.found && (
+                          <Button size="sm" variant="secondary" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'install')}>
+                            {inFlight ? <RefreshCw size={12} className="animate-spin" /> : null} Install
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="divide-y divide-border">
+                  {scan.tools.map((tool) => {
+                    const status = toolStatus(tool);
                       const inFlight = inFlightToolIds.has(tool.toolId);
                       return (
-                        <Fragment key={tool.toolId}>
-                          <tr className="hover:bg-surface-hover">
-                            <td className="px-3.5 py-2">
-                              <span className="flex items-center gap-2 text-fg">
-                                <ToolIcon toolId={tool.toolId} /> {tool.displayName}
-                              </span>
-                            </td>
-                            <td className="px-3.5 py-2">
-                              <span className="flex items-center gap-1.5 text-fg-muted">
-                                <StatusDot tone={status.tone} /> {status.label}
-                              </span>
-                            </td>
-                            <td className="px-3.5 py-2">
-                              <span className="flex items-center gap-1.5 text-fg-muted">
-                                {tool.version ?? '—'}
-                                {tool.updateAvailable === true && (
-                                  <Badge variant="warning">update available{tool.latestVersion ? ` · ${tool.latestVersion}` : ''}</Badge>
-                                )}
-                              </span>
-                            </td>
-                            <td className="px-3.5 py-2 text-fg-muted">{tool.source ?? '—'}</td>
-                            <td className="px-3.5 py-2 text-right">
-                              {tool.found && tool.updateAvailable === true ? (
-                                <Button size="sm" variant="ghost" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'update')}>
-                                  {inFlight ? <RefreshCw size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Update
-                                </Button>
-                              ) : !tool.found ? (
-                                <Button size="sm" variant="ghost" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'install')}>
-                                  {inFlight ? <RefreshCw size={12} className="animate-spin" /> : <DownloadCloud size={12} />} Install
-                                </Button>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setExpandedToolId(expanded ? null : tool.toolId)}
-                                >
-                                  {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Details
-                                </Button>
-                              )}
-                            </td>
-                          </tr>
-                          {expanded && (
-                            <tr>
-                              <td colSpan={5} className="bg-surface-hover/40 px-3.5 py-2 text-xs text-fg-faint">
-                                path: {tool.path ?? '—'} · meets minimum version:{' '}
-                                {tool.meetsMinimumVersion === null ? 'unknown' : tool.meetsMinimumVersion ? 'yes' : 'no'}
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
+                        <div key={tool.toolId} className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem] items-center gap-3 px-3.5 py-2 text-sm">
+                          <span className="flex min-w-0 items-center gap-2"><ToolIcon toolId={tool.toolId} /><span className="truncate text-fg">{tool.displayName}</span></span>
+                          <span className="flex items-center gap-2 text-xs text-fg-muted"><StatusDot tone={status.tone} /><span className="truncate">{tool.version ?? status.label}</span></span>
+                          <span className="flex justify-end">
+                            {!tool.found && <Button size="sm" variant="ghost" disabled={inFlight} onClick={() => void runToolAction(tool.toolId, 'install')}>Install</Button>}
+                          </span>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
               </div>
             </Card>
             </div>
@@ -293,15 +277,14 @@ export function EnvironmentView({ selectedProjectId, activeWorkspaceId, githubRe
       </div>
 
       {/* Right rail — fixed width, own scroll, same pattern as HomeView's "Developer Activity" sidebar. */}
-      <div className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border p-4">
-        <EnvironmentProjectPanel projectId={selectedProjectId} />
+      <div className="flex min-h-0 w-80 shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain border-l border-border p-2 [scrollbar-gutter:stable] [&>*]:shrink-0">
+        <EnvironmentProjectPanel projectId={selectedProjectId} {...(onRunScript ? { onRunScript } : {})} />
         <EnvironmentServicesPanel workspaceId={activeWorkspaceId} projectId={selectedProjectId} githubReport={githubReport} />
         <AiToolsPanel workspaceId={activeWorkspaceId} projectId={selectedProjectId} />
         {scan && (
           <EnvironmentSuggestedActions
             scan={scan}
             onInstallTool={(toolId) => void runToolAction(toolId, 'install')}
-            onUpdateTool={(toolId) => void runToolAction(toolId, 'update')}
             busyToolIds={inFlightToolIds}
           />
         )}
