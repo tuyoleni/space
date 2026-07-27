@@ -42,7 +42,10 @@ describe('continueOperation', () => {
     const executor: GitExecutor = vi.fn(async () => ({ exitCode: 0, stdout: 'merged', stderr: '' }));
     const gitDirFs: GitDirFsPort = { exists: async () => false }; // no MERGE_HEAD left -> completed
     const outcome = await continueOperation('/repo', '/repo/.git', { kind: 'merge' }, executor, gitDirFs);
-    expect(executor).toHaveBeenCalledWith(['merge', '--continue'], { cwd: '/repo' });
+    expect(executor).toHaveBeenCalledWith(['merge', '--continue'], {
+      cwd: '/repo',
+      env: { GIT_EDITOR: 'true', GIT_SEQUENCE_EDITOR: 'true' },
+    });
     expect(outcome.completed).toBe(true);
   });
 

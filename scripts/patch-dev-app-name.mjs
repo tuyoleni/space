@@ -63,9 +63,12 @@ if (fs.existsSync(mainPlist)) {
 // switcher, and Finder all resolve the same Space artwork in development.
 const resourcesDir = path.join(appPath, 'Contents', 'Resources');
 if (fs.existsSync(SPACE_ICON_PATH) && fs.existsSync(resourcesDir)) {
-  for (const iconFile of ['electron.icns', 'Electron.icns', 'icon.icns']) {
+  for (const iconFile of ['Electron.icns', 'icon.icns']) {
     fs.copyFileSync(SPACE_ICON_PATH, path.join(resourcesDir, iconFile));
   }
+  // CFBundleIconFile now points to icon.icns, so the old framework-branded
+  // resource is not needed in a Space development bundle.
+  fs.rmSync(path.join(resourcesDir, 'electron.icns'), { force: true });
 }
 
 // Helper bundles (GPU/Renderer/Plugin) — cosmetic, for Activity Monitor.

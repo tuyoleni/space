@@ -1,5 +1,6 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -17,6 +18,27 @@ import path from 'node:path';
 // tool may replace it later.
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..');
 const RUNTIME_ONLY_PACKAGES = ['better-sqlite3', 'node-pty'];
+
+function removeRuntimeBrandIcon(
+  buildPath: string,
+  _electronVersion: string,
+  platform: NodeJS.Platform,
+  _arch: string,
+  callback: (error?: Error | null) => void,
+): void {
+  if (platform !== 'darwin') {
+    callback();
+    return;
+  }
+
+  // The packaging runtime begins as Electron.app. Remove only its default
+  // icon before packager copies the Space icon declared below and signs the
+  // final bundle. Runtime binaries remain untouched.
+  fs.rm(path.join(buildPath, 'Electron.app', 'Contents', 'Resources', 'electron.icns'), { force: true }).then(
+    () => callback(),
+    (error: unknown) => callback(error instanceof Error ? error : new Error(String(error))),
+  );
+}
 
 async function resolveRuntimeClosure(roots: string[]): Promise<string[]> {
   const seen = new Set<string>();
@@ -68,6 +90,50 @@ async function copyHoistedRuntimeDependencies(
     onlyModules: RUNTIME_ONLY_PACKAGES,
     force: true,
   });
+  // Keep only the files these packages load at runtime. Rebuild leaves behind
+  // architecture-specific `bin` folders, Makefiles, object metadata, and a
+  // second set of prebuilds. Those are redundant once `build/Release` exists,
+  // and their differing paths/content prevent @electron/universal from
+  // combining the two app slices deterministically.
+  if (platform === 'darwin') {
+    const runtimeFiles = [
+      {
+        packageName: 'better-sqlite3',
+        files: ['better_sqlite3.node'],
+      },
+      {
+        packageName: 'node-pty',
+        files: ['pty.node', 'spawn-helper'],
+      },
+    ];
+
+    for (const runtimePackage of runtimeFiles) {
+      const packageRoot = path.join(targetNodeModules, runtimePackage.packageName);
+      const releaseDir = path.join(packageRoot, 'build', 'Release');
+      const preserved = await Promise.all(
+        runtimePackage.files.map(async (file) => {
+          const source = path.join(releaseDir, file);
+          return {
+            file,
+            contents: await fs.readFile(source),
+            mode: (await fs.stat(source)).mode,
+          };
+        }),
+      );
+
+      await fs.rm(path.join(packageRoot, 'build'), { recursive: true, force: true });
+      await fs.rm(path.join(packageRoot, 'bin'), { recursive: true, force: true });
+      await fs.rm(path.join(packageRoot, 'prebuilds'), { recursive: true, force: true });
+      await fs.rm(path.join(packageRoot, 'node-addon-api'), { recursive: true, force: true });
+      await fs.mkdir(releaseDir, { recursive: true });
+
+      for (const file of preserved) {
+        const destination = path.join(releaseDir, file.file);
+        await fs.writeFile(destination, file.contents);
+        await fs.chmod(destination, file.mode);
+      }
+    }
+  }
   // node-pty's macOS spawn-helper is a plain executable, not a .node file;
   // npm does not preserve its exec bit in prebuilds, and without it every
   // pty.spawn fails with "posix_spawnp failed" (found in the P0-A spike).
@@ -89,11 +155,20 @@ const config: ForgeConfig = {
     // (.icns on darwin, .ico on win32) when given an extension-less path —
     // both files live at assets/icons/icon.{icns,ico}.
     icon: path.join(__dirname, 'assets', 'icons', 'icon'),
+    // Electron Packager otherwise writes the correct artwork under its
+    // framework filename. Give the bundled asset a Space-owned name too.
+    extendInfo: { CFBundleIconFile: 'icon.icns' },
     // Unpack the native packages wholesale: node-pty needs its spawn-helper
     // executable (not a .node file) runnable from the real filesystem, which
     // the auto-unpack-natives plugin's *.node-only glob does not cover.
     asar: {
       unpack: '**/node_modules/{node-pty,better-sqlite3}/**',
+    },
+    // Sign the merged Universal bundle ad-hoc so Apple Silicon can launch it.
+    // Replace this with a Developer ID identity before public distribution.
+    osxSign: {
+      identity: '-',
+      identityValidation: false,
     },
     afterCopy: [
       (buildPath, electronVersion, platform, arch, callback) => {
@@ -103,10 +178,34 @@ const config: ForgeConfig = {
         );
       },
     ],
+    afterExtract: [removeRuntimeBrandIcon],
   },
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({ setupIcon: path.join(__dirname, 'assets', 'icons', 'icon.ico') }),
+    new MakerDMG(
+      {
+        name: 'Space',
+        background: path.join(__dirname, 'assets', 'dmg', 'dmg-background.png'),
+        icon: path.join(__dirname, 'assets', 'icons', 'icon.icns'),
+        iconSize: 128,
+        contents: (options) => [
+          { x: 448, y: 205, type: 'link', path: '/Applications' },
+          { x: 192, y: 205, type: 'file', path: options.appPath },
+        ],
+        format: 'ULFO',
+        overwrite: true,
+        additionalDMGOptions: {
+          'background-color': '#f6f5f2',
+          window: {
+            size: { width: 640, height: 400 },
+          },
+        },
+      },
+      ['darwin'],
+    ),
+    // Keep ZIPs for Squirrel.Mac auto-update compatibility. Public download
+    // links point to the DMGs instead.
     new MakerZIP({}, ['darwin']),
   ],
   plugins: [

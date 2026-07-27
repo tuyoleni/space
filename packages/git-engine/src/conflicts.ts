@@ -72,8 +72,9 @@ async function runAndVerify(
   args: string[],
   executor: GitExecutor,
   gitDirFs: GitDirFsPort,
+  env?: Readonly<Record<string, string>>,
 ): Promise<OperationOutcome> {
-  const result = await executor(args, { cwd });
+  const result = await executor(args, env ? { cwd, env } : { cwd });
   // Re-check real repository state regardless of exit code: a continue can
   // exit non-zero because more conflicts remain, which is not a crash —
   // and it can exit zero while a multi-step sequence (cherry-pick/revert
@@ -93,7 +94,13 @@ export async function continueOperation(
   if (!isContinuable(operation.kind)) {
     throw new Error(`No continuable Git operation is in progress (state: "${operation.kind}")`);
   }
-  return runAndVerify(cwd, gitDir, CONTINUE_ARGS[operation.kind](), executor, gitDirFs);
+  // Continue commands may open Git's configured editor for the generated
+  // commit message. Space is a GUI process with no interactive terminal, so
+  // accept Git's prepared message instead of leaving the operation hanging.
+  return runAndVerify(cwd, gitDir, CONTINUE_ARGS[operation.kind](), executor, gitDirFs, {
+    GIT_EDITOR: 'true',
+    GIT_SEQUENCE_EDITOR: 'true',
+  });
 }
 
 export async function abortOperation(

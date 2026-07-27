@@ -1,17 +1,12 @@
 name: release
 
-# Builds unsigned macOS zips for both architectures and attaches them to a
-# GitHub Release whenever a version tag is pushed. No code signing yet —
-# add `osxSign`/`osxNotarize` to apps/desktop/forge.config.ts once there's
-# an Apple Developer ID cert, then this workflow needs no changes (electron-
-# forge picks it up automatically).
+# Builds one Universal macOS DMG (Apple Silicon + Intel) and its update-compatible
+# zip, then attaches both to a GitHub Release whenever a version tag is pushed.
+# The bundle is currently ad-hoc signed; replace the identity and add notarization
+# in forge.config.ts once an Apple Developer ID certificate is available.
 #
-# Both arch builds run on the same macos-14 (Apple Silicon) runner — GitHub
-# no longer offers Intel-hosted macOS runners, so the x64 build is
-# cross-packaged: electron-forge's afterCopy hook (forge.config.ts) rebuilds
-# the app's native modules (better-sqlite3, node-pty) for the requested
-# --arch by fetching that arch's prebuilt binary, not by compiling on
-# mismatched host hardware.
+# Electron Forge builds both slices on macos-14, rebuilds better-sqlite3 and
+# node-pty for each target, then merges their Mach-O binaries with lipo.
 on:
   push:
     tags:
@@ -19,9 +14,6 @@ on:
 
 jobs:
   build-macos:
-    strategy:
-      matrix:
-        arch: [arm64, x64]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -32,17 +24,22 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run make --workspace apps/desktop -- --arch=${{ matrix.arch }}
+      - run: npm run make --workspace apps/desktop -- --arch=universal
 
-      - name: Rename artifact with arch suffix
+      - name: Prepare Universal release artifacts
         run: |
-          cd apps/desktop/out/make/zip/darwin/${{ matrix.arch }}
-          mv *.zip "space-darwin-${{ matrix.arch }}.zip"
+          dmg_path="$(find apps/desktop/out/make -type f -name '*.dmg' -print -quit)"
+          zip_path="$(find apps/desktop/out/make -type f -name '*.zip' -print -quit)"
+          test -n "$dmg_path"
+          test -n "$zip_path"
+          mkdir -p release-artifacts
+          cp "$dmg_path" "release-artifacts/space-darwin-universal.dmg"
+          cp "$zip_path" "release-artifacts/space-darwin-universal.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: space-darwin-${{ matrix.arch }}
-          path: apps/desktop/out/make/zip/darwin/${{ matrix.arch }}/space-darwin-${{ matrix.arch }}.zip
+          name: space-darwin-universal
+          path: release-artifacts/*
 
   release:
     needs: build-macos
@@ -57,5 +54,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.zip
+          files: |
+            artifacts/*.dmg
+            artifacts/*.zip
           generate_release_notes: true

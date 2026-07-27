@@ -44,6 +44,17 @@ function commit(target: string, file: string, content: string, message: string):
   execFileSync('git', ['commit', '-q', '-m', message], { cwd: target });
 }
 
+async function waitForHint(
+  hints: Array<'worktree' | 'git-dir'>,
+  expected: 'worktree' | 'git-dir',
+  timeoutMs = 5_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!hints.includes(expected) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 describe('history parser against real repositories (spec 11.3.3)', () => {
   it('parses a repository with lightweight and annotated tags', () => {
     const target = path.join(dir, 'project');
@@ -232,14 +243,17 @@ describe('real repository watcher (spec 11.12), always torn down', () => {
       },
     );
 
-    fs.writeFileSync(path.join(target, 'b.txt'), 'new file\n');
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // macOS registers FSEvents-backed recursive watchers asynchronously.
+    // Give the native watcher a moment to become active before the event.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    fs.writeFileSync(path.join(target, 'a.txt'), '2\n');
+    await waitForHint(hints, 'worktree');
     expect(hints).toContain('worktree');
 
     hints.length = 0;
-    execFileSync('git', ['add', 'b.txt'], { cwd: target });
+    execFileSync('git', ['add', 'a.txt'], { cwd: target });
     execFileSync('git', ['commit', '-q', '-m', 'second'], { cwd: target });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForHint(hints, 'git-dir');
     expect(hints).toContain('git-dir');
   });
 });
