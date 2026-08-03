@@ -41,7 +41,7 @@ const spaceAPI: SpaceAPI = {
     setEnvironmentRuntime: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentSetRuntime, input),
     openEnvironmentFile: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectEnvironmentOpenEnvFile, input),
     pickParentDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPickParentDirectory),
-    opened: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.projectOpened, projectId),
+    opened: (projectId) => ipcRenderer.invoke(IPC_CHANNELS.projectOpened, { projectId }),
     icon: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectIcon, input),
   },
   terminal: {

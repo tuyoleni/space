@@ -325,6 +325,10 @@ function applyContentSecurityPolicy(): void {
   });
 }
 
+app.on('gpu-process-crashed', (_event, details) => {
+  console.error('[Space] GPU process crashed:', details.reason, details.exitCode);
+});
+
 app.on('ready', () => {
   if (process.env.SPACE_RUN_P0A_SPIKE === '1') {
     void runP0ASpike();

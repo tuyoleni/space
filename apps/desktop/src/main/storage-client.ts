@@ -97,6 +97,11 @@ export class StorageClient {
 
   /** A crashed worker fails every in-flight call; a fresh one is spawned up to MAX_RESPAWNS times. */
   private handleExit(code: number): void {
+    if (this.stopped) {
+      this.worker = null;
+      return;
+    }
+
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timeout);
       pending.reject(new Error(`storage worker exited (code ${code}) before responding`));

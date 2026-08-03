@@ -146,7 +146,13 @@ function windowForEvent(event: IpcMainInvokeEvent): BrowserWindow {
 
 function sendToTrustedWindow(trusted: TrustedSender, channel: string, payload: unknown): void {
   const window = BrowserWindow.getAllWindows().find((w) => w.webContents.id === trusted.webContentsId);
-  window?.webContents.send(channel, payload);
+  try {
+    if (window && !window.webContents.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  } catch {
+    // Window's render frame may have been disposed during teardown
+  }
 }
 
 /**
