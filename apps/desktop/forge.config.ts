@@ -288,10 +288,12 @@ const config: ForgeConfig = {
     new MakerZIP({}, ['darwin']),
   ],
   hooks: {
-    // Signing is handled by osxSign above (ad-hoc with identity '-' when no
-    // Developer ID is configured, real signing when one is). The postPackage
-    // ad-hoc signing was removed because it created _CodeSignature/CodeResources
-    // on only one architecture, breaking the universal build stitcher.
+    postPackage: async (_forgeConfig, options) => {
+      if (process.platform !== 'darwin') return;
+      const appPath = path.join(options.outputPaths[0], 'Space.app');
+      const { execSync } = await import('node:child_process');
+      execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
+    },
   },
   plugins: [
     new VitePlugin({
