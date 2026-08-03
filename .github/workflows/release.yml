@@ -43,6 +43,7 @@ jobs:
       - run: npm ci
 
       - name: Import Developer ID certificate into a throwaway keychain
+        if: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' }}
         env:
           CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -88,7 +89,7 @@ jobs:
           SPACE_APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
 
       - name: Remove throwaway keychain
-        if: always()
+        if: ${{ always() && secrets.APPLE_CERTIFICATE_P12_BASE64 != '' }}
         run: security delete-keychain "$RUNNER_TEMP/space-signing.keychain-db" || true
 
       - name: Prepare Universal release artifacts
