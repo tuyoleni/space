@@ -305,8 +305,11 @@ const config: ForgeConfig = {
       for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.endsWith('.asar.unpacked')) continue;
         const unpackedRoot = path.join(resourcesDir, entry.name);
+        // `file` on universal binaries emits extra lines like
+        // "pty.node (for architecture x86_64): Mach-O ..." — filter those
+        // out with grep -v to avoid codesign failures on non-existent paths.
         const result = execSync(
-          `find "${unpackedRoot}" -type f -exec file {} \\; | grep "Mach-O" | cut -d: -f1`,
+          `find "${unpackedRoot}" -type f -exec file {} \\; | grep "Mach-O" | grep -v "(for architecture" | cut -d: -f1`,
           { encoding: 'utf-8' },
         );
         for (const filePath of result.trim().split('\n').filter(Boolean)) {

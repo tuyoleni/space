@@ -551,13 +551,13 @@ export function registerIpcHandlers(
     // Fan out this session's stream to storage bookkeeping and the renderer.
     terminal.subscribe(session.id, (workerEvent) => {
       if (workerEvent.type === 'output') {
-        void storage.call('terminal.recordOutput', { sessionId: workerEvent.sessionId, lastOutputAt: workerEvent.timestamp }).catch(() => {});
+        void storage.call('terminal.recordOutput', { sessionId: workerEvent.sessionId, lastOutputAt: workerEvent.timestamp }).catch(() => { /* fire-and-forget */ });
       } else if (workerEvent.type === 'exit') {
         void storage.call('terminal.markExited', {
           sessionId: workerEvent.sessionId,
           exitCode: workerEvent.exitCode,
           endedAt: workerEvent.timestamp,
-        }).catch(() => {});
+        }).catch(() => { /* fire-and-forget */ });
       }
       const rendererEvent: TerminalEvent =
         workerEvent.type === 'output'

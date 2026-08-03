@@ -66,7 +66,7 @@ function setup() {
   showOpenDialog.mockReset();
   fromWebContents.mockReset();
   getAllWindows.mockReset().mockReturnValue([]);
-  const storageCall = vi.fn();
+  const storageCall = vi.fn().mockResolvedValue(undefined);
   const storage = { call: storageCall } as unknown as StorageClient;
   const terminalCall = vi.fn();
   const terminalSubscribe = vi.fn();
@@ -791,7 +791,7 @@ describe('registerIpcHandlers', () => {
     it('githubAuthStartLogin fans PTY output out to the trusted window only', async () => {
       const { terminalSubscribe } = setup();
       const send = vi.fn();
-      getAllWindows.mockReturnValue([{ webContents: { id: 1, send } }, { webContents: { id: 2, send: vi.fn() } }]);
+      getAllWindows.mockReturnValue([{ webContents: { id: 1, send, isDestroyed: () => false } }, { webContents: { id: 2, send: vi.fn(), isDestroyed: () => false } }]);
       await handlerFor(IPC_CHANNELS.githubAuthStartLogin)(validEvent, { workspaceId: 'ws-1' });
       const listener = terminalSubscribe.mock.calls[0]?.[1] as (event: unknown) => void;
       listener({ kind: 'event', type: 'output', sessionId: 'gh-session-1', chunk: 'Open https://github.com/login/device', sequence: 1, timestamp: 't1' });
@@ -1106,7 +1106,7 @@ describe('registerIpcHandlers', () => {
     it('the subscribed listener persists output/exit to storage and pushes to the trusted window only', async () => {
       const { createTerminal, terminalSubscribe, storageCall } = setup();
       const send = vi.fn();
-      getAllWindows.mockReturnValue([{ webContents: { id: 1, send } }, { webContents: { id: 2, send: vi.fn() } }]);
+      getAllWindows.mockReturnValue([{ webContents: { id: 1, send, isDestroyed: () => false } }, { webContents: { id: 2, send: vi.fn(), isDestroyed: () => false } }]);
       createTerminal.mockResolvedValue({
         id: 'term-1',
         workspaceId: 'ws-1',
