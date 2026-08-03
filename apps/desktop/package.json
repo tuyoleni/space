@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "productName": "Space",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Space: a cross-platform desktop app for workspace, Git, GitHub, terminal, and project management.",
   "main": ".vite/build/main.js",
   "private": true,

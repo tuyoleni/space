@@ -291,7 +291,60 @@ const config: ForgeConfig = {
     postPackage: async (_forgeConfig, options) => {
       if (process.platform !== 'darwin') return;
       const appPath = path.join(options.outputPaths[0], 'Space.app');
+      const resourcesDir = path.join(appPath, 'Contents', 'Resources');
       const { execSync } = await import('node:child_process');
+      const fs = await import('node:fs/promises');
+
+      // codesign --deep does NOT traverse into .asar.unpacked/ directories.
+      // Every Mach-O executable and .node bundle in those unpacked directories
+      // must be signed individually BEFORE the top-level bundle is signed,
+      // because macOS 27 validates code signatures on every spawned binary
+      // (spawn-helper, pty.node dlopen targets, better_sqlite3.node, etc.)
+      // and kills processes that try to execute improperly signed code.
+      const entries = await fs.readdir(resourcesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.endsWith('.asar.unpacked')) continue;
+        const unpackedRoot = path.join(resourcesDir, entry.name);
+        const result = execSync(
+          `find "${unpackedRoot}" -type f -exec file {} \\; | grep "Mach-O" | cut -d: -f1`,
+          { encoding: 'utf-8' },
+        );
+        for (const filePath of result.trim().split('\n').filter(Boolean)) {
+          execSync(`codesign --force --sign - "${filePath}"`, { stdio: 'inherit' });
+        }
+      }
+
+      // node-pty's unixTerminal.js hardcodes:
+      //   helperPath.replace('app.asar', 'app.asar.unpacked')
+      // to remount spawn-helper from the asar virtual FS to the real
+      // filesystem. @electron/universal names the arch-specific asars
+      // `app-arm64.asar` / `app-x64.asar`, so the replacement never
+      // matches and spawn-helper stays at an unresolvable asar path —
+      // posix_spawnp then fails silently or crashes the worker. Patch
+      // every unixTerminal.js in the unpacked tree to also handle
+      // arch-specific asar names.
+      const patchResult = execSync(
+        `find "${resourcesDir}" -name unixTerminal.js -path "*.asar.unpacked*"`,
+        { encoding: 'utf-8' },
+      );
+      for (const utPath of patchResult.trim().split('\n').filter(Boolean)) {
+        const content = await fs.readFile(utPath, 'utf-8');
+        if (content.includes('app-arm64.asar')) continue; // already patched
+        const patched = content.replace(
+          "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');",
+          [
+            "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');",
+            "// @electron/universal names the asar app-{arch}.asar — extend the remap",
+            "helperPath = helperPath.replace(/app\\-[a-z0-9]+\\.asar/g, function(m){ return m + '.unpacked'; });",
+          ].join('\n'),
+        );
+        if (patched !== content) {
+          await fs.writeFile(utPath, patched);
+        }
+      }
+
+      // Re-sign the top-level bundle ad-hoc (repairs the seal broken by
+      // Info.plist rewriting in electron-packager's afterCopy).
       execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
     },
   },
