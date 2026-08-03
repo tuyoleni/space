@@ -3,7 +3,7 @@
  * owns a real PTY. Runs inside `utilityProcess.fork`, never the Electron
  * main thread or the renderer — mirrors storage-worker.ts's boundary
  * exactly, except output is pushed as events, not just returned as a
- * single response, because a terminal is a stream (spec 22.1).
+ * single response, because terminal output is a stream (spec 22.1).
  */
 import { PtyHost, createNodePtySpawner } from '@space/terminal';
 import type {

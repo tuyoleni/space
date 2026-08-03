@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   DevProcessInfo,
   EnvironmentScanResult,
@@ -14,6 +14,7 @@ import type {
   TrustDecision,
   WorkspaceSummary,
 } from '@space/contracts';
+import { Plus } from 'lucide-react';
 import { Button, Dialog, InlineBanner, useToast } from '@space/ui';
 import { toErrorMessage } from './errors';
 import { Sidebar } from './Sidebar';
@@ -28,6 +29,13 @@ import { ProjectsView } from './views/ProjectsView';
 import { SystemView } from './views/SystemView';
 import { ProjectIssueDialog } from './ProjectIssueDialog';
 import { CloneProjectDialog, CreateProjectDialog, type CreateProjectRequest } from './views/ProjectDialogs';
+import {
+  CommandPalette,
+  buildNavigationActions,
+  buildProjectActions,
+  buildGitActions,
+  type CommandPaletteAction,
+} from './CommandPalette';
 import { GithubSetupPrompt } from './GithubSetupPrompt';
 import { useGithubAuth } from './useGithubAuth';
 import { GithubAuthDialog } from './GithubAuthDialog';
@@ -86,6 +94,7 @@ export function AppShell() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
     setWorkspaces(await window.space.workspace.list());
@@ -593,6 +602,47 @@ export function AppShell() {
   };
   useEffect(() => window.space.menu.onCommand((command) => menuDispatch.current(command)), []);
 
+  // Cmd+K / Ctrl+K to open the command palette
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  // Build command palette actions from current state
+  const commandPaletteActions: CommandPaletteAction[] = useMemo(() => {
+    const navActions = buildNavigationActions(view, setView);
+    const projectActions = buildProjectActions(projects, selectedProjectId, selectProject);
+    const gitActions = buildGitActions(selectedProject, gitStatus, {
+      onFetch: handleFetch,
+      onPush: handlePush,
+      onCommit: () => {},
+      onCreateBranch: () => {},
+    });
+    const quickActions: CommandPaletteAction[] = [
+      {
+        id: 'action:new-project',
+        label: 'Create new project',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        action: () => setCreateOpen(true),
+      },
+      {
+        id: 'action:clone',
+        label: 'Clone repository',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        action: () => setCloneOpen(true),
+      },
+    ];
+    return [...navActions, ...projectActions, ...gitActions, ...quickActions];
+  }, [view, projects, selectedProjectId, selectedProject, gitStatus]);
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-app-bg text-fg">
       <div className="flex min-h-0 flex-1">
@@ -816,6 +866,12 @@ export function AppShell() {
           }}
         />
       )}
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        actions={commandPaletteActions}
+      />
     </div>
   );
 }
