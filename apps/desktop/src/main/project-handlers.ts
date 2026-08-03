@@ -450,7 +450,7 @@ export function createProjectHandlers(storage: StorageCaller, options: ProjectHa
       const url = detectListeningUrl(outputBuffer);
       if (url) {
         urlDetected = true;
-        void storage.call('devProcess.setDetectedUrl', { id, url });
+        void storage.call('devProcess.setDetectedUrl', { id, url }).catch(() => {});
       }
     });
 

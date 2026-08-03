@@ -8,6 +8,15 @@ import { buildAppMenu } from './main/app-menu';
 // too so the macOS app menu reads "Space", not "Electron".
 app.setName('Space');
 
+// Mitigate GPU process crashes (exit_code=15) that cascade SIGTERM to utility
+// processes including the storage worker. On macOS with certain GPU/driver
+// combinations the GPU process dies immediately, taking child processes down.
+if (!app.isPackaged) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+}
+
 const SPACE_VERSION = app.isPackaged ? app.getVersion() : '1.0.0';
 const SPACE_ICON_PATH = path.join(__dirname, '../../assets/icons/icon.png');
 const SPACE_MENU_BAR_ICON_PATH = path.join(__dirname, '../../assets/icons/menu-bar-icon.svg');
