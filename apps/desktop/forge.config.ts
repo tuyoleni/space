@@ -215,16 +215,54 @@ async function adhocSign(appPath: string): Promise<void> {
   await sign(appPath);
 }
 
-// Notarization only runs with a real Developer ID and App Store Connect API
-// key; ad-hoc builds have nothing Apple would accept.
-const osxNotarize =
-  HAS_DEVELOPER_ID && process.env.SPACE_APPLE_API_KEY
-    ? {
-        appleApiKey: process.env.SPACE_APPLE_API_KEY,
-        appleApiKeyId: process.env.SPACE_APPLE_API_KEY_ID ?? '',
-        appleApiIssuer: process.env.SPACE_APPLE_API_ISSUER ?? '',
-      }
-    : undefined;
+/**
+ * The Team ID notarytool submits under.
+ *
+ * Taken from SPACE_APPLE_TEAM_ID, or parsed out of the identity string, which
+ * always ends in the team's ID in parentheses ("Developer ID Application:
+ * Name (ABCDE12345)"). Only the app-specific-password path needs it; the API
+ * key carries its own issuer.
+ */
+const APPLE_TEAM_ID = process.env.SPACE_APPLE_TEAM_ID ?? /\(([A-Z0-9]+)\)\s*$/.exec(APPLE_IDENTITY)?.[1];
+
+/**
+ * Notarization credentials, in either of the two shapes notarytool accepts.
+ *
+ * An App Store Connect API key (.p8 + key id + issuer) is preferred: it is
+ * scoped to notarization, revocable on its own, and carries no account
+ * password. An Apple ID plus app-specific password is the fallback for when
+ * issuing an API key isn't possible — it needs the Team ID explicitly,
+ * because the credential alone doesn't say which team to submit under.
+ *
+ * Ad-hoc builds skip notarization entirely; they have nothing Apple would
+ * accept.
+ */
+const osxNotarize = ((): NonNullable<ForgeConfig['packagerConfig']>['osxNotarize'] => {
+  if (!HAS_DEVELOPER_ID) return undefined;
+
+  if (process.env.SPACE_APPLE_API_KEY) {
+    return {
+      appleApiKey: process.env.SPACE_APPLE_API_KEY,
+      appleApiKeyId: process.env.SPACE_APPLE_API_KEY_ID ?? '',
+      appleApiIssuer: process.env.SPACE_APPLE_API_ISSUER ?? '',
+    };
+  }
+
+  if (process.env.SPACE_APPLE_ID && process.env.SPACE_APPLE_APP_PASSWORD) {
+    if (!APPLE_TEAM_ID) {
+      throw new Error(
+        'Notarizing with an app-specific password needs a Team ID: set SPACE_APPLE_TEAM_ID, or use a SPACE_APPLE_IDENTITY that ends in "(TEAMID)".',
+      );
+    }
+    return {
+      appleId: process.env.SPACE_APPLE_ID,
+      appleIdPassword: process.env.SPACE_APPLE_APP_PASSWORD,
+      teamId: APPLE_TEAM_ID,
+    };
+  }
+
+  return undefined;
+})();
 
 // Target platforms are macOS and Windows only (spec section 3.6: Linux
 // desktop is a non-goal for the first production release).
@@ -248,12 +286,6 @@ const config: ForgeConfig = {
     // the auto-unpack-natives plugin's *.node-only glob does not cover.
     asar: {
       unpack: '**/node_modules/{node-pty,better-sqlite3}/**',
-    },
-    // Sign the merged Universal bundle ad-hoc so Apple Silicon can launch it.
-    // Replace this with a Developer ID identity before public distribution.
-    osxSign: {
-      identity: '-',
-      identityValidation: false,
     },
     afterCopy: [
       (buildPath, electronVersion, platform, arch, callback) => {

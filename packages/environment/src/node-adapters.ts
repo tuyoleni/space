@@ -9,6 +9,7 @@
  * authenticates (spec 8.2).
  */
 import { spawn } from 'node:child_process';
+import { constants as fsConstants } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,6 +72,51 @@ export const nodeResolveOnPath: CommandOnPathResolver = async (executable) => {
     });
   });
 };
+
+/**
+ * Directories package managers install into that are frequently *not* on
+ * Space's own process PATH: Homebrew's Apple Silicon/Intel prefixes and
+ * Volta's shim directory. Space's PATH is fixed at the moment its process
+ * launched — a GUI-launched app inherits launchd's minimal PATH (no
+ * Homebrew at all), and a tool installed *during* this run was never on
+ * PATH to begin with, on any launch path. `command -v`/`where` alone
+ * reports "not found" in both cases for a binary that is really sitting
+ * on disk.
+ */
+function wellKnownToolDirs(homeDir: string): readonly string[] {
+  if (process.platform === 'darwin') {
+    return ['/opt/homebrew/bin', '/opt/homebrew/sbin', '/usr/local/bin', '/usr/local/sbin', path.join(homeDir, '.volta', 'bin')];
+  }
+  if (process.platform === 'win32') {
+    return [path.join(homeDir, 'AppData', 'Local', 'Volta', 'bin')];
+  }
+  return [];
+}
+
+/**
+ * `nodeResolveOnPath`, then a fallback scan of `wellKnownToolDirs` for the
+ * same executable. Use this (not `nodeResolveOnPath` alone) for any tool
+ * Space itself may have just installed, or that commonly lives outside a
+ * GUI-launched process's PATH (spec 8.4/8.6, ADR-004).
+ */
+export async function resolveKnownToolPath(executable: string, homeDir: string = os.homedir()): Promise<string | null> {
+  const fromPath = await nodeResolveOnPath(executable);
+  if (fromPath) {
+    return fromPath;
+  }
+  const candidateName = process.platform === 'win32' ? `${executable}.exe` : executable;
+  for (const dir of wellKnownToolDirs(homeDir)) {
+    const candidate = path.join(dir, candidateName);
+    try {
+      // eslint-disable-next-line no-await-in-loop -- a short, fixed list of directories; sequential is fine and keeps resolution order (Apple Silicon before Intel) meaningful.
+      await fs.access(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // Not here — try the next well-known directory.
+    }
+  }
+  return null;
+}
 
 export const nodeRunCommand: CommandRunner = (executable, args, options) => {
   return new Promise<CommandExecutionResult>((resolve, reject) => {

@@ -93,6 +93,7 @@ import {
   type GitExecutor,
   type GitIdentity,
 } from '@space/git-engine';
+import { resolveKnownToolPath } from '@space/environment';
 import type { CredentialStorePort } from '@space/security';
 import { RedactionRegistry } from '@space/workspace-runner';
 import type { GithubAuthReport, GithubContributionCalendar, Project } from '@space/contracts';
@@ -324,10 +325,17 @@ export function createGithubHandlers(storage: StorageCaller, options: GithubHand
       ...(input.gitProtocol ? { gitProtocol: input.gitProtocol } : {}),
     });
     const ghConfigDir = options.ghConfigDirFor(input.workspaceId);
+    // Resolved to an absolute path, not spawned as bare `'gh'`: Space's own
+    // process PATH is fixed at launch time, and a GUI-launched app inherits
+    // launchd's minimal PATH with no Homebrew directory on it — `gh` is
+    // really installed but unresolvable by name alone, which surfaces to
+    // node-pty as a raw `posix_spawnp failed`. Falls back to the bare name
+    // so this is a no-op wherever PATH already resolves it correctly.
+    const ghExecutable = (await resolveKnownToolPath('gh')) ?? 'gh';
     const session = await options.terminal.call<{ id: string }>('terminal.create', {
       workspaceId: input.workspaceId,
       projectId: null,
-      shell: 'gh',
+      shell: ghExecutable,
       args,
       cwd: input.cwd,
       // A real base environment (PATH, HOME, ...) is required for `gh` to

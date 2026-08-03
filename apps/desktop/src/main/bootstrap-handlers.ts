@@ -17,8 +17,6 @@
  */
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import {
   TOOL_MANIFEST,
   buildMacOsBootstrapPlan,
@@ -30,6 +28,7 @@ import {
   nodeResolveOnPath,
   nodeRunCommand,
   performScan,
+  resolveKnownToolPath,
   runHomebrewCommand,
   resumeAction,
   transition,
@@ -123,25 +122,17 @@ function manifestEntryFor(step: PlannedStep) {
 }
 
 /**
- * Volta intentionally updates the user's shell profile, not Space's already
- * running process. Its documented shim location is therefore a real fallback
- * for this bootstrap run, while every other command still resolves from PATH.
+ * Homebrew and Volta both write outside a path Space's own process
+ * necessarily has on PATH: Homebrew's install prefix predates any shell
+ * profile sourcing this process, and a tool this very bootstrap run just
+ * installed was never on PATH to begin with. `resolveKnownToolPath` covers
+ * both by falling back to the well-known install directories after a plain
+ * PATH lookup — required on a fresh machine, where every step after
+ * Homebrew itself would otherwise report "not found" despite having just
+ * installed successfully.
  */
 async function resolveBootstrapExecutable(executable: string): Promise<string | null> {
-  const fromPath = await nodeResolveOnPath(executable);
-  if (fromPath) {
-    return fromPath;
-  }
-  if (!['volta', 'node', 'npm'].includes(executable)) {
-    return null;
-  }
-  const voltaShim = path.join(os.homedir(), '.volta', 'bin', executable);
-  try {
-    await fs.access(voltaShim);
-    return voltaShim;
-  } catch {
-    return null;
-  }
+  return resolveKnownToolPath(executable, os.homedir());
 }
 
 export function createBootstrapHandlers(storage: StorageCaller): BootstrapHandlers {
