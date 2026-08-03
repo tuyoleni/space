@@ -234,7 +234,7 @@ const config: ForgeConfig = {
     // cask's `zap` stanza deleting preferences under a domain the app never
     // wrote to.
     appBundleId: 'com.tuyoleni.space',
-    ...(process.platform === 'darwin' && HAS_DEVELOPER_ID ? { osxSign } : {}),
+    ...(process.platform === 'darwin' ? { osxSign } : {}),
     ...(osxNotarize ? { osxNotarize } : {}),
     // electron-packager appends the right extension per platform itself
     // (.icns on darwin, .ico on win32) when given an extension-less path —
