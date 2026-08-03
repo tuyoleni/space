@@ -45,6 +45,7 @@ const LOGIN_COMMANDS: Readonly<Record<ConnectedServiceId, { readonly executable:
   vercel: { executable: 'vercel', args: ['login'] },
   supabase: { executable: 'supabase', args: ['login'] },
   gcloud: { executable: 'gcloud', args: ['auth', 'login'] },
+  convex: { executable: 'convex', args: ['login'] },
 };
 
 /** Real `<executable> --version` — missing CLI (ENOENT) or non-zero exit both mean "not installed", never thrown. */
@@ -121,6 +122,22 @@ async function checkGcloud(): Promise<ConnectedServiceStatus> {
   return { id: 'gcloud', displayName: 'Google Cloud', installed, version, connected, account, detail: null, deployable: false };
 }
 
+/** `convex whoami` prints the logged-in account on success. */
+async function checkConvex(): Promise<ConnectedServiceStatus> {
+  const { installed, version } = await checkInstalled('convex');
+  let connected = false;
+  let account: string | null = null;
+  if (installed) {
+    const whoamiResult = await nodeRunCommand('convex', ['whoami'], { timeoutMs: STATUS_TIMEOUT_MS }).catch(() => null);
+    if (whoamiResult && whoamiResult.exitCode === 0) {
+      connected = true;
+      const trimmed = whoamiResult.stdout.trim();
+      account = trimmed.length > 0 ? trimmed : null;
+    }
+  }
+  return { id: 'convex', displayName: 'Convex', installed, version, connected, account, detail: null, deployable: false };
+}
+
 /** The deployed URL is the only `https://` token `vercel deploy`'s stdout prints — take the last one (earlier ones are inspect-URL noise from the build log). */
 function extractDeployUrl(output: string): string | null {
   const matches = output.match(/https?:\/\/\S+/g);
@@ -139,8 +156,8 @@ export interface ConnectedServicesHandlers {
 
 export function createConnectedServicesHandlers(storage: StorageCaller, options: ConnectedServicesHandlersOptions): ConnectedServicesHandlers {
   async function status(): Promise<ConnectedServicesResult> {
-    const [docker, vercel, supabase, gcloud] = await Promise.all([checkDocker(), checkVercel(), checkSupabase(), checkGcloud()]);
-    return { scannedAt: new Date().toISOString(), services: [docker, vercel, supabase, gcloud] };
+    const [docker, vercel, supabase, gcloud, convex] = await Promise.all([checkDocker(), checkVercel(), checkSupabase(), checkGcloud(), checkConvex()]);
+    return { scannedAt: new Date().toISOString(), services: [docker, vercel, supabase, gcloud, convex] };
   }
 
   async function startLogin(input: ConnectedServiceLoginInput): Promise<ConnectedServiceLoginResult> {

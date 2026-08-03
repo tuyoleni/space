@@ -360,7 +360,7 @@ export interface ProjectEnvironmentActionResult {
 // `gh auth login`) — never a fabricated OAuth flow.
 // ---------------------------------------------------------------------------
 
-export type ConnectedServiceId = 'docker' | 'vercel' | 'supabase' | 'gcloud';
+export type ConnectedServiceId = 'docker' | 'vercel' | 'supabase' | 'gcloud' | 'convex';
 
 export interface ConnectedServiceStatus {
   readonly id: ConnectedServiceId;

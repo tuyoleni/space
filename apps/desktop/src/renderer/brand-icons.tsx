@@ -6,6 +6,7 @@ import {
   siBabel,
   siBun,
   siClaudecode,
+  siConvex,
   siCss,
   siCursor,
   siCypress,
@@ -153,12 +154,13 @@ export const TOOL_BRAND: Record<string, BrandMark> = {
   volta: VOLTA_MARK,
 };
 
-/** Connected-service ids (docker/vercel/supabase/gcloud) → brand mark. */
+/** Connected-service ids (docker/vercel/supabase/gcloud/convex) → brand mark. */
 export const SERVICE_BRAND: Record<string, BrandMark> = {
   docker: siDocker,
   vercel: siVercel,
   supabase: siSupabase,
   gcloud: siGooglecloud,
+  convex: siConvex,
   github: siGithub,
 };
 

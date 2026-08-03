@@ -11,7 +11,7 @@ interface EnvironmentServicesPanelProps {
   readonly githubReport: GithubAuthReport | null;
 }
 
-const SERVICE_ORDER: readonly ConnectedServiceId[] = ['docker', 'vercel', 'supabase', 'gcloud'];
+const SERVICE_ORDER: readonly ConnectedServiceId[] = ['docker', 'vercel', 'supabase', 'gcloud', 'convex'];
 
 /**
  * "Connected Services" card: GitHub's status comes from the `githubReport`
@@ -25,7 +25,8 @@ const SERVICE_ORDER: readonly ConnectedServiceId[] = ['docker', 'vercel', 'supab
  * "Sign in" does, embedding the session with TerminalPanel. "Deploy" (only
  * on services connectedServices marks `deployable`, currently Vercel) runs
  * the real CLI deploy to completion and surfaces the resulting URL — no
- * terminal needed for that part.
+ * terminal needed for that part. Convex projects are auto-detected via
+ * convex.json or "convex" in package.json dependencies.
  */
 export function EnvironmentServicesPanel({ workspaceId, projectId, githubReport }: EnvironmentServicesPanelProps) {
   const { toast } = useToast();

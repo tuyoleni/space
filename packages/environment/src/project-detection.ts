@@ -68,6 +68,7 @@ const FRAMEWORK_CONFIG_FILES: ReadonlyArray<{ file: string; id: string; label: s
   { file: 'angular.json', id: 'framework:angular', label: 'Angular' },
   { file: 'vue.config.js', id: 'framework:vue', label: 'Vue CLI' },
   { file: 'gatsby-config.js', id: 'framework:gatsby', label: 'Gatsby' },
+  { file: 'convex.json', id: 'framework:convex', label: 'Convex' },
 ];
 
 const PACKAGE_JSON_DEPENDENCY_FRAMEWORKS: ReadonlyArray<{ dependency: string; id: string; label: string }> = [
@@ -82,6 +83,7 @@ const PACKAGE_JSON_DEPENDENCY_FRAMEWORKS: ReadonlyArray<{ dependency: string; id
   { dependency: 'gatsby', id: 'framework:gatsby', label: 'Gatsby' },
   { dependency: 'react', id: 'framework:react', label: 'React' },
   { dependency: 'electron', id: 'framework:electron', label: 'Electron' },
+  { dependency: 'convex', id: 'framework:convex', label: 'Convex' },
 ];
 
 const PYTHON_MANIFESTS = ['pyproject.toml', 'requirements.txt', 'Pipfile', 'setup.py', 'setup.cfg'];
