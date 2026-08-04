@@ -40,6 +40,15 @@ import { GithubSetupPrompt } from './GithubSetupPrompt';
 import { useGithubAuth } from './useGithubAuth';
 import { GithubAuthDialog } from './GithubAuthDialog';
 import { GuidedSyncDialog } from './GuidedSyncDialog';
+import { useTheme } from './ThemeToggle';
+import { useNotificationCenter } from './NotificationCenter';
+import { QuickCommitDialog } from './QuickCommitDialog';
+import { BranchDialog } from './BranchDialog';
+import { KeyboardShortcutsOverlay } from './KeyboardShortcutsOverlay';
+import { AboutDialog } from './AboutDialog';
+import { SettingsDialog } from './SettingsDialog';
+import { RecentProjects } from './RecentProjects';
+import { GitStashSupport } from './GitStashSupport';
 
 export interface ProjectRuntimeState {
   readonly detections: Record<string, ProjectDetectionReport>;
@@ -95,6 +104,17 @@ export function AppShell() {
   const [githubSetupProject, setGithubSetupProject] = useState<Project | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // New feature states
+  const [theme, toggleTheme] = useTheme();
+  const notifications = useNotificationCenter();
+  const [quickCommitOpen, setQuickCommitOpen] = useState(false);
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recentProjectsOpen, setRecentProjectsOpen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
     setWorkspaces(await window.space.workspace.list());
@@ -267,12 +287,18 @@ export function AppShell() {
       await window.space.git.switchBranch({ projectId, name: name.trim() });
       await refreshGitContext();
       toast({ variant: 'success', message: `Created and switched to branch "${name.trim()}".` });
+      notifications.addNotification({
+        variant: 'success',
+        category: 'git',
+        title: 'Branch Created',
+        message: `Created and switched to branch "${name.trim()}".`,
+      });
     });
   }
 
-  function handleFetch(): void {
+  const handleFetch = useCallback(() => {
     if (selectedProject?.repositoryRoot) setSyncOpen(true);
-  }
+  }, [selectedProject?.repositoryRoot]);
 
   /**
    * Pushing checks its own preconditions first. Without this, a project with
@@ -281,7 +307,7 @@ export function AppShell() {
    * never configured a remote and cannot act on it. The blocking issue is
    * knowable beforehand, so the user gets a dialog with the fix instead.
    */
-  function handlePush(): void {
+  const handlePush = useCallback(() => {
     if (!selectedProject || !gitStatus?.branch.branchName) {
       return;
     }
@@ -297,6 +323,21 @@ export function AppShell() {
       await window.space.git.push({ projectId, branch, setUpstream });
       await refreshGitContext();
       toast({ variant: 'success', message: `Pushed ${branch}${setUpstream ? ' (set upstream)' : ''}.` });
+    });
+  }, [selectedProject, gitStatus?.branch.branchName, gitStatus?.branch.upstream]);
+
+  function handleQuickCommit(message: string): void {
+    if (!selectedProject?.repositoryRoot) return;
+    void runGuarded('Committing…', async () => {
+      await window.space.git.commit({ projectId: selectedProject.id, message });
+      await refreshGitContext();
+      toast({ variant: 'success', message: 'Committed successfully.' });
+      notifications.addNotification({
+        variant: 'success',
+        category: 'git',
+        title: 'Commit Created',
+        message: message.length > 60 ? message.slice(0, 57) + '…' : message,
+      });
     });
   }
 
@@ -602,12 +643,28 @@ export function AppShell() {
   };
   useEffect(() => window.space.menu.onCommand((command) => menuDispatch.current(command)), []);
 
-  // Cmd+K / Ctrl+K to open the command palette
+  // Global keyboard shortcuts
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (isMod && e.key === 'k') {
         e.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
+      } else if (isMod && e.key === '/') {
+        e.preventDefault();
+        setShortcutsOpen((prev) => !prev);
+      } else if (isMod && e.key === 'Enter') {
+        e.preventDefault();
+        setQuickCommitOpen(true);
+      } else if (isMod && e.shiftKey && e.key === 'O') {
+        e.preventDefault();
+        setRecentProjectsOpen(true);
+      } else if (isMod && e.key === ',') {
+        e.preventDefault();
+        setSettingsOpen(true);
+      } else if (isMod && e.key === 'b') {
+        e.preventDefault();
+        setBranchDialogOpen(true);
       }
     }
     window.addEventListener('keydown', handleGlobalKeyDown);
@@ -621,8 +678,8 @@ export function AppShell() {
     const gitActions = buildGitActions(selectedProject, gitStatus, {
       onFetch: handleFetch,
       onPush: handlePush,
-      onCommit: () => {},
-      onCreateBranch: () => {},
+      onCommit: () => setQuickCommitOpen(true),
+      onCreateBranch: () => setBranchDialogOpen(true),
     });
     const quickActions: CommandPaletteAction[] = [
       {
@@ -639,9 +696,47 @@ export function AppShell() {
         category: 'Actions',
         action: () => setCloneOpen(true),
       },
+      {
+        id: 'action:recent',
+        label: 'Open recent project',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        shortcut: '⌘⇧O',
+        action: () => setRecentProjectsOpen(true),
+      },
+      {
+        id: 'action:shortcuts',
+        label: 'Keyboard shortcuts',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        shortcut: '⌘/',
+        action: () => setShortcutsOpen(true),
+      },
+      {
+        id: 'action:settings',
+        label: 'Open settings',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        shortcut: '⌘,',
+        action: () => setSettingsOpen(true),
+      },
+      {
+        id: 'action:about',
+        label: 'About Space',
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        action: () => setAboutOpen(true),
+      },
+      {
+        id: 'action:theme',
+        label: `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`,
+        icon: <Plus size={15} />,
+        category: 'Actions',
+        action: toggleTheme,
+      },
     ];
     return [...navActions, ...projectActions, ...gitActions, ...quickActions];
-  }, [view, projects, selectedProjectId, selectedProject, gitStatus]);
+  }, [view, projects, selectedProjectId, selectedProject, gitStatus, theme, handleFetch, handlePush, toggleTheme]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-app-bg text-fg">
@@ -782,6 +877,7 @@ export function AppShell() {
             changedFileCount={changedFileCount}
             terminalCount={terminalCount}
             envScan={envScan}
+            notifications={notifications}
           />
         </div>
       </div>
@@ -872,6 +968,72 @@ export function AppShell() {
         onOpenChange={setCommandPaletteOpen}
         actions={commandPaletteActions}
       />
+
+      {/* Feature: Quick Commit Dialog (Cmd+Enter) */}
+      <QuickCommitDialog
+        open={quickCommitOpen}
+        onOpenChange={setQuickCommitOpen}
+        gitStatus={gitStatus}
+        onCommit={handleQuickCommit}
+      />
+
+      {/* Feature: Branch Dialog (Cmd+B) */}
+      <BranchDialog
+        open={branchDialogOpen}
+        onOpenChange={setBranchDialogOpen}
+        gitStatus={gitStatus}
+        onCreateBranch={handleCreateBranch}
+      />
+
+      {/* Feature: Keyboard Shortcuts (Cmd+/) */}
+      <KeyboardShortcutsOverlay
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+      />
+
+      {/* Feature: About Dialog */}
+      <AboutDialog
+        open={aboutOpen}
+        onOpenChange={setAboutOpen}
+      />
+
+      {/* Feature: Settings Dialog (Cmd+,) */}
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        theme={theme}
+        onThemeChange={(t) => { if (t !== theme) toggleTheme(); }}
+      />
+
+      {/* Feature: Recent Projects (Cmd+Shift+O) */}
+      <RecentProjects
+        open={recentProjectsOpen}
+        onOpenChange={setRecentProjectsOpen}
+        projects={projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          path: p.canonicalPath,
+          lastOpened: new Date(),
+        }))}
+        onSelectProject={(id) => selectProject(id)}
+        onToggleFavorite={(_id: string) => { /* TODO: implement favorites */ }}
+      />
+
+      {/* Feature: Git Stash Panel */}
+      <Dialog
+        open={stashOpen}
+        onOpenChange={setStashOpen}
+        title="Git Stash"
+        size="lg"
+      >
+        <GitStashSupport
+          stashes={[]}
+          onPop={(_ref: string) => { /* TODO: implement stash pop via IPC */ }}
+          onApply={(_ref: string) => { /* TODO: implement stash apply via IPC */ }}
+          onDrop={(_ref: string) => { /* TODO: implement stash drop via IPC */ }}
+          onRefresh={refreshGitContext}
+        />
+      </Dialog>
     </div>
   );
 }

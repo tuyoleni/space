@@ -24,9 +24,6 @@ import {
   GitCommitHorizontal,
   Download,
   Upload,
-  RefreshCw,
-  Copy,
-  Trash2,
   Command,
 } from 'lucide-react';
 import { cn } from '@space/ui';

@@ -1,6 +1,7 @@
 import { GitBranch, TerminalSquare } from 'lucide-react';
 import type { EnvironmentScanResult, GitStatusSummary, Project } from '@space/contracts';
 import { StatusDot } from '@space/ui';
+import { NotificationCenter, useNotificationCenter } from './NotificationCenter';
 
 interface StatusBarProps {
   readonly workspaceName: string | null;
@@ -9,10 +10,11 @@ interface StatusBarProps {
   readonly changedFileCount: number;
   readonly terminalCount: number;
   readonly envScan: EnvironmentScanResult | null;
+  readonly notifications: ReturnType<typeof useNotificationCenter>;
 }
 
 /** Bottom status strip — every segment is a real value already loaded elsewhere in the shell; nothing here fetches on its own. */
-export function StatusBar({ workspaceName, project, gitStatus, changedFileCount, terminalCount, envScan }: StatusBarProps) {
+export function StatusBar({ workspaceName, project, gitStatus, changedFileCount, terminalCount, envScan, notifications }: StatusBarProps) {
   const nodeTool = envScan?.tools.find((tool) => tool.toolId === 'node');
   return (
     <footer className="space-type-meta flex h-7 shrink-0 items-center justify-between border-t border-border bg-sidebar px-3 text-fg-muted">
@@ -40,6 +42,13 @@ export function StatusBar({ workspaceName, project, gitStatus, changedFileCount,
         </span>
         {nodeTool?.found && <span>Node {nodeTool.version}</span>}
         {envScan && <span>{envScan.platform === 'darwin' ? 'macOS' : 'Windows'}</span>}
+        <NotificationCenter
+          notifications={notifications.notifications}
+          unreadCount={notifications.unreadCount}
+          onMarkAllRead={notifications.markAllRead}
+          onClearAll={notifications.clearAll}
+          onDismiss={notifications.dismiss}
+        />
       </div>
     </footer>
   );
