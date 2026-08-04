@@ -16,10 +16,28 @@ import type {
   TerminalWriteRequest,
 } from '@space/terminal';
 
-const host = new PtyHost({
-  spawner: createNodePtySpawner(),
-  emit: (event: TerminalWorkerEvent) => process.parentPort.postMessage(event),
-});
+// Diagnostic: if node-pty fails to load, surface the error to the parent
+// rather than dying silently. The parent already handles exit-code > 0
+// (TERM-004), but the *reason* was invisible — now it logs.
+let host: PtyHost;
+try {
+  host = new PtyHost({
+    spawner: createNodePtySpawner(),
+    emit: (event: TerminalWorkerEvent) => process.parentPort.postMessage(event),
+  });
+} catch (error) {
+  // Surface the error to the main process before exiting
+  const message = error instanceof Error ? error.message : String(error);
+  process.parentPort.postMessage({
+    kind: 'response',
+    id: 'startup-error',
+    ok: false,
+    error: `Failed to initialize terminal worker: ${message}`,
+  } as TerminalWorkerResponse);
+  // Give the parent time to receive the message before exiting
+  setTimeout(() => process.exit(1), 50);
+  throw error;
+}
 
 function handle(request: TerminalWorkerRequest): unknown {
   switch (request.method) {

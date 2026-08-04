@@ -102,6 +102,10 @@ export class TerminalClient {
     }
     const pending = this.pending.get(message.id);
     if (!pending) {
+      // Surface worker startup errors that have no pending request
+      if (message.kind === 'response' && !message.ok && message.id === 'startup-error') {
+        console.error('[TerminalClient] Worker startup error:', message.error);
+      }
       return;
     }
     clearTimeout(pending.timeout);

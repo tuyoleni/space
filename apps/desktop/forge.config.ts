@@ -323,9 +323,15 @@ const config: ForgeConfig = {
       // filesystem. @electron/universal names the arch-specific asars
       // `app-arm64.asar` / `app-x64.asar`, so the replacement never
       // matches and spawn-helper stays at an unresolvable asar path —
-      // posix_spawnp then fails silently or crashes the worker. Patch
-      // every unixTerminal.js in the unpacked tree to also handle
-      // arch-specific asar names.
+      // posix_spawnp then fails silently or crashes the worker.
+      //
+      // HOWEVER: when node-pty is fully unpacked (asar.unpack glob),
+      // __dirname already points to the .asar.unpacked directory, so the
+      // spawn-helper path is already correct on disk. The original
+      // replace('app.asar', 'app.asar.unpacked') is a no-op in this case.
+      // We only need to patch when the path still contains an asar
+      // reference that wasn't unpacked — i.e., the .asar extension
+      // without '.unpacked' already appended.
       const patchResult = execSync(
         `find "${resourcesDir}" -name unixTerminal.js -path "*.asar.unpacked*"`,
         { encoding: 'utf-8' },
@@ -333,12 +339,17 @@ const config: ForgeConfig = {
       for (const utPath of patchResult.trim().split('\n').filter(Boolean)) {
         const content = await fs.readFile(utPath, 'utf-8');
         if (content.includes('app-arm64.asar')) continue; // already patched
+        // Only patch if the path is inside an asar (not already unpacked).
+        // The negative lookahead (?!.*\.unpacked) prevents double-unpacking
+        // when __dirname already points to .asar.unpacked.
         const patched = content.replace(
           "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');",
           [
             "helperPath = helperPath.replace('app.asar', 'app.asar.unpacked');",
             "// @electron/universal names the asar app-{arch}.asar — extend the remap",
-            "helperPath = helperPath.replace(/app\\-[a-z0-9]+\\.asar/g, function(m){ return m + '.unpacked'; });",
+            "if (helperPath.indexOf('.asar.unpacked') === -1) {",
+            "  helperPath = helperPath.replace(/app\\-[a-z0-9]+\\.asar/g, function(m){ return m + '.unpacked'; });",
+            "}",
           ].join('\n'),
         );
         if (patched !== content) {
